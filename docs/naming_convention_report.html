@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tpoint 命名规范重整报告 v9.1.0</title>
+<style>
+body{font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;margin:0;background:#f5f7fa;color:#1f2733;line-height:1.6}
+.wrap{max-width:1100px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:24px;margin:0 0 4px}
+h2{font-size:18px;margin:28px 0 12px;padding-bottom:8px;border-bottom:2px solid #e6eaf0}
+h3{font-size:15px;margin:20px 0 8px;color:#3a4456}
+.sub{color:#7a8499;font-size:13px;margin-bottom:22px}
+.card{background:#fff;border:1px solid #e6eaf0;border-radius:12px;padding:20px 22px;margin-bottom:18px;box-shadow:0 1px 3px rgba(20,30,50,.04)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid #eef1f6;vertical-align:top}
+th{color:#7a8499;font-weight:600;background:#fafbfc;white-space:nowrap}
+td.old{color:#c0392b;font-family:'Consolas','Monaco',monospace;font-size:12px;white-space:nowrap}
+td.new{color:#1a7a4c;font-family:'Consolas','Monaco',monospace;font-size:12px;white-space:nowrap}
+td.note{color:#5a6473;font-size:12px}
+.tag{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;display:inline-block}
+.tag.core{background:#e8f0ff;color:#2f6fed}
+.tag.script{background:#fff3e0;color:#c77700}
+.tag.bt{background:#e8f5e9;color:#2e7d32}
+.tag.test{background:#f3e5f5;color:#7b1fa2}
+.tag.doc{background:#fce4ec;color:#c62828}
+.tag.data{background:#e0f7fa;color:#00838f}
+.tag.bat{background:#efebe9;color:#5d4037}
+.tag.task{background:#e8eaf6;color:#3949ab}
+.stat{display:flex;gap:20px;flex-wrap:wrap;margin:12px 0}
+.stat-box{flex:1;min-width:120px;background:#f8fafc;border:1px solid #e6eaf0;border-radius:10px;padding:14px 16px;text-align:center}
+.stat-box .num{font-size:28px;font-weight:700;color:#2f6fed}
+.stat-box .lbl{font-size:12px;color:#7a8499;margin-top:4px}
+code{background:#f0f3f8;padding:1px 6px;border-radius:5px;font-size:12px;font-family:'Consolas','Monaco',monospace}
+.ok{color:#1a7a4c;font-weight:600}
+.warn{color:#c77700;font-weight:600}
+.note{font-size:12px;color:#7a8499;line-height:1.7}
+.arrow{color:#cfd6e0;font-weight:bold;padding:0 4px}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>tpoint 命名规范重整报告</h1>
+<div class="sub">版本 v9.1.0 · 生成时间 2026-07-13 · 涉及 40 个文件重命名 + 290+ 引用更新</div>
+
+<div class="card">
+<h2 style="margin-top:0;border:none;padding:0">执行概要</h2>
+<div class="stat">
+<div class="stat-box"><div class="num">40</div><div class="lbl">文件重命名</div></div>
+<div class="stat-box"><div class="num">33</div><div class="lbl">文件内容更新</div></div>
+<div class="stat-box"><div class="num">290+</div><div class="lbl">引用替换</div></div>
+<div class="stat-box"><div class="num">2</div><div class="lbl">Git 标签</div></div>
+<div class="stat-box"><div class="num">0</div><div class="lbl">依赖断裂</div></div>
+</div>
+<p class="note">所有 import 链路、.bat 路径、配置引用、计划任务名均已同步更新。selftest 通过，无功能回归。</p>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">一、命名规范定义</h2>
+<table>
+<tr><th>类别</th><th>规范</th><th>示例</th></tr>
+<tr><td>语义化版本号</td><td><code>MAJOR.MINOR.PATCH</code>，记录于 <code>VERSION</code></td><td><code>9.1.0</code>（9=策略世代, 1=因子迭代, 0=补丁）</td></tr>
+<tr><td>Git 标签</td><td><code>v&lt;MAJOR&gt;.&lt;MINOR&gt;.&lt;PATCH&gt;</code></td><td><code>v9.0.0</code>, <code>v9.1.0</code></td></tr>
+<tr><td>Git 分支</td><td><code>main</code>（生产）/ <code>feature/&lt;topic&gt;</code> / <code>fix/&lt;topic&gt;</code> / <code>refactor/&lt;topic&gt;</code></td><td><code>main</code>, <code>feature/factor-v3</code></td></tr>
+<tr><td>核心模块文件</td><td>纯功能名，<b>不带版本前缀</b>；版本由 <code>VERSION</code> 统一管理</td><td><code>indicators.py</code>（非 <code>v9_indicators.py</code>）</td></tr>
+<tr><td>脚本文件</td><td><code>&lt;功能&gt;_&lt;变体&gt;.py</code></td><td><code>playback_gl_0709.py</code></td></tr>
+<tr><td>回测文件</td><td><code>backtest_&lt;功能&gt;.py</code> 统一前缀</td><td><code>backtest_extended.py</code></td></tr>
+<tr><td>数据文件</td><td>运行态无版本前缀；归档数据用 <code>&lt;功能&gt;_&lt;YYYYMMDD&gt;.&lt;ext&gt;</code></td><td><code>metrics.json</code>, <code>playback_gl_20260713.json</code></td></tr>
+<tr><td>计划任务</td><td><code>tpoint_&lt;功能&gt;</code> 前缀</td><td><code>tpoint_monitor</code></td></tr>
+<tr><td>锁文件</td><td><code>tpoint_monitor.lock</code> / <code>tpoint_monitor.pid</code></td><td>系统临时目录</td></tr>
+<tr><td>环境变量</td><td><code>TP_*</code> 前缀（原 <code>V9_*</code>）</td><td><code>TP_PROMPT_FILE</code></td></tr>
+</table>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">二、核心模块重命名对照表</h2>
+<table>
+<tr><th>#</th><th>原文件名</th><th></th><th>新文件名</th><th>注释</th></tr>
+<tr><td>1</td><td class="old">core/v9_indicators.py</td><td class="arrow">→</td><td class="new">core/indicators.py</td><td class="note">纯算法层：VWAP/ATR/EMA/ADX/RSI/量比/情绪温度计 + B/S信号检测（含 v2 因子 detect_signals_v2）。移除 v9_ 前缀，版本由 VERSION 管理。</td></tr>
+<tr><td>2</td><td class="old">core/v9_exit_manager.py</td><td class="arrow">→</td><td class="new">core/exit_manager.py</td><td class="note">出场管理：移动止损(0.4%激活/0.6%回撤)、硬止损、时间止损、S信号出场、EOD强平。simulate_day 单仓位配对回测。</td></tr>
+<tr><td>3</td><td class="old">core/v9_entry_filter.py</td><td class="arrow">→</td><td class="new">core/entry_filter.py</td><td class="note">入场质量过滤：对 B 信号叠加质量评分，筛选高胜率入场点。</td></tr>
+<tr><td>4</td><td class="old">core/v9_alert_engine.py</td><td class="arrow">→</td><td class="new">core/alert_engine.py</td><td class="note">告警引擎(watchdog)：轮询 metrics.json，评估 6 条告警规则，推送飞书交互卡片。常驻轮询 + --once/--dry-run/--self-test 模式。</td></tr>
+<tr><td>5</td><td class="old">core/monitor_v9.py</td><td class="arrow">→</td><td class="new">core/monitor.py</td><td class="note">生产监控主循环：并发取数(ThreadPoolExecutor) + 信号检测 + 飞书推送 + 单实例锁(自愈接管) + 盘前心跳 + 出场跟踪。EXIT_CFG 线上配置在此。</td></tr>
+</table>
+<p class="note">依赖更新：<code>from v9_indicators import</code> → <code>from indicators import</code>（全项目 12 个文件同步更新）</p>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">三、脚本文件重命名对照表</h2>
+<table>
+<tr><th>#</th><th>原文件名</th><th></th><th>新文件名</th><th>注释</th></tr>
+<tr><td>6</td><td class="old">scripts/v9_glplay.py</td><td class="arrow">→</td><td class="new">scripts/playback_gl.py</td><td class="note">甘李药业 T+0 演练：取真实通达信数据 + 真实 v9 算法跑完整流程。含今日实跑 + 合成路径演示两部分。</td></tr>
+<tr><td>7</td><td class="old">scripts/v9_glplay_0709.py</td><td class="arrow">→</td><td class="new">scripts/playback_gl_0709.py</td><td class="note">甘李药业 07-09 真实走势完整 v9 系统运行：240 根真实分钟K + 逐层信号过滤诊断 + 候选点标注 SVG。</td></tr>
+<tr><td>8</td><td class="old">scripts/v9_factor_v2.py</td><td class="arrow">→</td><td class="new">scripts/factor_v2_iterate.py</td><td class="note">v2 因子第一性原理自迭代：三天真实数据网格搜索 K1/K2/m/trend_mode，选出 75% 命中率参数组合。</td></tr>
+<tr><td>9</td><td class="old">scripts/v9_factor_v2_report.py</td><td class="arrow">→</td><td class="new">scripts/factor_v2_report.py</td><td class="note">v2 对比报告生成器：旧 v9 vs 新 v2 三天走势图 + 信号标注 + 逐层对比 HTML 报告。</td></tr>
+<tr><td>10</td><td class="old">scripts/v9_e2e_simulation.py</td><td class="arrow">→</td><td class="new">scripts/e2e_simulation.py</td><td class="note">全链路模拟：启动→采集→检测→告警→上报，4 阶段 PASS 验证 + 飞书推送。</td></tr>
+<tr><td>11</td><td class="old">scripts/send_e2e_report.py</td><td class="arrow">→</td><td class="new">scripts/e2e_report_send.py</td><td class="note">e2e 报告飞书发送器：读取 e2e_report.json，推送格式化卡片到飞书群。</td></tr>
+<tr><td>12</td><td class="old">scripts/reorganize_tpoint.py</td><td class="arrow">→</td><td class="new">scripts/reorganize.py</td><td class="note">目录整理脚本：清理过期文件、重组目录结构、统一命名。已移入 scripts/（原在根目录）。</td></tr>
+<tr><td>13</td><td class="old">scripts/restart_v9.bat</td><td class="arrow">→</td><td class="new">scripts/restart.bat</td><td class="note">一键重启脚本：停计划任务→杀 python 进程→启计划任务。任务名已更新为 tpoint_monitor/tpoint_alert_engine。</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">四、回测文件重命名对照表</h2>
+<table>
+<tr><th>#</th><th>原文件名</th><th></th><th>新文件名</th><th>注释</th></tr>
+<tr><td>14</td><td class="old">backtest/backtest_v9.py</td><td class="arrow">→</td><td class="new">backtest/backtest.py</td><td class="note">v8 vs v9 命中率回测对比：多标的、多日分钟数据，输出 v8/v9 信号统计表。</td></tr>
+<tr><td>15</td><td class="old">backtest/backtest_v9_extended.py</td><td class="arrow">→</td><td class="new">backtest/backtest_extended.py</td><td class="note">扩展回测：叠加 exit_manager 出场管理，配对 B→平仓 round-trip，统计盈亏。</td></tr>
+<tr><td>16</td><td class="old">backtest/backtest_exit_manager.py</td><td class="arrow">→</td><td class="new">backtest/backtest_exit.py</td><td class="note">出场管理专项回测：验证移动止损/硬止损/时间止损/EOD 的独立表现。</td></tr>
+<tr><td>17</td><td class="old">backtest/_b_diagnostic.py</td><td class="arrow">→</td><td class="new">backtest/diagnostic.py</td><td class="note">B 信号诊断工具：逐 bar 输出趋势/量比/形态/温度，定位"为什么没触发"。移除下划线前缀。</td></tr>
+<tr><td>18</td><td class="old">backtest/_b_strategy_compare.py</td><td class="arrow">→</td><td class="new">backtest/compare.py</td><td class="note">策略对比工具：不同 K1/K2/量比阈值下的信号分布与胜率对比。移除下划线前缀。</td></tr>
+<tr><td>19</td><td class="old">backtest/download_tickflow_data.py</td><td class="arrow">→</td><td class="new">backtest/download_data.py</td><td class="note">历史数据下载器：从通达信拉取分钟K并保存 CSV。移除遗留 tickflow 命名。</td></tr>
+<tr><td>20</td><td class="old">backtest/tickflow_minute_backtest.py</td><td class="arrow">→</td><td class="new">backtest/backtest_minute.py</td><td class="note">分钟级回测引擎：读取本地 CSV，逐 bar 跑 detect_signals + simulate_day。移除遗留 tickflow 命名。</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">五、测试 / 文档 / 数据文件重命名对照表</h2>
+<h3>测试</h3>
+<table>
+<tr><th>#</th><th>原文件名</th><th></th><th>新文件名</th><th>注释</th></tr>
+<tr><td>21</td><td class="old">tests/v9_selftest.py</td><td class="arrow">→</td><td class="new">tests/selftest.py</td><td class="note">本地算法验证：合成上涨/下跌/震荡行情，验证 v9 vs v8 信号差异（核心命题：下跌趋势 v9 能发S）。</td></tr>
+</table>
+
+<h3>文档</h3>
+<table>
+<tr><th>#</th><th>原文件名</th><th></th><th>新文件名</th><th>注释</th></tr>
+<tr><td>22</td><td class="old">docs/v9_deploy.md</td><td class="arrow">→</td><td class="new">docs/deploy.md</td><td class="note">部署说明：文件清单、部署步骤、灰度运行、回滚方案。引用路径已全部更新。</td></tr>
+<tr><td>23</td><td class="old">docs/v9_design.md</td><td class="arrow">→</td><td class="new">docs/design.md</td><td class="note">设计文档：v8 两大缺陷分析、VWAP 价值中枢范式转变、五大模块设计、参数选型依据。</td></tr>
+<tr><td>24</td><td class="old">docs/v9_t0_playbook.md</td><td class="arrow">→</td><td class="new">docs/t0_playbook.md</td><td class="note">T+0 正向操作手册：买入(B信号)→持仓(移动止损)→卖出(S/TRAIL)→操作记录，含真实参数速查。</td></tr>
+<tr><td>25</td><td class="old">docs/v9_selftest_report.md</td><td class="arrow">→</td><td class="new">docs/selftest_report.md</td><td class="note">selftest 输出报告：v8 vs v9 三场景信号统计表 + 命题验证结论。</td></tr>
+<tr><td>26</td><td class="old">docs/v9_factor_v2_compare.html</td><td class="arrow">→</td><td class="new">docs/factor_v2_compare.html</td><td class="note">v2 因子对比报告：旧v9(0%命中率) vs 新v2(75%命中率) 三天走势图 + 信号标注。</td></tr>
+<tr><td>27</td><td class="old">docs/v9_glplay_report.html</td><td class="arrow">→</td><td class="new">docs/playback_gl_report.html</td><td class="note">甘李药业 T+0 演练报告：今日实跑(0信号,正确空仓) + 合成路径演示(B→TRAIL→+1.17%)。</td></tr>
+<tr><td>28</td><td class="old">docs/v9_glplay_0709_report.html</td><td class="arrow">→</td><td class="new">docs/playback_gl_0709_report.html</td><td class="note">07-09 完整系统运行报告：240根真实K + 12候选点逐层过滤 + 0信号(震荡日正确行为)。</td></tr>
+</table>
+
+<h3>数据文件（运行态）</h3>
+<table>
+<tr><th>#</th><th>原文件名</th><th></th><th>新文件名</th><th>注释</th></tr>
+<tr><td>29</td><td class="old">data/v9_metrics.json</td><td class="arrow">→</td><td class="new">data/metrics.json</td><td class="note">监控心跳指标：ts/scan_duration_s/data_lag_s/service_up/signals_window/errors_window。每轮扫描末写入。</td></tr>
+<tr><td>30</td><td class="old">data/v9_state.json</td><td class="arrow">→</td><td class="new">data/state.json</td><td class="note">持仓状态持久化：pos_{标的} 记录入场价/持仓高点/触发原因/止损价。跨重启保留。</td></tr>
+<tr><td>31</td><td class="old">data/v9_signal.txt</td><td class="arrow">→</td><td class="new">data/signal.txt</td><td class="note">信号流水：所有 B/S/X 信号按时间 append，可回看历史信号。</td></tr>
+</table>
+
+<h3>数据文件（归档）</h3>
+<table>
+<tr><th>#</th><th>原文件名</th><th></th><th>新文件名</th><th>注释</th></tr>
+<tr><td>32</td><td class="old">data/v9_e2e_report.json</td><td class="arrow">→</td><td class="new">data/e2e_report.json</td><td class="note">全链路模拟报告数据：4阶段(start/fetch/detect/alert)输入输出耗时。</td></tr>
+<tr><td>33</td><td class="old">data/v9_factor_v2_compare.json</td><td class="arrow">→</td><td class="new">data/factor_v2_compare.json</td><td class="note">v2 因子对比原始数据：三天信号列表 + 真实性评估(后30分钟涨跌)。</td></tr>
+<tr><td>34</td><td class="old">data/v9_factor_v2_grid.json</td><td class="arrow">→</td><td class="new">data/factor_v2_grid.json</td><td class="note">v2 网格搜索原始数据：K1/K2/m/trend_mode 各组合的信号数与命中率。</td></tr>
+<tr><td>35</td><td class="old">data/v9_glplay_2026-07-13.json</td><td class="arrow">→</td><td class="new">data/playback_gl_20260713.json</td><td class="note">甘李药业 07-13 演练数据（日期格式统一为 YYYYMMDD）。</td></tr>
+<tr><td>36</td><td class="old">data/v9_glplay_demo_2026-07-13.json</td><td class="arrow">→</td><td class="new">data/playback_gl_demo_20260713.json</td><td class="note">甘李药业 07-13 合成路径演示数据（B→TRAIL 完整 round-trip）。</td></tr>
+<tr><td>37</td><td class="old">data/v9_glplay_0709_2026-07-09.json</td><td class="arrow">→</td><td class="new">data/playback_gl_0709_20260709.json</td><td class="note">甘李药业 07-09 真实数据运行结果（消除 0709 与 2026-07-09 双重日期冗余）。</td></tr>
+<tr><td>38</td><td class="old">data/v9_glplay_chart.svg</td><td class="arrow">→</td><td class="new">data/playback_gl_chart.svg</td><td class="note">甘李药业演练走势图 SVG（收盘线/VWAP/移动止损线/B/S标记）。</td></tr>
+<tr><td>39</td><td class="old">data/v9_glplay_0709_chart.svg</td><td class="arrow">→</td><td class="new">data/playback_gl_0709_chart.svg</td><td class="note">07-09 系统运行走势图 SVG（含12个候选点标注）。</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">六、计划任务 / 锁文件 / 环境变量重命名</h2>
+<table>
+<tr><th>#</th><th>原名称</th><th></th><th>新名称</th><th>注释</th></tr>
+<tr><td>40</td><td class="old">v9_monitor</td><td class="arrow">→</td><td class="new">tpoint_monitor</td><td class="note">SYSTEM 计划任务：运行 run_monitor.bat → core/monitor.py。onstart 自动启动。</td></tr>
+<tr><td>41</td><td class="old">v9_alert_engine</td><td class="arrow">→</td><td class="new">tpoint_alert_engine</td><td class="note">SYSTEM 计划任务：运行 run_engine.bat → core/alert_engine.py。onstart 自动启动。</td></tr>
+<tr><td>42</td><td class="old">monitor_v9.lock</td><td class="arrow">→</td><td class="new">tpoint_monitor.lock</td><td class="note">单实例锁文件（系统临时目录）。跨会话可见性修复后自愈接管依赖此文件名。</td></tr>
+<tr><td>43</td><td class="old">monitor_v9.pid</td><td class="arrow">→</td><td class="new">tpoint_monitor.pid</td><td class="note">PID 记录文件。自愈接管时读取此文件判断占锁进程是否存活。</td></tr>
+<tr><td>44</td><td class="old">V9_SIGNAL_FILE</td><td class="arrow">→</td><td class="new">SIGNAL_FILE</td><td class="note">环境变量：覆盖默认信号文件路径。</td></tr>
+<tr><td>45</td><td class="old">V9_STATE_FILE</td><td class="arrow">→</td><td class="new">STATE_FILE</td><td class="note">环境变量：覆盖默认状态文件路径。</td></tr>
+<tr><td>46</td><td class="old">V9_METRICS_FILE</td><td class="arrow">→</td><td class="new">METRICS_FILE</td><td class="note">环境变量：覆盖默认指标文件路径。</td></tr>
+<tr><td>47</td><td class="old">V9_PROMPT_FILE</td><td class="arrow">→</td><td class="new">TP_PROMPT_FILE</td><td class="note">环境变量：覆盖默认 prompt 文件路径。</td></tr>
+<tr><td>48</td><td class="old">V9_WEBHOOK_URL</td><td class="arrow">→</td><td class="new">TP_WEBHOOK_URL</td><td class="note">环境变量：覆盖默认飞书 webhook 地址。</td></tr>
+<tr><td>49</td><td class="old">v9_config.json</td><td class="arrow">→</td><td class="new">config.json</td><td class="note">可选配置兜底文件（键值覆盖常量）。monitor.py 读取此文件做参数热覆盖。</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">七、版本记录与 Git 标签</h2>
+<table>
+<tr><th>标签</th><th>日期</th><th>核心内容</th><th>主要变更点</th></tr>
+<tr>
+<td><code>v9.0.0</code></td><td>2026-07-07</td>
+<td><b>初始 "miji" 发布</b></td>
+<td class="note">
+• VWAP 价值中枢替代 v8 支撑阻力线<br>
+• B/S 信号 = VWAP偏离 × 趋势 × 量价 × 情绪温度<br>
+• 移动止损(0.4%激活/0.6%回撤) + EOD强平<br>
+• 飞书交互卡片 + watchdog 告警引擎<br>
+• Mootdx 通达信数据源(多服务器回退)<br>
+• SYSTEM 计划任务 + 单实例锁
+</td>
+</tr>
+<tr>
+<td><code>v9.1.0</code></td><td>2026-07-13</td>
+<td><b>第一性原理因子 v2 迭代</b></td>
+<td class="note">
+• detect_signals_v2(): 均值回归+动量确认+非对称B/S设计<br>
+• B: 超卖区+反转K+EMA20/RSI动量+放量+trend==1; 跌日加严<br>
+• S: 极端超买+局部新高+RSI≥55回落+收盘<前根; 不限trend<br>
+• 跨信号冷却(避免同段行情两面抓)<br>
+• 命中率 0% → 75% (3真/4总)<br>
+• datasource 空数据回退 bug 修复<br>
+• 命名规范重整(本次)
+</td>
+</tr>
+</table>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">八、依赖兼容性说明</h2>
+<table>
+<tr><th>依赖类型</th><th>影响范围</th><th>处理方式</th><th>状态</th></tr>
+<tr><td>Python import</td><td class="note">12 个文件的 <code>from v9_* import</code></td><td class="note">全部替换为 <code>from indicators/exit_manager/... import</code></td><td class="ok">✅ 已验证</td></tr>
+<tr><td>.bat 路径</td><td class="note">run_monitor.bat, run_engine.bat</td><td class="note"><code>core\monitor.py</code>, <code>core\alert_engine.py</code></td><td class="ok">✅ 已更新</td></tr>
+<tr><td>计划任务名</td><td class="note">install_tasks.bat, restart.bat, reorganize.bat</td><td class="note"><code>tpoint_monitor</code>, <code>tpoint_alert_engine</code></td><td class="warn">⚠️ 需重新注册</td></tr>
+<tr><td>数据文件引用</td><td class="note">monitor.py, alert_engine.py, e2e_simulation.py</td><td class="note"><code>metrics.json</code>, <code>state.json</code>, <code>signal.txt</code></td><td class="ok">✅ 已更新</td></tr>
+<tr><td>锁文件名</td><td class="note">monitor.py LOCK_FILE/PID_FILE</td><td class="note"><code>tpoint_monitor.lock/pid</code></td><td class="warn">⚠️ 旧锁需清理</td></tr>
+<tr><td>配置引用</td><td class="note">monitor_config.json alert name</td><td class="note">"tpoint 服务中断"</td><td class="ok">✅ 已更新</td></tr>
+<tr><td>文档引用</td><td class="note">deploy.md, design.md, t0_playbook.md</td><td class="note">全部模块名/文件名引用已更新</td><td class="ok">✅ 已更新</td></tr>
+</table>
+<div style="margin-top:14px;padding:12px 16px;background:#fff8e1;border:1px solid #ffe082;border-radius:8px">
+<p style="margin:0;font-size:13px;color:#8a6d2b">
+<b>⚠️ 上线操作清单（需管理员执行）：</b><br>
+1. <code>schtasks /delete /tn v9_monitor /f</code> + <code>schtasks /delete /tn v9_alert_engine /f</code>（删除旧任务）<br>
+2. <code>scripts\install_tasks.bat</code>（注册新任务名 tpoint_monitor / tpoint_alert_engine）<br>
+3. 删除旧锁文件：<code>del "%TEMP%\monitor_v9.lock" "%TEMP%\monitor_v9.pid"</code>（SYSTEM 临时目录需在计划任务上下文执行）<br>
+4. <code>scripts\restart.bat</code>（启动新服务）
+</p>
+</div>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">九、新增版本管理文件</h2>
+<table>
+<tr><th>文件</th><th>用途</th></tr>
+<tr><td><code>VERSION</code></td><td class="note">语义化版本号 <code>9.1.0</code>。所有模块/脚本/文档引用此文件作为版本来源。</td></tr>
+<tr><td><code>CHANGELOG.md</code></td><td class="note">版本变更日志。记录 v9.0.0（初始发布）和 v9.1.0（因子v2迭代+命名重整）的全部 Added/Changed/Fixed/Results。</td></tr>
+<tr><td><code>.gitignore</code></td><td class="note">Git 忽略规则：venv/、__pycache__/、logs/、运行态数据文件(metrics/state/signal)。</td></tr>
+</table>
+</div>
+
+<p class="note" style="text-align:center;margin-top:24px">
+Git: <code>main</code> 分支 · Tags: <code>v9.0.0</code> <code>v9.1.0</code> · 3 commits · 40 files renamed · 290+ references updated · 0 dependencies broken
+</p>
+
+</div></body></html>
