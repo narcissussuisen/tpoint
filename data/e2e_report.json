@@ -36,7 +36,7 @@
       "status": "PASS",
       "timestamp": "2026-07-13 12:04:45",
       "detail": {
-        "metrics_file": "v9_metrics.json",
+        "metrics_file": "metrics.json",
         "raw_metrics": {
           "ts": 1783915477.7391307,
           "scan_duration_s": 0.0,

@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
 """甘李药业 603087 — 2026-07-09 真实走势 · 完整 v9 系统运行演练。
-真实模块: datasource/Quotes + v9_indicators + v9_exit_manager（与 monitor_v9 线上同一套）。
+真实模块: datasource/Quotes + indicators + exit_manager（与 monitor 线上同一套）。
 """
 import sys, os, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "core"))
 import numpy as np
 import pandas as pd
 from mootdx.quotes import Quotes
-from v9_indicators import (compute_indicators, detect_signals,
+from indicators import (compute_indicators, detect_signals,
                            K1, K2, VOL_THRESHOLD, MAX_B_DAILY, MAX_S_DAILY)
-from v9_exit_manager import make_config, simulate_day, aggregate_metrics
+from exit_manager import make_config, simulate_day, aggregate_metrics
 
 ROOT = "C:/Users/YZP/WorkBuddy/Claw/tpoint"
 SYM = "603087.SH"
 DAY = "2026-07-09"
 PC_DAY = "2026-07-08"
-COOLDOWN = 120  # 秒，线上 monitor_v9 STATE 冷却（已知配置）
+COOLDOWN = 120  # 秒，线上 monitor STATE 冷却（已知配置）
 EXIT_CFG = make_config(use_stop=False, use_time=False, use_trailing=True,
                        trail_activate_pct=0.4, trail_pct=0.6, s_signal_exit=True)
 
@@ -94,7 +94,7 @@ out = {'sym': SYM, 'day': DAY, 'pc': pc,
        'trend': [int(x) for x in trend], 'vol_ratio': vr.tolist(),
        'times': times, 'signals': sigs, 'trips': trips,
        'cand_b': cand_b, 'cand_s': cand_s}
-json.dump(out, open(os.path.join(ROOT, "data", f"v9_glplay_0709_{DAY}.json"), "w", encoding="utf-8"),
+json.dump(out, open(os.path.join(ROOT, "data", f"playback_gl_0709_{DAY}.json"), "w", encoding="utf-8"),
           ensure_ascii=False, indent=1)
 
 print(f"[data] {DAY} bars={n} 开{o[0]:.2f} 高{h.max():.2f} 低{lo.min():.2f} 收{c[-1]:.2f} PC={pc:.2f}")
@@ -150,7 +150,7 @@ svg = f'''<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" font-fam
 <rect x="{W-140}" y="34" width="14" height="3" fill="#f0caca"/><text x="{W-120}" y="39">下轨 K1·ATR</text>
 <rect x="{W-140}" y="50" width="14" height="3" fill="#c7d4f0"/><text x="{W-120}" y="55">上轨 K1·ATR</text>
 </g></svg>'''
-open(os.path.join(ROOT, "data", f"v9_glplay_0709_chart.svg"), "w", encoding="utf-8").write(svg)
+open(os.path.join(ROOT, "data", f"playback_gl_0709_chart.svg"), "w", encoding="utf-8").write(svg)
 
 # ================= HTML 报告 =================
 def crow(x, is_b):
@@ -185,7 +185,7 @@ svg{{width:100%;height:auto;display:block}}
 .pill{{display:inline-block;padding:2px 10px;border-radius:20px;font-weight:700;font-size:13px}}
 .pill.zero{{background:#eef1f6;color:#6b7585}}</style></head><body><div class="wrap">
 <h1>v9 甘李药业（603087.SH）· 2026-07-09 真实走势完整运行</h1>
-<div class="sub">算法层 v9_indicators + v9_exit_manager（与 monitor_v9 线上同一套）· 数据取自通达信真实行情</div>
+<div class="sub">算法层 indicators + exit_manager（与 monitor 线上同一套）· 数据取自通达信真实行情</div>
 
 <div class="card"><h2>① 当日盘面与系统初始化</h2>
 <div class="kv">
@@ -225,7 +225,7 @@ svg{{width:100%;height:auto;display:block}}
 这验证了系统在无序震荡市中的<b>保守有效性</b>——不制造噪音交易，把做 T 机会留给趋势明确的日子。
 （注：v9 仅提示信号与自动记录持仓，<b>不自动下单</b>，真实买卖由你在交易终端依信号手动执行。）</p>
 </div>
-<p class="note">脚本：<code>tpoint/scripts/v9_glplay_0709.py</code> · 数据：<code>tpoint/data/v9_glplay_0709_{DAY}.json</code> · 图表：<code>tpoint/data/v9_glplay_0709_chart.svg</code></p>
+<p class="note">脚本：<code>tpoint/scripts/playback_gl_0709.py</code> · 数据：<code>tpoint/data/playback_gl_0709_{DAY}.json</code> · 图表：<code>tpoint/data/playback_gl_0709_chart.svg</code></p>
 </div></body></html>'''
-open(os.path.join(ROOT, "docs", f"v9_glplay_0709_report.html"), "w", encoding="utf-8").write(html)
-print("[report] written docs/v9_glplay_0709_report.html")
+open(os.path.join(ROOT, "docs", f"playback_gl_0709_report.html"), "w", encoding="utf-8").write(html)
+print("[report] written docs/playback_gl_0709_report.html")

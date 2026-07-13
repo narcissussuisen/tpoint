@@ -20,32 +20,32 @@ os.chdir(BASE)
 STRUCTURE = {
     'config': ['monitor_config.json', 'requirements.txt'],
     'core': [
-        'monitor_v9.py',
-        'v9_alert_engine.py',
-        'v9_indicators.py',
-        'v9_exit_manager.py',
-        'v9_entry_filter.py',
+        'monitor.py',
+        'alert_engine.py',
+        'indicators.py',
+        'exit_manager.py',
+        'entry_filter.py',
         'datasource.py',
         'feishu_alert.py',
     ],
-    'scripts': ['run_monitor.bat', 'run_engine.bat', 'install_tasks.bat', 'restart_v9.bat'],
+    'scripts': ['run_monitor.bat', 'run_engine.bat', 'install_tasks.bat', 'restart.bat'],
     'backtest': [
-        'backtest_v9.py',
-        'backtest_v9_extended.py',
-        'backtest_exit_manager.py',
-        'tickflow_minute_backtest.py',
-        '_b_diagnostic.py',
-        '_b_strategy_compare.py',
-        'download_tickflow_data.py',
+        'backtest.py',
+        'backtest_extended.py',
+        'backtest_exit.py',
+        'backtest_minute.py',
+        'diagnostic.py',
+        'compare.py',
+        'download_data.py',
         'backtest_data',
     ],
-    'docs': ['v9_deploy.md', 'v9_design.md', 'v9_selftest_report.md'],
-    'tests': ['v9_selftest.py'],
-    'data': ['v9_metrics.json', 'v9_state.json', 'v9_signal.txt'],
+    'docs': ['deploy.md', 'design.md', 'selftest_report.md'],
+    'tests': ['selftest.py'],
+    'data': ['metrics.json', 'state.json', 'signal.txt'],
 }
 
 # Files to delete
-TO_DELETE = ['monitor_v9.py.bak', '__pycache__']
+TO_DELETE = ['monitor.py.bak', '__pycache__']
 
 # Log files currently at root that should be moved to logs/
 ROOT_LOGS = ['monitor_console.log', 'engine_crash.log', 'monitor_crash.log', 'monitor_lifecycle.log']
@@ -108,29 +108,29 @@ def patch_text(path, replacements):
     else:
         print(f'[noop] {path.name}')
 
-# core/monitor_v9.py: BASE_DIR points to tpoint root; data/logs under subfolders
+# core/monitor.py: BASE_DIR points to tpoint root; data/logs under subfolders
 patch_text(
-    BASE / 'core' / 'monitor_v9.py',
+    BASE / 'core' / 'monitor.py',
     [
         ('BASE_DIR = os.path.dirname(os.path.abspath(__file__))',
          'BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))'),
-        ("os.path.join(BASE_DIR, 'v9_signal.txt')", "os.path.join(BASE_DIR, 'data', 'v9_signal.txt')"),
-        ("os.path.join(BASE_DIR, 'v9_state.json')", "os.path.join(BASE_DIR, 'data', 'v9_state.json')"),
-        ("os.path.join(BASE_DIR, 'v9_metrics.json')", "os.path.join(BASE_DIR, 'data', 'v9_metrics.json')"),
+        ("os.path.join(BASE_DIR, 'signal.txt')", "os.path.join(BASE_DIR, 'data', 'signal.txt')"),
+        ("os.path.join(BASE_DIR, 'state.json')", "os.path.join(BASE_DIR, 'data', 'state.json')"),
+        ("os.path.join(BASE_DIR, 'metrics.json')", "os.path.join(BASE_DIR, 'data', 'metrics.json')"),
         ("os.path.join(BASE_DIR, 'monitor_lifecycle.log')", "os.path.join(BASE_DIR, 'logs', 'monitor_lifecycle.log')"),
         ("os.path.join(BASE_DIR, 'monitor_fatal.log')", "os.path.join(BASE_DIR, 'logs', 'monitor_fatal.log')"),
     ]
 )
 
-# core/v9_alert_engine.py: BASE_DIR points to tpoint root; config/data under subfolders
+# core/alert_engine.py: BASE_DIR points to tpoint root; config/data under subfolders
 patch_text(
-    BASE / 'core' / 'v9_alert_engine.py',
+    BASE / 'core' / 'alert_engine.py',
     [
         ('BASE_DIR = os.path.dirname(os.path.abspath(__file__))',
          'BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))'),
         ("os.path.join(BASE_DIR, 'monitor_config.json')", "os.path.join(BASE_DIR, 'config', 'monitor_config.json')"),
-        ("os.path.join(BASE_DIR, m.get('metrics_file', 'v9_metrics.json'))",
-         "os.path.join(BASE_DIR, 'data', m.get('metrics_file', 'v9_metrics.json'))"),
+        ("os.path.join(BASE_DIR, m.get('metrics_file', 'metrics.json'))",
+         "os.path.join(BASE_DIR, 'data', m.get('metrics_file', 'metrics.json'))"),
     ]
 )
 
@@ -142,8 +142,8 @@ patch_text(
 patch_text(
     BASE / 'scripts' / 'run_monitor.bat',
     [
-        ('"monitor_v9.py"', '"core\\monitor_v9.py"'),
-        (' monitor_v9.py ', ' core\\monitor_v9.py '),
+        ('"monitor.py"', '"core\\monitor.py"'),
+        (' monitor.py ', ' core\\monitor.py '),
         ('logs\\logs\\monitor_crash.log', 'logs\\monitor_crash.log'),
         ('monitor_crash.log', 'logs\\monitor_crash.log'),
     ]
@@ -153,8 +153,8 @@ patch_text(
 patch_text(
     BASE / 'scripts' / 'run_engine.bat',
     [
-        ('"v9_alert_engine.py"', '"core\\v9_alert_engine.py"'),
-        (' v9_alert_engine.py ', ' core\\v9_alert_engine.py '),
+        ('"alert_engine.py"', '"core\\alert_engine.py"'),
+        (' alert_engine.py ', ' core\\alert_engine.py '),
         ('logs\\logs\\engine_crash.log', 'logs\\engine_crash.log'),
         ('engine_crash.log', 'logs\\engine_crash.log'),
     ]
@@ -164,13 +164,13 @@ patch_text(
 # 7. Patch backtest / test scripts to import from core/
 # ---------------------------------------------------------------------------
 for script in [
-    'backtest/backtest_v9.py',
-    'backtest/backtest_v9_extended.py',
-    'backtest/backtest_exit_manager.py',
-    'backtest/tickflow_minute_backtest.py',
-    'backtest/_b_diagnostic.py',
-    'backtest/_b_strategy_compare.py',
-    'tests/v9_selftest.py',
+    'backtest/backtest.py',
+    'backtest/backtest_extended.py',
+    'backtest/backtest_exit.py',
+    'backtest/backtest_minute.py',
+    'backtest/diagnostic.py',
+    'backtest/compare.py',
+    'tests/selftest.py',
 ]:
     path = BASE / script
     if path.exists():
@@ -182,9 +182,9 @@ for script in [
             ]
         )
 
-# Special fix for download_tickflow_data.py: it imports from tickflow, which is actually datasource
+# Special fix for download_data.py: it imports from tickflow, which is actually datasource
 patch_text(
-    BASE / 'backtest' / 'download_tickflow_data.py',
+    BASE / 'backtest' / 'download_data.py',
     [
         ("from tickflow import TickFlow", "from datasource import MootdxDataSource as TickFlow"),
     ]
@@ -229,7 +229,7 @@ if not top_readme.exists():
         '- `venv/`      : Python virtual environment\n\n'
         'Quick start (administrator):\n'
         '  scripts\\install_tasks.bat   # register SYSTEM scheduled tasks\n'
-        '  scripts\\restart_v9.bat       # restart services\n',
+        '  scripts\\restart.bat       # restart services\n',
         encoding='utf-8'
     )
     print('[readme] README.md')
@@ -238,9 +238,9 @@ if not top_readme.exists():
 # 10. Compile check
 # ---------------------------------------------------------------------------
 print('\n[compile check]')
-for script in ['core/monitor_v9.py', 'core/v9_alert_engine.py', 'core/v9_indicators.py',
-               'core/v9_exit_manager.py', 'core/v9_entry_filter.py', 'core/datasource.py',
-               'core/feishu_alert.py', 'tests/v9_selftest.py']:
+for script in ['core/monitor.py', 'core/alert_engine.py', 'core/indicators.py',
+               'core/exit_manager.py', 'core/entry_filter.py', 'core/datasource.py',
+               'core/feishu_alert.py', 'tests/selftest.py']:
     path = BASE / script
     if path.exists():
         ret = os.system(f'"{BASE / "venv" / "Scripts" / "python.exe"}" -m py_compile "{path}"')

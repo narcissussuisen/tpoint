@@ -1,11 +1,11 @@
 """
-v9_glplay.py — 甘李药业(603087.SH) 真实代码演练
+playback_gl.py — 甘李药业(603087.SH) 真实代码演练
 两部分:
   A. 真实数据实跑: 用项目真实 datasource 取当日真实分钟数据, 跑真实算法, 看真实信号(可为0)。
   B. 真实代码演示: 用甘李药业真实波动特征构造一条"早盘回踩→拉升→移动止损出场"的
      典型日内路径, 跑同一套真实 v9 算法(check_b_trigger/移动止损/simulate_day),
      完整演示 买入→持仓→卖出 正向T+0 流程。路径为合成, 算法为真实。
-落盘 data/v9_glplay_<date>.json (含 B 演示路径与买卖点, 供可视化)。
+落盘 data/playback_gl_<date>.json (含 B 演示路径与买卖点, 供可视化)。
 """
 import sys, os, json
 from datetime import datetime, timezone, timedelta
@@ -18,8 +18,8 @@ sys.path.insert(0, CORE)
 import numpy as np
 import pandas as pd
 from datasource import MootdxDataSource
-from v9_indicators import compute_indicators, detect_signals, stars, K1, K2
-from v9_exit_manager import make_config, simulate_day, aggregate_metrics
+from indicators import compute_indicators, detect_signals, stars, K1, K2
+from exit_manager import make_config, simulate_day, aggregate_metrics
 
 SYM = "603087.SH"
 NAME = "甘李药业"
@@ -201,7 +201,7 @@ def run_demo():
         "lower_std": (data["vwap"] - K1 * data["atr"]).tolist(),
         "upper_std": (data["vwap"] + K1 * data["atr"]).tolist(),
     }
-    p = os.path.join(ROOT, "data", f"v9_glplay_demo_{TODAY}.json")
+    p = os.path.join(ROOT, "data", f"playback_gl_demo_{TODAY}.json")
     with open(p, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
     print(f"\n[落盘] {p}")

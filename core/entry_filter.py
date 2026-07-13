@@ -17,8 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from v9_indicators import compute_indicators, detect_signals
-from v9_exit_manager import simulate_day, aggregate_metrics, make_config
+from indicators import compute_indicators, detect_signals
+from exit_manager import simulate_day, aggregate_metrics, make_config
 
 TARGETS = {
     '300975.SZ': '商络电子', '601869.SH': '长飞光纤', '603938.SH': '三孚股份',

@@ -7,7 +7,7 @@ v9 算法本地验证 (selftest) — 无需tickflow, 用合成行情验证核心
 import sys, os
 import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'core'))
-from v9_indicators import compute_indicators, detect_signals
+from indicators import compute_indicators, detect_signals
 
 # ========== 合成行情生成 ==========
 
@@ -176,7 +176,7 @@ def run():
     p("=" * 72)
 
     # 写报告文件
-    report_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'v9_selftest_report.md')
+    report_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'selftest_report.md')
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write("# v9 算法本地验证报告\n\n")
         f.write("生成时间: " + __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M') + "\n\n")

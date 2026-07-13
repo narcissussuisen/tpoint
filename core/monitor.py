@@ -7,7 +7,7 @@ T点监控 v9 — VWAP+ATR+趋势过滤+量价确认+情绪温度计
   3. 量价确认(量比+K线形态) → 收敛B误发
   4. 情绪温度计(RSI+涨跌+量比+偏离) → 加权门控
 飞书webhook直推 + 本地文件备份
-算法层见 v9_indicators.py (monitor/backtest/selftest共用)
+算法层见 indicators.py (monitor/backtest/selftest共用)
 """
 import os, sys, json, time, tempfile
 import requests
@@ -16,12 +16,12 @@ import pandas as pd
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datasource import MootdxDataSource as TickFlow
-from v9_indicators import (
+from indicators import (
     compute_indicators, check_b_trigger, check_s_trigger, stars,
     K1, K2, TEMP_HOT, TEMP_COLD,
 )
-# 出场管理：接 v9_exit_manager 的移动止损/硬止损/S信号出场（P0 待办）
-from v9_exit_manager import make_config
+# 出场管理：接 exit_manager 的移动止损/硬止损/S信号出场（P0 待办）
+from exit_manager import make_config
 
 # ========== 路径配置化（跨平台，无需硬编码绝对路径） ==========
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,14 +32,14 @@ def _env_or(name, default):
     return v if v else default
 
 def _load_config_json():
-    """可选：与脚本同目录的 v9_config.json 作为配置兜底（键值覆盖常量）。"""
-    p = os.path.join(BASE_DIR, 'v9_config.json')
+    """可选：与脚本同目录的 config.json 作为配置兜底（键值覆盖常量）。"""
+    p = os.path.join(BASE_DIR, 'config.json')
     if os.path.exists(p):
         try:
             with open(p, encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"  ⚠️ 读取 v9_config.json 失败: {e}")
+            print(f"  ⚠️ 读取 config.json 失败: {e}")
     return {}
 
 _CFG = _load_config_json()
@@ -52,20 +52,20 @@ def _cfg(name, env_name, default):
 
 API_KEY = _cfg('api_key', 'V9_API_KEY', "tk_60a2170efd294c82b2245324a268b2a8")
 CST = timezone(timedelta(hours=8))
-SIGNAL_FILE = _cfg('signal_file', 'V9_SIGNAL_FILE', os.path.join(BASE_DIR, 'data', 'v9_signal.txt'))
-STATE_FILE  = _cfg('state_file',  'V9_STATE_FILE',  os.path.join(BASE_DIR, 'data', 'v9_state.json'))
-METRICS_FILE = _cfg('metrics_file', 'V9_METRICS_FILE', os.path.join(BASE_DIR, 'data', 'v9_metrics.json'))
-PROMPT_FILE = _cfg('prompt_file', 'V9_PROMPT_FILE', os.path.join(BASE_DIR, '..', 'stock-pool', 'prompt-common.md'))
-WEBHOOK_URL = _cfg('webhook_url', 'V9_WEBHOOK_URL', "https://open.feishu.cn/open-apis/bot/v2/hook/a35d7f52-9ed2-47df-a929-f11aaf89025d")
+SIGNAL_FILE = _cfg('signal_file', 'SIGNAL_FILE', os.path.join(BASE_DIR, 'data', 'signal.txt'))
+STATE_FILE  = _cfg('state_file',  'STATE_FILE',  os.path.join(BASE_DIR, 'data', 'state.json'))
+METRICS_FILE = _cfg('metrics_file', 'METRICS_FILE', os.path.join(BASE_DIR, 'data', 'metrics.json'))
+PROMPT_FILE = _cfg('prompt_file', 'TP_PROMPT_FILE', os.path.join(BASE_DIR, '..', 'stock-pool', 'prompt-common.md'))
+WEBHOOK_URL = _cfg('webhook_url', 'TP_WEBHOOK_URL', "https://open.feishu.cn/open-apis/bot/v2/hook/a35d7f52-9ed2-47df-a929-f11aaf89025d")
 # 锁文件放到系统临时目录（跨平台），不再写死 /tmp
-LOCK_FILE = os.path.join(tempfile.gettempdir(), 'monitor_v9.lock')
-PID_FILE  = os.path.join(tempfile.gettempdir(), 'monitor_v9.pid')
+LOCK_FILE = os.path.join(tempfile.gettempdir(), 'tpoint_monitor.lock')
+PID_FILE  = os.path.join(tempfile.gettempdir(), 'tpoint_monitor.pid')
 
 # ========== 出场管理配置（生产方向，已锁定） ==========
 # 仅移动止损：浮盈≥0.4% 激活，从浮动高点回撤 0.6% 触发平仓；关硬止损/时间止损；S信号作自然出场
 EXIT_CFG = make_config(use_stop=False, use_time=False, use_trailing=True,
                        trail_activate_pct=0.4, trail_pct=0.6, s_signal_exit=True)
-# 如需调参（如开硬止损/时间止损），改这里或经 v9_config.json 的 exit_config 传入
+# 如需调参（如开硬止损/时间止损），改这里或经 config.json 的 exit_config 传入
 
 # ========== 跨平台文件锁（Windows 用 msvcrt，Unix 用 fcntl） ==========
 if os.name == 'nt':
@@ -241,7 +241,7 @@ def compute(sym):
     return data
 
 def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name, tag='', exit_reason=''):
-    # 出场管理推送（接 v9_exit_manager）：B开仓后跟踪，TRAIL/S触发平仓提醒
+    # 出场管理推送（接 exit_manager）：B开仓后跟踪，TRAIL/S触发平仓提醒
     if sig_type == 'X':
         reason = f" [{exit_reason}]" if exit_reason else ''
         chg_sign = '+' if chg_pct >= 0 else ''
@@ -290,7 +290,7 @@ def save_state(s):
         json.dump(s, f)
 
 def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
-    """每轮扫描末写入 v9_metrics.json，供告警引擎(watchdog)采集。
+    """每轮扫描末写入 metrics.json，供告警引擎(watchdog)采集。
     包含：扫描耗时 / 本轮信号数 / 本轮错误数 / 最新行情棒时间 / 标的数。失败静默。"""
     try:
         with open(METRICS_FILE, 'w') as f:
@@ -335,9 +335,9 @@ def _mk_exit(reason, name, price, pos, vwap, atr, rsi14, temp, vol_ratio, i):
 
 
 def detect_for(sym, name, data, st):
-    """v9 信号检测 + 出场管理跟踪（接 v9_exit_manager）。
+    """v9 信号检测 + 出场管理跟踪（接 exit_manager）。
 
-    算法判定统一走 v9_indicators.check_*_trigger，与回测/selftest 一致。
+    算法判定统一走 indicators.check_*_trigger，与回测/selftest 一致。
     出场管理：B开仓→移动止损跟踪→S信号/回撤触发平仓并推送 EXIT（单仓位日内T）。
     """
     signals = []

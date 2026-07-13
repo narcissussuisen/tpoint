@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from v9_indicators import compute_indicators, detect_signals
-from v9_exit_manager import simulate_day, aggregate_metrics, make_config
+from indicators import compute_indicators, detect_signals
+from exit_manager import simulate_day, aggregate_metrics, make_config
 
 TARGETS = {
     '300975.SZ': '商络电子', '601869.SH': '长飞光纤', '603938.SH': '三孚股份',
@@ -139,7 +139,7 @@ def main():
         f.write("# v9 出场管理模块回测报告\n\n")
         f.write(f"生成: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n")
         f.write("## 概念\n- 出场管理 ≠ S信号提示。S信号是\"建议出场\"触发器; 出场管理是触发后的执行纪律层(止损/时间/移动多种路径 + S错时怎么办)。\n")
-        f.write("- 本模块叠加在 v9_indicators 的 B/S 信号之上, 管理从B建仓到平仓全过程。\n\n")
+        f.write("- 本模块叠加在 indicators 的 B/S 信号之上, 管理从B建仓到平仓全过程。\n\n")
         f.write("## 方法\n- 数据: tickflow 已落地 1m CSV (7标的×约21交易日), 离线零成本\n")
         f.write("- 单仓位正向T配对: B建仓 → 最近的出场事件(硬止损/S信号/移动止损/时间止损/收盘)\n")
         f.write("- 消融: A_baseline(S_only) / B_+stop / C_+stop+time / D_full\n\n")

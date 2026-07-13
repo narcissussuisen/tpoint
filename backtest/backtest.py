@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 v9 回测脚本 — 部署到openclaw服务器运行, 对比v8/v9命中率
-算法层走 v9_indicators (与monitor_v9/selftest一致)
+算法层走 indicators (与monitor/selftest一致)
 数据源: tickflow (服务器已配置)
-用法: python backtest_v9.py [天数]   默认回测最近5个交易日
+用法: python backtest.py [天数]   默认回测最近5个交易日
 注意: intraday接口对历史日期的支持取决于tickflow实现, 若仅返回当天则回测当日
 """
 import sys, os, json, random
@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from datasource import MootdxDataSource as TickFlow
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'core'))
-from v9_indicators import compute_indicators, detect_signals
+from indicators import compute_indicators, detect_signals
 
 CST = timezone(timedelta(hours=8))
 tf = TickFlow()

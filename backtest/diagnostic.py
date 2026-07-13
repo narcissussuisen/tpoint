@@ -3,7 +3,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'core'))
 import numpy as np
 import pandas as pd
-from v9_indicators import compute_indicators
+from indicators import compute_indicators
 
 TARGETS = {
     '300975.SZ': '商络电子', '601869.SH': '长飞光纤', '603938.SH': '三孚股份',

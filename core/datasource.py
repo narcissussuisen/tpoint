@@ -1,6 +1,6 @@
 """
 datasource.py — mootdx 数据源，替代 tickflow
-接口对齐 tickflow 的 TickFlow，让 monitor_v9/backtest_v9 改动最小。
+接口对齐 tickflow 的 TickFlow，让 monitor/backtest 改动最小。
 数据源：mootdx（通达信 TCP 7709，免费无 Key，秒级实时）
 关键差异 vs tickflow：
   1. symbol 格式：mootdx 用 6 位纯数字（'300975'），tickflow 用 '300975.SZ'
@@ -171,6 +171,6 @@ class MootdxDataSource:
         return self.client.finance(symbol=code, market=market)
 
 
-# 兼容别名：让 monitor_v9 的 `from tickflow import TickFlow` 改为
+# 兼容别名：让 monitor 的 `from tickflow import TickFlow` 改为
 # `from datasource import MootdxDataSource as TickFlow` 即可
 TickFlow = MootdxDataSource

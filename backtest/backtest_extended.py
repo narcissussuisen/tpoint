@@ -10,8 +10,8 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from datasource import MootdxDataSource
-import v9_indicators as V9
-from v9_indicators import compute_indicators, detect_signals
+import indicators as V9
+from indicators import compute_indicators, detect_signals
 
 tf = MootdxDataSource()
 TARGETS = {
@@ -30,7 +30,7 @@ def get_daily_history(sym, count=DAILY_COUNT):
     return df
 
 
-def run_v9_on_daily(sym):
+def run_strategy_on_daily(sym):
     """日K级跑v9, 返回 df/data/sigs"""
     df = get_daily_history(sym)
     if df is None:
@@ -234,7 +234,7 @@ def main():
 
     p(f"\n{'='*70}")
     p("注: 日K级回测, v9分钟级算法降频至日级(VWAP=多日均价/ATR=日波动)")
-    p("   实盘分钟级表现需部署monitor_v9后实盘跟踪验证")
+    p("   实盘分钟级表现需部署monitor后实盘跟踪验证")
     p("=" * 70)
 
     # 写报告

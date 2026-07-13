@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""将 v9_e2e_report.json 的完整步骤详情以 markdown 形式发送到飞书。"""
+"""将 e2e_report.json 的完整步骤详情以 markdown 形式发送到飞书。"""
 import json
 import os
 import sys
@@ -15,7 +15,7 @@ from core import feishu_alert
 
 def main():
     cfg_path = os.path.join(BASE_DIR, 'config', 'monitor_config.json')
-    report_path = os.path.join(BASE_DIR, 'data', 'v9_e2e_report.json')
+    report_path = os.path.join(BASE_DIR, 'data', 'e2e_report.json')
 
     with open(cfg_path, 'r', encoding='utf-8') as f:
         cfg = json.load(f)

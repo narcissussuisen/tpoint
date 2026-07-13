@@ -4,7 +4,7 @@
     "secret": ""
   },
   "monitor": {
-    "metrics_file": "v9_metrics.json",
+    "metrics_file": "metrics.json",
     "poll_interval_s": 15,
     "service_stale_s": 120,
     "max_buffer": 40,
@@ -12,7 +12,7 @@
   },
   "alerts": [
     {
-      "name": "v9 服务中断",
+      "name": "tpoint 服务中断",
       "rule": "service_up",
       "metric": "service_up",
       "op": "==",

@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "core"))
 import numpy as np
 import pandas as pd
 from mootdx.quotes import Quotes
-from v9_indicators import compute_indicators, detect_signals
+from indicators import compute_indicators, detect_signals
 
 ROOT = "C:/Users/YZP/WorkBuddy/Claw/tpoint"
 SYM = "603087.SH"
@@ -190,7 +190,7 @@ for d in DAYS:
                       'times': times,
                       'open': float(c[0]), 'high': float(data['h'].max()),
                       'low': float(data['lo'].min()), 'close': float(c[-1]), 'pc': pc_map[d]}
-json.dump(out, open(os.path.join(ROOT, "data", "v9_factor_v2_grid.json"), "w", encoding="utf-8"),
+json.dump(out, open(os.path.join(ROOT, "data", "factor_v2_grid.json"), "w", encoding="utf-8"),
           ensure_ascii=False, indent=1,
           default=lambda o: o.item() if hasattr(o, 'item') else (o.tolist() if hasattr(o, 'tolist') else str(o)))
-print("\n[ok] 落盘 data/v9_factor_v2_grid.json")
+print("\n[ok] 落盘 data/factor_v2_grid.json")

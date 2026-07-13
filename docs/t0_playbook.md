@@ -1,7 +1,7 @@
 # v9-miji 正向 T+0 操作演练手册
 
-> 适用系统：v9 监控（monitor_v9.py + v9_indicators.py + v9_exit_manager.py）
-> 角色澄清：v9 是 **监控 + 预警 + 持仓跟踪** 系统，**不自动下单**。实际买卖在券商终端手动执行；v9 在 B 信号触发时自动在 `data/v9_state.json` 记录开仓，在 EXIT 触发时自动记录平仓。
+> 适用系统：v9 监控（monitor.py + indicators.py + exit_manager.py）
+> 角色澄清：v9 是 **监控 + 预警 + 持仓跟踪** 系统，**不自动下单**。实际买卖在券商终端手动执行；v9 在 B 信号触发时自动在 `data/state.json` 记录开仓，在 EXIT 触发时自动记录平仓。
 > 前提：正向 T 需你已持有该标的**底仓**。当日逢低买入等量份额，待信号出现后卖出等量份额，保留底仓、赚取日内差价。
 
 ---
@@ -11,9 +11,9 @@
 | 模块 | 路径 / 入口 | 用途 |
 |------|------|------|
 | **飞书预警卡片** | 飞书群 | 主界面。B（🟢买入）/ S（🔴卖出提醒）/ X（🔵EXIT 平仓）三类信号，含价格、星级、RSI、情绪温度、触发原因 |
-| **信号流水** | `data/v9_signal.txt` | 所有信号按时间 append 留存，可回看 |
-| **持仓状态** | `data/v9_state.json` | `pos_{标的}` 记录当前持仓（入场价/持仓高点/触发原因/止损价），跨重启持久化 |
-| **心跳状态** | `data/v9_metrics.json` | 服务存活、扫描耗时、错误数、标的数 |
+| **信号流水** | `data/signal.txt` | 所有信号按时间 append 留存，可回看 |
+| **持仓状态** | `data/state.json` | `pos_{标的}` 记录当前持仓（入场价/持仓高点/触发原因/止损价），跨重启持久化 |
+| **心跳状态** | `data/metrics.json` | 服务存活、扫描耗时、错误数、标的数 |
 | **扫描明细** | `logs/monitor_console.log` | 每标每轮：n（bar数）/未检查/ b_match / s_match / 持仓Y/N |
 | **生命周期** | `logs/monitor_lifecycle.log` | 启动、抢锁、退出记录 |
 | **券商交易终端** | 你自己的交易软件 | 实际下单（买入/卖出），v9 不替代 |
@@ -23,7 +23,7 @@
 ## 1. 买入阶段（B 信号触发）
 
 ### 1.1 买入时机 —— 看飞书 B 卡片
-B 信号由 `v9_indicators.check_b_trigger` 判定，必须**同时满足**：
+B 信号由 `indicators.check_b_trigger` 判定，必须**同时满足**：
 1. `trend[i] == 1`（EMA20 > EMA60 且 ADX > 20，处于上升通道）
 2. 反转形态：**收阳** 或 **长下影 ≥ 0.5·ATR**
 3. 触及下轨：前一根 close/low 戳破 `下轨 = VWAP − K1·ATR`（K1=1.0），当前收回上方 → 原因 `回踩下轨`
@@ -52,14 +52,14 @@ v9 只跟踪，不替你定数量。原则：
 4. 下单 → 成交流水留存。
 
 ### 1.4 系统自动动作
-B 信号触发瞬间，`detect_for` 已在 `v9_state.json` 写入：
+B 信号触发瞬间，`detect_for` 已在 `state.json` 写入：
 ```json
 "pos_300975.SZ": {
   "entry_price": 48.85, "entry_idx": 123,
   "max_fav": 48.85, "entry_reason": "回踩下轨", "stop_price": -1e9
 }
 ```
-> `stop_price = -1e9` 是因为生产 `use_stop=False`（硬止损关闭）。你可在 `data/v9_signal.txt` 看到这条 B 记录。
+> `stop_price = -1e9` 是因为生产 `use_stop=False`（硬止损关闭）。你可在 `data/signal.txt` 看到这条 B 记录。
 
 ---
 
@@ -118,7 +118,7 @@ v9 在持仓中每根 bar 检查两条出场路径：
 4. 成交流水留存 → 本轮正向 T 完成。
 
 ### 3.4 系统自动动作
-EXIT 触发后，`detect_for` 将 `pos_{标的}` 置为 `None`，`v9_state.json` 不再有该标的持仓；`v9_signal.txt` append 一条 X 记录。下一轮扫描该标的回到"空仓可发 B"状态（受冷却与每日上限约束）。
+EXIT 触发后，`detect_for` 将 `pos_{标的}` 置为 `None`，`state.json` 不再有该标的持仓；`signal.txt` append 一条 X 记录。下一轮扫描该标的回到"空仓可发 B"状态（受冷却与每日上限约束）。
 
 ---
 
@@ -127,7 +127,7 @@ EXIT 触发后，`detect_for` 将 `pos_{标的}` 置为 `None`，`v9_state.json`
 > 标的以 `300975.SZ` 演示（实际由你自选，v9 不代选）。假设昨收 PC=50.00，你持有底仓 5000 股。
 
 ### 步骤 1 · 等待 B 信号
-- 时段：下午 13:10，v9 并发扫描中（`data/v9_metrics.json` 显示 `status=running`，`scan_s≈6`）。
+- 时段：下午 13:10，v9 并发扫描中（`data/metrics.json` 显示 `status=running`，`scan_s≈6`）。
 - 飞书弹卡：
   ```
   🟢 300975 BUY ★★☆ [回踩下轨]
@@ -139,7 +139,7 @@ EXIT 触发后，`detect_for` 将 `pos_{标的}` 置为 `None`，`v9_state.json`
 ### 步骤 2 · 执行买入
 - 券商终端：买入 `300975.SZ` **1000 股**，限价 48.85。
 - 关键参数：数量=1000 ≤ 底仓 5000 ✓；占用资金 48,850 ≤ 单标额度 ✓。
-- 系统动作：`v9_state.json` 写入 `pos_300975.SZ`（entry=48.85, max_fav=48.85）。`v9_signal.txt` 追加 B 记录。
+- 系统动作：`state.json` 写入 `pos_300975.SZ`（entry=48.85, max_fav=48.85）。`signal.txt` 追加 B 记录。
 
 ### 步骤 3 · 持仓监控
 - 13:10–13:40 价格震荡上行，最高摸到 49.50。
@@ -159,16 +159,16 @@ EXIT 触发后，`detect_for` 将 `pos_{标的}` 置为 `None`，`v9_state.json`
 ### 步骤 5 · 执行卖出
 - 券商终端：卖出 `300975.SZ` **1000 股**，限价 49.16。
 - 本轮 T 利润 ≈ (49.16 − 48.85) × 1000 = **+310 元**（未计手续费）。
-- 系统动作：`pos_300975.SZ` 清空；`v9_signal.txt` 追加 X 记录。底仓仍为 5000 股，正向 T 完成。
+- 系统动作：`pos_300975.SZ` 清空；`signal.txt` 追加 X 记录。底仓仍为 5000 股，正向 T 完成。
 
 ### 步骤 6 · 复核（建议每次做完核对）
 ```bat
 :: 看信号流水末几行
-tail -n 20 C:\Users\YZP\WorkBuddy\Claw\tpoint\data\v9_signal.txt
+tail -n 20 C:\Users\YZP\WorkBuddy\Claw\tpoint\data\signal.txt
 :: 确认无残留持仓
-type C:\Users\YZP\WorkBuddy\Claw\tpoint\data\v9_state.json
+type C:\Users\YZP\WorkBuddy\Claw\tpoint\data\state.json
 :: 确认心跳健康
-type C:\Users\YZP\WorkBuddy\Claw\tpoint\data\v9_metrics.json
+type C:\Users\YZP\WorkBuddy\Claw\tpoint\data\metrics.json
 ```
 
 ---
@@ -197,4 +197,4 @@ type C:\Users\YZP\WorkBuddy\Claw\tpoint\data\v9_metrics.json
 1. v9 **不自动下单**，EXIT 卡片是提示不是委托，需你手动卖出。
 2. 硬止损、时间止损当前**关闭**，尾盘若仍持仓需自行处理（如 14:55 强平）。
 3. 单仓位模型，持仓中不再发新 B，避免加仓。
-4. 数据源（Mootdx/通达信）若返回 0 行，信号会停摆——`v9_metrics.json` 中 `errors` 上升或 `scan_s` 异常时先查数据源。
+4. 数据源（Mootdx/通达信）若返回 0 行，信号会停摆——`metrics.json` 中 `errors` 上升或 `scan_s` 异常时先查数据源。

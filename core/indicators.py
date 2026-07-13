@@ -1,7 +1,7 @@
 """
 v9 纯算法层 — 指标计算 + 信号触发判定
 无数据源(tickflow)/状态(STATE)依赖, 可独立单元测试。
-monitor_v9 / backtest_v9 / v9_selftest 共用此模块。
+monitor / backtest / selftest 共用此模块。
 """
 import numpy as np
 

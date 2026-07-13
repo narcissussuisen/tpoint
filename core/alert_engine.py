@@ -4,7 +4,7 @@
 v9 监控告警引擎（watchdog sidecar）。
 
 职责：
-  1. 轮询 monitor_v9 写入的 v9_metrics.json，采集关键指标
+  1. 轮询 monitor 写入的 metrics.json，采集关键指标
      - 服务状态：心跳是否新鲜（进程存活/扫描正常）
      - 性能指标：单轮扫描耗时、行情数据延迟
      - 异常检测：信号突增、扫描错误、长时间无新数据
@@ -13,12 +13,12 @@ v9 监控告警引擎（watchdog sidecar）。
   4. 全部阈值/规则/飞书配置均来自 monitor_config.json，可热改
 
 运行：
-  python v9_alert_engine.py                 # 常驻轮询
-  python v9_alert_engine.py --once          # 单次评估后退出（调试）
-  python v9_alert_engine.py --dry-run       # 不真正发请求，仅打印卡片
-  python v9_alert_engine.py --self-test     # 验证卡片渲染 + 模拟触发
+  python alert_engine.py                 # 常驻轮询
+  python alert_engine.py --once          # 单次评估后退出（调试）
+  python alert_engine.py --dry-run       # 不真正发请求，仅打印卡片
+  python alert_engine.py --self-test     # 验证卡片渲染 + 模拟触发
 
-数据来源：monitor_v9 每轮扫描末写入 v9_metrics.json（含 ts/scan_duration_s/
+数据来源：monitor 每轮扫描末写入 metrics.json（含 ts/scan_duration_s/
 signals/errors/last_bar_ts/status）。monitor 崩溃 → 心跳过期 → 触发"服务中断"。
 """
 import os, sys, json, time, argparse
@@ -132,7 +132,7 @@ def evaluate(sample, buffer, now, cfg):
             'value': _fmt(disp_value, rule.get('unit', '')),
             'threshold': _fmt(disp_threshold, rule.get('unit', '')),
             'description': rule['description'],
-            'source': 'v9_alert_engine',
+            'source': 'tpoint_alert_engine',
             '_cooldown_s': rule.get('cooldown_s', 300),
             '_rule_key': rule['rule'],
         })
@@ -160,7 +160,7 @@ def main():
     webhook = cfg.get('feishu', {}).get('webhook_url', '')
     secret = cfg.get('feishu', {}).get('secret', '')
     m = cfg['monitor']
-    metrics_path = os.path.join(BASE_DIR, 'data', m.get('metrics_file', 'v9_metrics.json'))
+    metrics_path = os.path.join(BASE_DIR, 'data', m.get('metrics_file', 'metrics.json'))
     poll = m.get('poll_interval_s', 15)
     dry = args.dry_run or not webhook
 

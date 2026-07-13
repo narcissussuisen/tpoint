@@ -27,7 +27,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - `docs/playback_gl_0709_report.html` — 07-09 full system run report
 
 ### Changed
-- `monitor_v9.py` — concurrent fetch (ThreadPoolExecutor), self-healing lock takeover, pre-market heartbeat
+- `monitor.py` — concurrent fetch (ThreadPoolExecutor), self-healing lock takeover, pre-market heartbeat
 - `config/monitor_config.json` — scan_duration threshold 10s -> 45s; 6 alert rules
 - `scripts/install_tasks.bat` — pure ASCII + CRLF encoding fix
 - `scripts/run_monitor.bat` / `run_engine.bat` — path fix (core/*.py, logs/)

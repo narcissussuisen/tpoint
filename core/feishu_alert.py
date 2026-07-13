@@ -25,7 +25,7 @@ SEVERITY = {
 
 
 def build_card(alert):
-    """构造飞书 interactive 卡片。alert 字段见 v9_alert_engine.evaluate()。"""
+    """构造飞书 interactive 卡片。alert 字段见 tpoint_alert_engine.evaluate()。"""
     sev = alert.get('severity', 'normal')
     tpl = SEVERITY.get(sev, SEVERITY['normal'])
     color, emoji, label = tpl['color'], tpl['emoji'], tpl['label']

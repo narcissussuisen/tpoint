@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """旧v9 vs 新v2 三天真实数据对比报告生成器.
-直接调用 v9_indicators.py 里的 detect_signals 和 detect_signals_v2."""
+直接调用 indicators.py 里的 detect_signals 和 detect_signals_v2."""
 import sys, os, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "core"))
 import numpy as np
 import pandas as pd
 from mootdx.quotes import Quotes
-from v9_indicators import (compute_indicators, detect_signals, detect_signals_v2,
+from indicators import (compute_indicators, detect_signals, detect_signals_v2,
                            K1_V2, K2_V2, M_V2)
 
 ROOT = "C:/Users/YZP/WorkBuddy/Claw/tpoint"
@@ -252,13 +252,13 @@ code{{background:#f0f3f8;padding:1px 6px;border-radius:5px;font-size:12px}}
   旧 v9 在三天真实数据上仅产生 {ot} 个信号、{orr} 个真实（命中率 {orr/ot*100:.0f}%），在 07-09 宽幅震荡日（振幅 4.7%）完全哑火——这是用户提出不及格的核心原因。<br><br>
   新 v2 通过第一性原理重做因子，产生 {nt} 个信号、{nr} 个真实（命中率 {nr/nt*100:.0f}%），在 07-09 抓到 1 个真实 B（+0.61%），在 07-10 抓到 2 个真实 S（-0.39%、-0.49%），在 07-13 下跌日正确空仓（跌日过滤生效）。<br><br>
   关键修复：pc_map bug（把当日收盘当 PC → 跌日过滤失效）是 07-13 假 B 的根因；跨信号冷却避免了同段行情两面抓；RSI 水平门槛+2-bar 收盘确认提升了 S 质量。<br><br>
-  v2 因子已落地 <code>v9_indicators.py</code> 的 <code>detect_signals_v2()</code>，与旧 <code>detect_signals()</code> 共存，可随时切换。
+  v2 因子已落地 <code>indicators.py</code> 的 <code>detect_signals_v2()</code>，与旧 <code>detect_signals()</code> 共存，可随时切换。
   </p>
 </div>
 
 </div></body></html>'''
 
-report_path = os.path.join(ROOT, "docs", "v9_factor_v2_compare.html")
+report_path = os.path.join(ROOT, "docs", "factor_v2_compare.html")
 with open(report_path, "w", encoding="utf-8") as f:
     f.write(html)
 print(f"\n[ok] 报告已生成: {report_path} ({len(html)} bytes)")
@@ -272,7 +272,7 @@ json_data = {
     'new_total': {'signals': nt, 'real': nr, 'hit_rate': nr/nt*100 if nt else 0},
     'params': {'K1_V2': K1_V2, 'K2_V2': K2_V2, 'M_V2': M_V2}
 }
-json_path = os.path.join(ROOT, "data", "v9_factor_v2_compare.json")
+json_path = os.path.join(ROOT, "data", "factor_v2_compare.json")
 with open(json_path, "w", encoding="utf-8") as f:
     json.dump(json_data, f, ensure_ascii=False, indent=1, default=lambda o: o.item() if hasattr(o, 'item') else str(o))
 print(f"[ok] 数据落盘: {json_path}")

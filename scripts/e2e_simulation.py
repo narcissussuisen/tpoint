@@ -46,7 +46,7 @@ def read_config() -> dict:
 
 
 def read_metrics() -> dict:
-    path = os.path.join(BASE_DIR, 'data', 'v9_metrics.json')
+    path = os.path.join(BASE_DIR, 'data', 'metrics.json')
     try:
         with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -88,7 +88,7 @@ def phase_data_collection(cfg: dict) -> dict:
     # 实际读取 monitor 写入的 metrics，并模拟一次指标自检
     m = read_metrics()
     detail = {
-        'metrics_file': cfg.get('monitor', {}).get('metrics_file', 'v9_metrics.json'),
+        'metrics_file': cfg.get('monitor', {}).get('metrics_file', 'metrics.json'),
         'raw_metrics': m,
         'symbols': m.get('symbols', 0),
         'signals': m.get('signals', 0),
@@ -246,7 +246,7 @@ def main():
 
 
 def save_report(report: dict):
-    path = os.path.join(BASE_DIR, 'data', 'v9_e2e_report.json')
+    path = os.path.join(BASE_DIR, 'data', 'e2e_report.json')
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
     print(f"\nReport saved: {path}")
