@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+v9 监控告警引擎（watchdog sidecar）。
+
+职责：
+  1. 轮询 monitor_v9 写入的 v9_metrics.json，采集关键指标
+     - 服务状态：心跳是否新鲜（进程存活/扫描正常）
+     - 性能指标：单轮扫描耗时、行情数据延迟
+     - 异常检测：信号突增、扫描错误、长时间无新数据
+  2. 当指标触发阈值或检测到异常，经飞书 Webhook 发送分级交互卡片
+  3. 卡片按严重等级（普通/警告/严重）使用不同模板
+  4. 全部阈值/规则/飞书配置均来自 monitor_config.json，可热改
+
+运行：
+  python v9_alert_engine.py                 # 常驻轮询
+  python v9_alert_engine.py --once          # 单次评估后退出（调试）
+  python v9_alert_engine.py --dry-run       # 不真正发请求，仅打印卡片
+  python v9_alert_engine.py --self-test     # 验证卡片渲染 + 模拟触发
+
+数据来源：monitor_v9 每轮扫描末写入 v9_metrics.json（含 ts/scan_duration_s/
+signals/errors/last_bar_ts/status）。monitor 崩溃 → 心跳过期 → 触发"服务中断"。
+"""
+import os, sys, json, time, argparse
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from feishu_alert import send as feishu_send
+
+
+def _cfg_path():
+    return os.environ.get('V9_ALERT_CONFIG') or os.path.join(BASE_DIR, 'config', 'monitor_config.json')
+
+
+def load_config(path):
+    with open(path, encoding='utf-8') as f:
+        cfg = json.load(f)
+    # 环境变量覆盖飞书 webhook / secret
+    if os.environ.get('V9_ALERT_WEBHOOK_URL'):
+        cfg.setdefault('feishu', {})['webhook_url'] = os.environ['V9_ALERT_WEBHOOK_URL']
+    if os.environ.get('V9_ALERT_SECRET'):
+        cfg.setdefault('feishu', {})['secret'] = os.environ['V9_ALERT_SECRET']
+    return cfg
+
+
+def read_metrics(path):
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _cmp(op, a, b):
+    if op == '>':  return a > b
+    if op == '>=': return a >= b
+    if op == '<':  return a < b
+    if op == '<=': return a <= b
+    if op == '==': return a == b
+    if op == '!=': return a != b
+    return False
+
+
+def _fmt(v, unit=''):
+    if isinstance(v, bool):
+        return '是' if v else '否'
+    if isinstance(v, float):
+        return f"{v:.2f}{unit}"
+    return f"{v}{unit}"
+
+
+def evaluate(sample, buffer, now, cfg):
+    """返回需要发送的告警 dict 列表（不含冷却判断）。"""
+    m = cfg['monitor']
+    stale = m.get('service_stale_s', 120)
+
+    # ---- 派生指标 ----
+    service_up = bool(sample and (now - sample.get('ts', 0)) <= stale)
+    stale_age = int(now - sample.get('ts', 0)) if sample else None
+    scan_duration_s = sample.get('scan_duration_s') if sample else None
+    last_bar_ts = sample.get('last_bar_ts') if sample else None
+    data_lag_s = (now - last_bar_ts) if (sample and last_bar_ts) else None
+
+    derived = {
+        'service_up': service_up,
+        'scan_duration_s': scan_duration_s,
+        'data_lag_s': data_lag_s,
+        'signals_window': None,
+        'errors_window': None,
+    }
+    # 窗口聚合（信号突增 / 扫描异常）
+    for rule in cfg.get('alerts', []):
+        win = rule.get('window_s')
+        if not win:
+            continue
+        sig_sum = sum(s.get('signals', 0) for s in buffer if now - s.get('ts', 0) <= win)
+        err_sum = sum(s.get('errors', 0) for s in buffer if now - s.get('ts', 0) <= win)
+        if rule['metric'] == 'signals_window':
+            derived['signals_window'] = sig_sum
+        elif rule['metric'] == 'errors_window':
+            derived['errors_window'] = err_sum
+
+    alerts = []
+    for rule in cfg.get('alerts', []):
+        if not rule.get('enabled', True):
+            continue
+        metric = rule['metric']
+        value = derived.get(metric)
+        if value is None:
+            continue
+        # require_up：仅当 monitor 存活（心跳新鲜）时才评估，避免服务中断时
+        # 衍生指标（数据延迟/扫描耗时/窗口聚合）产生冗余告警，根因统一由 service_up 表达
+        if rule.get('require_up') and not service_up:
+            continue
+        threshold = rule['threshold']
+        breach = _cmp(rule['op'], value, threshold)
+        if not breach:
+            continue
+        # 显示文本：service_up 用人类可读文案替代 是/否
+        disp_value = value
+        disp_threshold = threshold
+        if metric == 'service_up':
+            if sample is None:
+                disp_value = '未检测到心跳文件'
+            else:
+                disp_value = f'中断（心跳停滞 {stale_age}s）'
+            disp_threshold = f'需存活（心跳≤{stale}s）'
+        alerts.append({
+            'name': rule['name'],
+            'rule': rule['rule'],
+            'severity': rule['severity'],
+            'trigger_time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now)),
+            'value': _fmt(disp_value, rule.get('unit', '')),
+            'threshold': _fmt(disp_threshold, rule.get('unit', '')),
+            'description': rule['description'],
+            'source': 'v9_alert_engine',
+            '_cooldown_s': rule.get('cooldown_s', 300),
+            '_rule_key': rule['rule'],
+        })
+    return alerts
+
+
+def _trim_buffer(buffer, now, cfg):
+    max_win = max([r.get('window_s', 0) for r in cfg.get('alerts', [])] + [cfg['monitor'].get('service_stale_s', 120)])
+    cap = cfg['monitor'].get('max_buffer', 40)
+    kept = [s for s in buffer if now - s.get('ts', 0) <= max_win]
+    return kept[-cap:]
+
+
+def main():
+    ap = argparse.ArgumentParser(description='v9 监控告警引擎')
+    ap.add_argument('--once', action='store_true', help='单次评估后退出')
+    ap.add_argument('--dry-run', action='store_true', help='不真正发请求，仅打印卡片')
+    ap.add_argument('--self-test', action='store_true', help='验证卡片渲染与规则触发')
+    args = ap.parse_args()
+
+    if args.self_test:
+        return self_test()
+
+    cfg = load_config(_cfg_path())
+    webhook = cfg.get('feishu', {}).get('webhook_url', '')
+    secret = cfg.get('feishu', {}).get('secret', '')
+    m = cfg['monitor']
+    metrics_path = os.path.join(BASE_DIR, 'data', m.get('metrics_file', 'v9_metrics.json'))
+    poll = m.get('poll_interval_s', 15)
+    dry = args.dry_run or not webhook
+
+    print(f"[{time.strftime('%H:%M:%S')}] v9 告警引擎启动 | webhook={'已配置' if webhook else '未配置(dry-run)'} | 轮询={poll}s")
+    buffer = []
+    last_fired = {}
+
+    def run_once():
+        nonlocal buffer
+        now = time.time()
+        sample = read_metrics(metrics_path)
+        if sample:
+            buffer.append(sample)
+        buffer = _trim_buffer(buffer, now, cfg)
+        alerts = evaluate(sample, buffer, now, cfg)
+        for a in alerts:
+            key = a.pop('_rule_key'); cd = a.pop('_cooldown_s')
+            if key in last_fired and (now - last_fired[key]) < cd:
+                continue
+            last_fired[key] = now
+            ok, info = feishu_send(webhook, a, secret=secret, dry_run=dry)
+            print(f"  🔔 [{a['severity']}] {a['name']} | 值={a['value']} 阈值={a['threshold']} | {info}")
+        # 状态日志
+        if sample:
+            age = int(now - sample.get('ts', 0))
+            print(f"  · 心跳年龄={age}s 扫描={sample.get('scan_duration_s')}s 信号={sample.get('signals')} 错误={sample.get('errors')}")
+        else:
+            print(f"  · 未读到 {os.path.basename(metrics_path)}（monitor 未运行？）")
+        return alerts
+
+    if args.once:
+        run_once()
+        return
+
+    while True:
+        try:
+            run_once()
+        except Exception as e:
+            print(f"  ⚠️ 引擎异常: {e}")
+        time.sleep(poll)
+
+
+def self_test():
+    print("===== 1) 三档卡片渲染 =====")
+    for sev in ('normal', 'warning', 'critical'):
+        feishu_send(None, {
+            'name': f'演示告警-{sev}', 'severity': sev,
+            'trigger_time': '2026-07-09 09:30:00', 'value': '12.34 s',
+            'threshold': '10 s', 'description': '用于验证卡片渲染的演示告警。',
+            'rule': 'scan_duration_s', 'source': 'self-test',
+        }, dry_run=True)
+
+    print("\n===== 2) 规则触发模拟（dry-run）=====")
+    cfg = load_config(_cfg_path())
+    now = time.time()
+
+    # 场景 A：服务存活但各项指标劣化（心跳新鲜）
+    sample_a = {
+        'ts': now, 'scan_duration_s': 23.5, 'signals': 9, 'errors': 2,
+        'symbols': 5, 'last_bar_ts': now - 720, 'status': 'running',
+    }
+    buffer_a = [sample_a] * 5  # 5 个采样点 → 窗口内 signals=45, errors=10
+    alerts_a = evaluate(sample_a, buffer_a, now, cfg)
+    print(f"[场景A 服务存活] 触发告警数: {len(alerts_a)}")
+    for a in alerts_a:
+        feishu_send(None, a, dry_run=True)
+
+    # 场景 B：服务中断（心跳过期，超过 service_stale_s）
+    sample_b = {
+        'ts': now - 1000, 'scan_duration_s': 23.5, 'signals': 9, 'errors': 2,
+        'symbols': 5, 'last_bar_ts': now - 1720, 'status': 'running',
+    }
+    # 单点采样即可：require_up 规则因 service_up=False 被抑制，仅 service_up 触发
+    alerts_b = evaluate(sample_b, [sample_b], now, cfg)
+    print(f"\n[场景B 服务中断] 触发告警数: {len(alerts_b)}")
+    for a in alerts_b:
+        feishu_send(None, a, dry_run=True)
+
+    total = len(alerts_a) + len(alerts_b)
+    print(f"\nself-test 完成：共覆盖 {total} 条规则触发。")
+
+
+if __name__ == '__main__':
+    main()

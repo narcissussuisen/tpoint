@@ -1,0 +1,90 @@
+{
+  "title": "v9 监控全链路模拟报告",
+  "start_time": "2026-07-13 12:04:45",
+  "environment": {
+    "base_dir": "C:\\Users\\YZP\\WorkBuddy\\Claw\\tpoint",
+    "hostname": "DESKTOP-K13A204",
+    "timezone": "Asia/Shanghai"
+  },
+  "steps": [
+    {
+      "step_id": "P1",
+      "name": "启动检测",
+      "status": "PASS",
+      "timestamp": "2026-07-13 12:04:45",
+      "detail": {
+        "config_path": "config/monitor_config.json",
+        "webhook_configured": true,
+        "alerts_enabled": true,
+        "metrics": {
+          "ts": 1783915477.7391307,
+          "scan_duration_s": 0.0,
+          "signals": 0,
+          "errors": 0,
+          "symbols": 5,
+          "last_bar_ts": null,
+          "status": "running"
+        },
+        "heartbeat_age_s": 8,
+        "service_status": "running",
+        "cost_ms": 7
+      }
+    },
+    {
+      "step_id": "P2",
+      "name": "数据采集",
+      "status": "PASS",
+      "timestamp": "2026-07-13 12:04:45",
+      "detail": {
+        "metrics_file": "v9_metrics.json",
+        "raw_metrics": {
+          "ts": 1783915477.7391307,
+          "scan_duration_s": 0.0,
+          "signals": 0,
+          "errors": 0,
+          "symbols": 5,
+          "last_bar_ts": null,
+          "status": "running"
+        },
+        "symbols": 5,
+        "signals": 0,
+        "errors": 0,
+        "scan_duration_s": 0.0,
+        "data_lag_s": 0.0,
+        "cost_ms": 0
+      }
+    },
+    {
+      "step_id": "P3",
+      "name": "状态检测",
+      "status": "PASS",
+      "timestamp": "2026-07-13 12:04:45",
+      "detail": {
+        "rules_evaluated": 6,
+        "triggered_count": 0,
+        "triggered_names": []
+      }
+    },
+    {
+      "step_id": "P4",
+      "name": "告警触发/上报",
+      "status": "PASS",
+      "timestamp": "2026-07-13 12:04:45",
+      "detail": {
+        "webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/1d241455-447b-4...",
+        "alerts_sent": 1,
+        "results": [
+          {
+            "alert": "E2E 模拟全部通过",
+            "ok": true,
+            "info": "status=200 code=0 msg=success"
+          }
+        ],
+        "cost_ms": 670
+      }
+    }
+  ],
+  "status": "PASS",
+  "end_time": "2026-07-13 12:04:45",
+  "total_cost_ms": 678
+}

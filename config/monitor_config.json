@@ -1,0 +1,93 @@
+{
+  "feishu": {
+    "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/1d241455-447b-4017-b9a3-4ecb61912369",
+    "secret": ""
+  },
+  "monitor": {
+    "metrics_file": "v9_metrics.json",
+    "poll_interval_s": 15,
+    "service_stale_s": 120,
+    "max_buffer": 40,
+    "enabled": true
+  },
+  "alerts": [
+    {
+      "name": "v9 服务中断",
+      "rule": "service_up",
+      "metric": "service_up",
+      "op": "==",
+      "threshold": false,
+      "severity": "critical",
+      "enabled": true,
+      "cooldown_s": 300,
+      "description": "监控心跳超过阈值未更新，v9 进程可能已退出或卡死"
+    },
+    {
+      "name": "扫描耗时过长",
+      "rule": "scan_duration_s",
+      "metric": "scan_duration_s",
+      "op": ">",
+      "threshold": 45,
+      "unit": "s",
+      "severity": "warning",
+      "require_up": true,
+      "enabled": true,
+      "cooldown_s": 300,
+      "description": "单轮扫描耗时超过 10 秒，可能影响信号实时性"
+    },
+    {
+      "name": "行情数据延迟",
+      "rule": "data_lag_s",
+      "metric": "data_lag_s",
+      "op": ">",
+      "threshold": 300,
+      "unit": "s",
+      "severity": "warning",
+      "require_up": true,
+      "enabled": true,
+      "cooldown_s": 600,
+      "description": "最新行情棒滞后超过 5 分钟，疑似数据源延迟"
+    },
+    {
+      "name": "数据源中断",
+      "rule": "no_new_bar_s",
+      "metric": "data_lag_s",
+      "op": ">",
+      "threshold": 600,
+      "unit": "s",
+      "severity": "critical",
+      "require_up": true,
+      "enabled": true,
+      "cooldown_s": 600,
+      "description": "超过 10 分钟无新行情棒，疑似 mootdx 数据源中断"
+    },
+    {
+      "name": "信号突增",
+      "rule": "signals_window",
+      "metric": "signals_window",
+      "op": ">",
+      "threshold": 20,
+      "unit": "个",
+      "window_s": 300,
+      "severity": "warning",
+      "require_up": true,
+      "enabled": true,
+      "cooldown_s": 600,
+      "description": "5 分钟内信号数突增，可能存在异常波动"
+    },
+    {
+      "name": "扫描异常",
+      "rule": "errors_window",
+      "metric": "errors_window",
+      "op": ">",
+      "threshold": 0,
+      "unit": "次",
+      "window_s": 300,
+      "severity": "critical",
+      "require_up": true,
+      "enabled": true,
+      "cooldown_s": 600,
+      "description": "近 5 分钟出现扫描异常，检查标的 / 网络 / 数据源"
+    }
+  ]
+}
