@@ -11,7 +11,7 @@ datasource.py — mootdx 数据源，替代 tickflow
 import socket
 import pandas as pd
 import numpy as np
-from mootdx.quotes import Quotes
+from mootdx.quotes import Quotes, to_data
 
 # 实测可用的通达信服务器（2026-06 验证，按延迟排序）
 _TDX_SERVERS = [
@@ -76,6 +76,40 @@ def _to_mootdx_sym(sym):
     code = sym.split('.')[0]
     market = 0 if sym.endswith('.SZ') else 1
     return code, market
+
+
+def _align_intraday_bars(df):
+    """统一 mootdx 分钟/5分钟 bar 的列为标准格式。
+
+    返回 DataFrame: trade_time(datetime64), trade_date(str),
+    open, high, low, close, volume。字段缺失时安全兜底。
+    """
+    if df is None or len(df) == 0:
+        return None
+    df = df.copy()
+    # 时间列: mootdx 日内返回 'datetime'(含日期+时间)
+    if 'datetime' in df.columns:
+        dt = pd.to_datetime(df['datetime'])
+    elif {'date', 'time'}.issubset(df.columns):
+        dt = pd.to_datetime(df['date'].astype(str) + ' ' + df['time'].astype(str))
+    elif 'trade_time' in df.columns:
+        dt = pd.to_datetime(df['trade_time'])
+    else:
+        return None
+    df['trade_time'] = dt
+    df['trade_date'] = dt.dt.strftime('%Y-%m-%d')
+    # 价格列兜底
+    for col in ['open', 'high', 'low', 'close']:
+        if col not in df.columns:
+            df[col] = np.nan
+    # 量: mootdx 用 'vol'
+    if 'vol' in df.columns:
+        df['volume'] = df['vol']
+    if 'volume' not in df.columns:
+        df['volume'] = 0.0
+    df['volume'] = pd.to_numeric(df['volume'], errors='coerce').fillna(0.0).clip(lower=0)
+    df = df.sort_values('trade_time').reset_index(drop=True)
+    return df[['trade_time', 'trade_date', 'open', 'high', 'low', 'close', 'volume']]
 
 
 class MootdxDataSource:
@@ -170,7 +204,64 @@ class MootdxDataSource:
         code, market = _to_mootdx_sym(sym)
         return self.client.finance(symbol=code, market=market)
 
+    def get_5m(self, sym, count=240):
+        """5分钟K线 (frequency='5m' -> TDX category 0)。
+
+        复用已发现的服务器(tdx_client)。对齐列到标准格式。
+        返回 DataFrame：trade_time, trade_date, open, high, low, close, volume
+        """
+        code, _ = _to_mootdx_sym(sym)
+        try:
+            df = self.client.bars(symbol=code, frequency='5m', offset=count)
+        except Exception as e:
+            print(f"  ⚠️ mootdx 5mK获取失败 {sym}: {e}, 重连重试")
+            self.reconnect()
+            df = self.client.bars(symbol=code, frequency='5m', offset=count)
+        return _align_intraday_bars(df)
+
+    def get_index_5m(self, sym, count=240, market=None):
+        """5分钟指数K线。sym 为6位指数代码(如 '000300')。
+
+        market: 0=深 1=沪; 不传则按 mootdx 前缀规则推导
+        ('00'/'88'/'99'->深, 其余->沪)。
+        兜底: 若默认市场取空(如 000300/999999 实际属沪却被推成深),
+        自动尝试对侧市场, 避免市场错配导致空数据。
+        返回 DataFrame：trade_time, trade_date, open, high, low, close, volume
+        """
+        code, _ = _to_mootdx_sym(sym)
+        # 优先用调用方显式市场(底层 get_index_bars 直连, 绕过 mootdx 前缀推导)
+        if market is not None:
+            try:
+                raw = self.client.get_index_bars(0, int(market), str(code), 0, count)
+                df = to_data(raw, symbol=code)
+                df = _align_intraday_bars(df)
+                if df is not None and len(df) > 0:
+                    return df
+            except Exception as e:
+                print(f"  ⚠️ mootdx 指数5m(显式市场 mk={market})获取失败 {sym}: {e}")
+        # 其次走 mootdx 默认前缀推导
+        try:
+            df = self.client.index_bars(symbol=code, frequency='5m', offset=count)
+            df = _align_intraday_bars(df)
+            if df is not None and len(df) > 0:
+                return df
+        except Exception as e:
+            print(f"  ⚠️ mootdx 指数5m(默认市场)获取失败 {sym}: {e}")
+        # 兜底: 尝试对侧市场
+        other = 1 - int(market) if market is not None else None
+        if other is not None:
+            try:
+                raw = self.client.get_index_bars(0, int(other), str(code), 0, count)
+                df = to_data(raw, symbol=code)
+                df = _align_intraday_bars(df)
+                if df is not None and len(df) > 0:
+                    return df
+            except Exception:
+                pass
+        return None
+
 
 # 兼容别名：让 monitor 的 `from tickflow import TickFlow` 改为
 # `from datasource import MootdxDataSource as TickFlow` 即可
 TickFlow = MootdxDataSource
+

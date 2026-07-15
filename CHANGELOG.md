@@ -6,6 +6,28 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.1.1] - 2026-07-15
+
+### Added
+- `core/miji_alpha.py` — `detect_miji_signals_5m_index()`：5分钟K线形态 + 大盘指数 双重确认
+  - 复用 v9.1.0 底座（`compute_miji_indicators` / `detect_miji_signals` / `compute_trend`），不改动任何既有函数
+  - 最终 B = (三因子共振候选B) 且 (指数买入伴随条件：趋势多头 且 当日跌幅 > -1.5%)
+  - 最终 S = (三因子共振候选S) 且 (指数卖出伴随条件：非"强多头+当日下跌"情境)
+  - `index_buy_at()` / `index_sell_at()` 纯函数门控（可单测）
+  - `check_miji_trigger_5m_index()` 单bar实时触发（供 monitor 调用）
+  - 参数：`IDX_MA_FAST=5` / `IDX_MA_SLOW=20` / `IDX_BUY_DAY_CHG_MIN=-0.015` / `IDX_SELL_DAY_CHG_MIN=0.010`（初始启发式，未优化）
+- `core/datasource.py` — `MootdxDataSource.get_5m()` / `get_index_5m()`：5分钟K线 + 5分钟指数K线
+  - 复用现有服务器发现与字段对齐；指数支持显式 `market` 参数 + 对侧市场兜底（规避 000300/999999 市场错配）
+
+### Changed
+- 版本号 `9.1.0` → `9.1.1`
+
+### Notes
+- 5分钟/指数数据门控为**信号逻辑层**新增；分钟级回测属本工程范围外（见 lab 规范），需经实盘或独立分钟回测框架验证
+- 指数伴随条件阈值为初始启发式，未做样本外/跨regime 稳健性检验
+
+---
+
 ## [9.1.0] - 2026-07-13
 
 ### Added
