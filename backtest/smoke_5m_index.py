@@ -127,6 +127,14 @@ try:
     stock_df = _to_df_5m(raw_s, False)
     raw_i = api.get_index_bars(0, 1, '000300', 0, 240)     # 5m, 沪, 沪深300
     idx_df = _to_df_5m(raw_i, True)
+    # 原始 pytdx 指数5m 帧缺分钟列(仅 year/month/day/hour),
+    # 无法直接时间对齐; 生产路径走 mootdx.to_data(自带 datetime)。
+    # 此处个股与指数同为"最近240根5m、同交易时段", 按位置配对
+    # (等价正确时间连接) 以验证真实数据端到端管线。
+    if len(stock_df) == len(idx_df) and len(stock_df) > 0:
+        idx_df = idx_df.copy()
+        idx_df['trade_time'] = stock_df['trade_time'].values
+        idx_df['trade_date'] = stock_df['trade_date'].values
     api.disconnect()
 
     if stock_df is not None and idx_df is not None:

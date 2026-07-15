@@ -612,8 +612,10 @@ def detect_miji_signals_5m_index(sym, index_sym='000300', index_market=1, count=
 
     # --- 大盘指数伴随确认 ---
     idx_c = merged['idx_close'].values.astype(float)
+    # 指数日涨跌幅必须用"指数昨收", 不可用个股 pc_map(否则数量级错配)
+    idx_pc_map = _prev_close_map(dates, idx_c)
     idx_trend = compute_trend(idx_c, IDX_MA_FAST, IDX_MA_SLOW)
-    final = _gate_signals_by_index(cand, idx_c, idx_trend, pc_map, dates)
+    final = _gate_signals_by_index(cand, idx_c, idx_trend, idx_pc_map, dates)
 
     meta.update({'ok': True, 'n_merged': len(merged),
                  'n_cand': len(cand), 'n_final': len(final)})
