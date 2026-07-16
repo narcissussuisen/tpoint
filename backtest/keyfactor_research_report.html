@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tpoint 关键因子研究 · 结论与优化报告 (miji v9.1.0)</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#1f2329; --sub:#646a73;
+    --line:#e5e6eb; --pos:#1f9d55; --neg:#d4380d; --accent:#2f6fed;
+    --warn:#ad6800; --chip:#eef2ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,Roboto,sans-serif;
+    line-height:1.65;font-size:15px}
+  .wrap{max-width:920px;margin:0 auto;padding:32px 20px 60px}
+  h1{font-size:23px;margin:0 0 4px;letter-spacing:.3px}
+  .meta{color:var(--sub);font-size:13px;margin-bottom:22px}
+  .verdict{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--neg);
+    border-radius:10px;padding:16px 18px;margin-bottom:22px}
+  .verdict b{color:var(--neg)}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:26px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .kpi .n{font-size:22px;font-weight:700}
+  .kpi .l{color:var(--sub);font-size:12.5px;margin-top:2px}
+  .neg{color:var(--neg)} .pos{color:var(--pos)} .warn{color:var(--warn)}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:20px 22px;margin-bottom:20px}
+  h2{font-size:18px;margin:0 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:15px;margin:18px 0 6px;color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:10px 0}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#fafbfc;color:var(--sub);font-weight:600}
+  .tag{display:inline-block;background:var(--chip);color:var(--accent);
+    border-radius:6px;padding:1px 8px;font-size:12px;font-weight:600;margin-right:4px}
+  ul{margin:8px 0;padding-left:20px} li{margin:5px 0}
+  .note{font-size:12.5px;color:var(--sub);margin-top:10px}
+  .prio{font-weight:700}
+  footer{color:var(--sub);font-size:12px;margin-top:30px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>tpoint 关键因子研究 · 结论与优化报告</h1>
+  <div class="meta">miji v9.1.0 ｜ 样本 333 只 A 股（分层抽样）× 1 个月 1 分钟数据 ｜ 生成于 2026-07-16</div>
+
+  <div class="verdict">
+    <b>可靠性结论：当前 v9.1.0 默认配置尚不具备上线条件。</b>
+    组合信号符号调整前向收益 skill24 = <b class="neg">-2.44%</b>（即当前默认组合在样本内亏钱）。
+    但研究已定位瓶颈——问题不在信号框架，而在<b>因子组合方向</b>：MACD 背离、量价背离为<b class="neg">负贡献</b>，
+    引力为<b class="pos">唯一正向因子</b>。移除最大负贡献因子或下调 RESONANCE 阈值，即可把 skill24 拉回正值，
+    说明存在明确、低成本的上线路径，但仍需样本外验证后方可真上线。
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="n">333</div><div class="l">有效样本（只）</div></div>
+    <div class="kpi"><div class="n">7,992</div><div class="l">基线信号数</div></div>
+    <div class="kpi"><div class="n neg">-2.44%</div><div class="l">基线 skill24（默认 RESONANCE=2.0）</div></div>
+    <div class="kpi"><div class="n pos">+1.95%</div><div class="l">移除 macd_div 后 skill24</div></div>
+  </div>
+
+  <section>
+    <h2>一、可靠性评估</h2>
+
+    <h3>1.1 性能表现（信号质量）</h3>
+    <ul>
+      <li>默认组合（RESONANCE=2.0）：skill6=<span class="pos">+0.36%</span>、skill12=<span class="neg">-0.18%</span>、skill24=<span class="neg">-2.44%</span>。
+          越长的持有窗口越亏，说明信号对「拿得住」的回合帮助为负。</li>
+      <li>因子消融（移除某因子后的 skill24 变化，正=该因子有益）：
+        <ul>
+          <li>移除 <b>macd_div（分时MACD背离）</b> → skill24 升至 <span class="pos">+1.95%</span>（贡献 <span class="neg">-4.39pp</span>，最大拖累）</li>
+          <li>移除 <b>vol_div（量价背离）</b> → skill24 升至 <span class="pos">-0.29%</span>（贡献 <span class="neg">-2.15pp</span>，次拖累）</li>
+          <li>移除 <b>gravity（引力）</b> → skill24 跌至 <span class="neg">-4.24%</span>（贡献 <span class="pos">+1.80pp</span>，唯一正向）</li>
+        </ul>
+      </li>
+      <li>边际分析印证：gravity 开启时 skill24=<span class="pos">-0.63%</span> vs 关闭 <span class="neg">-7.70%</span>；
+          macd_div 开启 <span class="neg">-4.79%</span> vs 关闭 <span class="pos">+1.71%</span>。</li>
+    </ul>
+
+    <h3>1.2 稳定性</h3>
+    <ul>
+      <li><b>方向自相矛盾</b>：三因子中两因子（MACD背离、量价背离）在样本内为负贡献，仅引力为正。
+          组合逻辑对「背离=机会」的直觉在实测中反向，提示实现或符号可能存在错误，组合稳健性存疑。</li>
+      <li><b>阈值未校准</b>：VWAP_DEV / VOL_EXPAND / VOL_SHRINK 三档阈值扫描结果全部为负且 summary 标记为 <code>NaN</code>，
+          即门控阈值从未收敛，当前出场/门槛门控不可靠。</li>
+      <li><b>稀疏性</b>：7,992 信号 ÷ 333 只 ÷ ~21 交易日 ≈ 每只每月 24 个信号，密度中等但绝大多数为负期望，需靠胜率/盈亏比而非频次盈利。</li>
+    </ul>
+
+    <h3>1.3 已知风险点</h3>
+    <ul>
+      <li><b>R1 上线即亏</b>：默认配置 skill24=-2.44%，直接实盘预计稳定亏损。</li>
+      <li><b>R2 过拟合</b>：最优配置（移除 macd_div / RESONANCE=1.0）均在同一 333 样本内寻得，缺少样本外验证，泛化性未证。</li>
+      <li><b>R3 数据偏差</b>：800 候选中 467 只死码被剔除，有效 333 只；仅覆盖全市场 ~8%，且仅为 1 个月窗口，未跨牛熊/跨月验证。</li>
+      <li><b>R4 因子实现风险</b>：背离类因子方向整体为负，需先排查是否计算/符号错误，而非简单「移除」。</li>
+      <li><b>R5 门控真空</b>：VWAP/EXPAND/SHRINK 阈值未定，任何依赖这些参数的出场/入场门控都缺乏依据。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>二、优化方向（按优先级，紧扣 miji 核心信号质量）</h2>
+    <p class="note">原则：所有优化均围绕「miji 核心因子组合与阈值」展开，不引入新功能、不偏离做T信号主旨。</p>
+
+    <table>
+      <thead>
+        <tr><th style="width:54px">优先级</th><th style="width:210px">优化项</th><th>具体动作</th><th style="width:170px">预期收益</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="prio">P0</td>
+          <td><span class="tag">核心</span>重审 macd_div（分时MACD背离）</td>
+          <td>当前最大负贡献（-4.39pp）。先排查计算/符号是否错误；若确认方向为负，移除或反转其权重。</td>
+          <td>skill24 由 -2.44% → <span class="pos">+1.95%</span>（<b>+4.4pp</b>，最高杠杆）</td>
+        </tr>
+        <tr>
+          <td class="prio">P1</td>
+          <td><span class="tag">低风</span>下调 RESONANCE 阈值至 1.0</td>
+          <td>默认 2.0（=-2.44%）→ 1.0（=<span class="pos">+0.15%</span>）。改动小、可逆、立即生效。</td>
+          <td>skill24 <b>+2.6pp</b> 至 breakeven 上方</td>
+        </tr>
+        <tr>
+          <td class="prio">P2</td>
+          <td><span class="tag">核心</span>重审 vol_div（量价背离）</td>
+          <td>第二负贡献（-2.15pp）。同 P0 先排查实现，再决定降级/移除。</td>
+          <td>skill24 由 -2.44% → <span class="pos">-0.29%</span>（<b>+2.15pp</b>，近 breakeven）</td>
+        </tr>
+        <tr>
+          <td class="prio">P3</td>
+          <td><span class="tag">增益</span>强化 gravity（引力）</td>
+          <td>唯一正向因子（+1.80pp；边际 on/off 差达 7pp）。增大权重或降低激活门槛，放大其贡献。</td>
+          <td>若充分利用，潜在 <b>+1.8pp</b> 增益</td>
+        </tr>
+        <tr>
+          <td class="prio">P4</td>
+          <td><span class="tag">门控</span>校准 VWAP_DEV / VOL_EXPAND / VOL_SHRINK</td>
+          <td>当前 NaN（扫描全负未收敛）。换扫描方法或补充数据，使门控阈值有据可依。</td>
+          <td>消除 R5 门控真空，提升出场/门槛可靠性</td>
+        </tr>
+        <tr>
+          <td class="prio">P5</td>
+          <td><span class="tag">验证</span>样本外 + 更长窗口验证</td>
+          <td>用跨月/跨牛熊数据复跑 P0–P3 最优配置，确认非过拟合后再上线。</td>
+          <td>解除 R2/R3，给出可上线依据</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>落地建议（不偏离核心目标）</h3>
+    <ul>
+      <li><b>最短路径上线</b>：先做 P1（RESONANCE=1.0，零风险）+ 待 P0/P2 排查后决定因子取舍，可先把 skill24 拉到 ~0 附近。</li>
+      <li><b>禁止发散</b>：优化仅限「因子权重/方向/阈值」，不新增指标、不接外部信号、不动出场止损框架（trail 已锁定）。</li>
+      <li><b>门控补齐后再谈 v9.1.1</b>：P4 完成前，指数门控（v9.1.1-index-gating）缺乏可靠阈值基础，维持冻结。</li>
+    </ul>
+  </section>
+
+  <div class="note">
+    数据来源：<code>backtest/keyfactor_data/keyfactor_summary.json</code> 与 <code>keyfactor_results.csv</code>
+    （Phase3 归因 / Phase4 消融 / Phase5 阈值扫描，n=333，1 分钟数据）。
+    正向收益以「符号调整前向收益（skill）」衡量，已剔除个股趋势干扰。
+  </div>
+
+  <footer>tpoint · miji v9.1.0 关键因子归因研究 · 自动化播报已按完成状态取消</footer>
+</div>
+</body>
+</html>
