@@ -1,0 +1,96 @@
+{
+  "n_symbols": 400,
+  "n_signals_baseline": 237736,
+  "baseline_skill": {
+    "6": 0.03722105444723978,
+    "12": 0.0345312819779184,
+    "24": 0.029596051202613168
+  },
+  "ablation": {
+    "all": {
+      "n": 237736,
+      "skill": {
+        "6": 0.03722105444723978,
+        "12": 0.0345312819779184,
+        "24": 0.029596051202613168
+      }
+    },
+    "no_gravity": {
+      "n": 0,
+      "skill": {
+        "6": 0.0,
+        "12": 0.0,
+        "24": 0.0
+      }
+    },
+    "no_vol_div": {
+      "n": 237736,
+      "skill": {
+        "6": 0.03722105444723978,
+        "12": 0.0345312819779184,
+        "24": 0.029596051202613168
+      }
+    },
+    "no_macd_div": {
+      "n": 0,
+      "skill": {
+        "6": 0.0,
+        "12": 0.0,
+        "24": 0.0
+      }
+    }
+  },
+  "factor_importance_drop_skill24": {
+    "gravity": 0.0296,
+    "vol_div": 0.0,
+    "macd_div": 0.0296
+  },
+  "factor_ranking": [
+    "gravity",
+    "macd_div",
+    "vol_div"
+  ],
+  "marginal_24": {
+    "g": {
+      "n_on": 237566,
+      "n_off": 0,
+      "skill24_on": 0.029596051202613168,
+      "skill24_off": null
+    },
+    "vd": {
+      "n_on": 0,
+      "n_off": 237566,
+      "skill24_on": null,
+      "skill24_off": 0.029596051202613168
+    },
+    "md": {
+      "n_on": 237566,
+      "n_off": 0,
+      "skill24_on": 0.029596051202613168,
+      "skill24_off": null
+    }
+  },
+  "threshold_sweep_best": {
+    "vwap_best": {
+      "VWAP_DEV": 0.6,
+      "VOL_EXPAND": 1.1,
+      "VOL_SHRINK": 0.7,
+      "n": 237736.0,
+      "skill6": 0.03722105444723978,
+      "skill12": 0.0345312819779184,
+      "skill24": 0.029596051202613168,
+      "RESONANCE": NaN
+    },
+    "resonance_best": {
+      "VWAP_DEV": NaN,
+      "VOL_EXPAND": NaN,
+      "VOL_SHRINK": NaN,
+      "n": 237736.0,
+      "skill6": 0.03722105444723978,
+      "skill12": 0.0345312819779184,
+      "skill24": 0.029596051202613168,
+      "RESONANCE": 2.0
+    }
+  },
+  "seedtest": false
+}

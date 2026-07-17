@@ -343,6 +343,9 @@ def detect_signals_v2(data, pc, start_idx=2, max_b=MAX_B_DAILY, max_s=MAX_S_DAIL
                              'vol_ratio': round(float(vr[i]), 2)})
                 s_last = i; sc += 1
     return sigs
+
+
+def stars(sig_type, temp_val, vol_ratio_val):
     """星级: B越冷越强, S越热越强; 量比越大越强."""
     if sig_type == 'B':
         t_score = 3 if temp_val < 30 else (2 if temp_val < 45 else 1)

@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8">
+    <title>B决策复核</title><style>
+    body{font-family:-apple-system,Segoe UI,Roboto,'Microsoft YaHei',sans-serif;margin:24px;color:#1f2328;}
+    h1{font-size:20px;} h2{font-size:15px;margin-top:20px;color:#0969da;}
+    table{border-collapse:collapse;width:100%;font-size:13px;margin-top:6px;}
+    th,td{border:1px solid #d0d7de;padding:6px 10px;text-align:left;}
+    tr:nth-child(even){background:#f6f8fa;}
+    </style></head><body>
+    <h1>B 决策复核 · 逐日修正验证</h1><h2>① 全样本 baseline</h2><table><tr><td>信号数</td><td>237736</td><td>7814</td></tr><tr><td>skill6</td><td>+3.7221%</td><td>+1.4431%</td></tr><tr><td>skill12</td><td>+3.4531%</td><td>+2.7924%</td></tr><tr><td>skill24</td><td>+2.9596%</td><td>+2.7664%</td></tr></table><h2>② 因子重要性 (关掉后 skill24 变化)</h2><table><tr><td>gravity</td><td>+2.9600%</td><td>+11.9470%</td></tr><tr><td>vol_div</td><td>+0.0000%</td><td>-1.4930%</td></tr><tr><td>macd_div</td><td>+2.9600%</td><td>+0.8170%</td></tr><tr><td>排序</td><td>['gravity', 'macd_div', 'vol_div']</td><td>['gravity', 'vol_div', 'macd_div']</td></tr></table><h2>③ 跨时段样本外 OOS</h2><table><tr><td>训练 skill24</td><td>+2.2300%</td><td>—</td></tr><tr><td>跨时段OOS skill24</td><td>-0.3500%</td><td>—</td></tr><tr><td>OOS正向票占比</td><td>0.555</td><td>—</td></tr><tr><td>delta(OOS-train)</td><td>-2.5800%</td><td>—</td></tr><tr><td>n_stocks</td><td>400</td><td>—</td></tr></table><h2>④ 判定</h2>
+    <div style="padding:12px;border-radius:8px;background:#b58105;color:#fff;font-size:15px;font-weight:600;">🟡 核心结论成立但跨时段OOS未通过：v9.1.0 维持冻结；P0-P5 日内语义已确认有效。</div>
+    <p style="color:#666;font-size:12px;">生成: 2026-07-17 23:36:41 ｜ 旧 headline +4.89%(in)/+4.93%(out) 来自「按标的切分」OOS, 与本处指标非同一口径, 仅作方向/量级参照。</p></body></html>

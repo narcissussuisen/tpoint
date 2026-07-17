@@ -542,12 +542,18 @@ def run():
         afternoon = t >= t.replace(hour=13, minute=0) and t <= t.replace(hour=15, minute=1)
         in_session = morning or afternoon
         if not in_session:
+            # 盘前/午休/收盘后：持续写心跳，表明进程存活。
+            # 消除飞书"未检测到心跳/服务中断"在非交易时段误报；
+            # 真实崩溃仍由心跳停滞(>service_stale_s)触发，语义不变。
             if t > t.replace(hour=15, minute=1):
-                _log_event('EXIT market close')
+                _log_event('post-close keepalive (heartbeat only, no scan)')
+            try:
                 save_state(st)
-                print(f"[{now.strftime('%H:%M:%S')}] 📴 收盘退出")
-                sys.exit(0)
-            # 盘前/午休：仍持续写心跳，表明进程存活（消除飞书"未检测到心跳"盘前误报）
+                write_metrics(0.0, 0, 0, 0, len(TARGETS))
+            except Exception:
+                pass
+            time.sleep(30)
+            continue
             try:
                 write_metrics(0.0, 0, 0, 0, len(TARGETS))
             except Exception:
