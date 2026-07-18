@@ -149,7 +149,7 @@ if not TARGETS:
 _EXCLUDE = {'920222.BJ', '920222.SZ'}
 TARGETS = {k: v for k, v in TARGETS.items() if k not in _EXCLUDE}
 
-tf = TickFlow()
+tf = None  # lazy init: instantiated on first trading day inside run()
 
 # ========== 全局状态 ==========
 STATE = {sym: {'PC': 0, 'WARM': None} for sym in TARGETS}
@@ -179,9 +179,6 @@ def refresh_daily(sym=None):
         return STATE[syms[0]]['PC'], STATE[syms[0]]['WARM']
     return None
 
-refresh_daily()
-for sym, name in TARGETS.items():
-    print(f"  {name}({sym}) PC={STATE[sym]['PC']:.2f}")
 
 def now_ts():
     return datetime.now(CST).timestamp()
