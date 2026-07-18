@@ -296,6 +296,7 @@ def detect_miji_signals(data, pc, start_idx=2,
                         max_b=MAX_B_DAILY, max_s=MAX_S_DAILY,
                         min_resonance=RESONANCE_THRESHOLD,
                         b_trend_filter=False, allow_reverse=True,
+                        require_macd=False,
                         enable=(True, True, True)):
     """做T秘籍三因子共振信号检测
 
@@ -352,7 +353,8 @@ def detect_miji_signals(data, pc, start_idx=2,
             if not (b_trend_filter and trend is not None and trend[i] == -1 and not reversed_exempt):
                 buy_factors = {'gravity': g_factor, 'vol_div': v_factor, 'macd_div': m_factor}
                 buy_score = sum(1 for f in buy_factors.values() if f == 1)
-                if buy_score >= min_resonance:
+                buy_pass = (m_factor == 1) if require_macd else (buy_score >= min_resonance)
+                if buy_pass:
                     details = []
                     if g_factor == 1: details.append(f'均线引力(dev={g_dev:.2f}%)')
                     if v_factor == 1: details.append(f'量价{v_detail}')
@@ -376,7 +378,8 @@ def detect_miji_signals(data, pc, start_idx=2,
         if sc < max_s and (i - s_last) >= SIGNAL_GAP and (i - b_last) >= SIGNAL_GAP:
             sell_factors = {'gravity': g_factor, 'vol_div': v_factor, 'macd_div': m_factor}
             sell_score = sum(1 for f in sell_factors.values() if f == -1)
-            if sell_score >= min_resonance:
+            sell_pass = (m_factor == -1) if require_macd else (sell_score >= min_resonance)
+            if sell_pass:
                 details = []
                 if g_factor == -1: details.append(f'均线引力(dev={g_dev:.2f}%)')
                 if v_factor == -1: details.append(f'量价{v_detail}')

@@ -268,6 +268,43 @@ def macd_divergence_signal(h, lo, c, dif, dea, hist, i, w=LOCAL_W):
 
 # ========== 统一指标计算 ==========
 
+# 温度(temp)复合分量权重 + 周期 (与 indicators.py 一致, 供 monitor stars/level_val 用)
+W_RSI, W_CHG, W_VR, W_DEV = 0.4, 0.2, 0.2, 0.2
+RSI_PERIOD = 14
+VOL_LOOKBACK = 20
+
+
+def compute_rsi(c, period=RSI_PERIOD):
+    """RSI(14) Wilder (从 indicators.py 拷入, 供 monitor temp/stars)."""
+    c = np.asarray(c, dtype=float)
+    n = len(c)
+    dlt = np.diff(c, prepend=c[0])
+    g = np.where(dlt > 0, dlt, 0.0)
+    l_arr = np.where(dlt < 0, -dlt, 0.0)
+    ag = np.zeros(n); al = np.zeros(n)
+    if n > period:
+        ag[period] = g[1:period+1].mean()
+        al[period] = l_arr[1:period+1].mean()
+        for i in range(period+1, n):
+            ag[i] = (ag[i-1] * (period-1) + g[i]) / period
+            al[i] = (al[i-1] * (period-1) + l_arr[i]) / period
+    rsi = np.where(al > 0, 100 - 100 / (1 + ag / np.where(al == 0, 1, al)), 50)
+    return rsi
+
+
+def compute_vol_ratio(v, lookback=VOL_LOOKBACK):
+    """量比 = 当前量 / 过去lookback bar均量 (从 indicators.py 拷入)."""
+    n = len(v) if v is not None else 0
+    vr = np.ones(max(n, 1))
+    if v is None:
+        return vr
+    v = np.asarray(v, dtype=float)
+    for i in range(lookback, n):
+        avg = v[i-lookback:i].mean()
+        vr[i] = v[i] / avg if avg > 0 else 1.0
+    return vr
+
+
 def compute_miji_indicators(o, h, lo, c, v, pc, has_vol=True):
     """计算做T秘籍全部指标, 返回data dict.
 
@@ -281,13 +318,24 @@ def compute_miji_indicators(o, h, lo, c, v, pc, has_vol=True):
     vwap = compute_vwap(h, lo, c, v if real_vol else None)
     atr = compute_atr(h, lo, c)
     dif, dea, hist = compute_macd(c)
+    trend = compute_trend(c)
+    # monitor 兼容字段 (与 indicators.py 口径一致): rsi / vol_ratio / temp
+    rsi = compute_rsi(c)
+    vol_ratio = compute_vol_ratio(v if real_vol else None)
+    chg_pct = (c - pc) / pc * 100 if pc > 0 else np.zeros(n)
+    chg_comp = np.clip((chg_pct + 5) / 10.0 * 100, 0, 100)
+    vr_comp = np.clip(vol_ratio / 3.0 * 100, 0, 100)
+    dev_pct = np.where(vwap > 0, (c - vwap) / vwap * 100, 0)
+    dev_comp = np.clip((dev_pct + 2) / 4.0 * 100, 0, 100)
+    temp = np.clip(W_RSI * rsi + W_CHG * chg_comp + W_VR * vr_comp + W_DEV * dev_comp, 0, 100)
 
     return {
         'o': o, 'h': h, 'lo': lo, 'c': c, 'n': n,
         'v': v if real_vol else None, 'has_vol': real_vol,
         'vwap': vwap, 'atr': atr, 'pc': pc,
         'dif': dif, 'dea': dea, 'hist': hist,
-        'trend': compute_trend(c),
+        'trend': trend,
+        'rsi': rsi, 'vol_ratio': vol_ratio, 'temp': temp,
     }
 
 
@@ -653,3 +701,18 @@ def check_miji_trigger_5m_index(data, idx_c, idx_prev_close, min_resonance=RESON
     snap['idx_trend'] = t
     snap['idx_day_chg'] = round(chg * 100, 3)
     return b_trig, s_trig, b_detail, s_detail, snap
+
+
+# ========== monitor 适配器 (T2.3): 沿用 indicators 函数名, monitor 最小改动 ==========
+# monitor 调 check_b_trigger(data,i)->(bool,reason) / check_s_trigger(data,i)->(bool,reason);
+# 这里把 check_miji_trigger(合一返回) 拆为分立 B/S, 默认走生产 require_macd=REQUIRE_MACD(macd-required 门控)。
+def check_b_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, require_macd=REQUIRE_MACD):
+    """B 信号触发判定 (monitor 兼容). 返回 (triggered: bool, reason: str)."""
+    b, _, bd, _, _ = check_miji_trigger(data, i, min_resonance, require_macd=require_macd)
+    return (b, bd)
+
+
+def check_s_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, require_macd=REQUIRE_MACD):
+    """S 信号触发判定 (monitor 兼容). 返回 (triggered: bool, reason: str)."""
+    _, s, _, sd, _ = check_miji_trigger(data, i, min_resonance, require_macd=require_macd)
+    return (s, sd)

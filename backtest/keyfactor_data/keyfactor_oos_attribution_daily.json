@@ -1,0 +1,47 @@
+{
+  "config": "RESONANCE=1 (single-factor pass) for attribution; vol_div off",
+  "split_ratio": 0.66,
+  "n_stocks": 400,
+  "mean_skill24_test": -0.0084,
+  "median_skill24_test": -0.0075,
+  "mean_skill24_test_early": -0.0079,
+  "mean_skill24_test_late": -0.0093,
+  "factor_group_test": {
+    "gravity_only": {
+      "n": 291129,
+      "skill24": -0.0209
+    },
+    "macd_only": {
+      "n": 57961,
+      "skill24": 0.0482
+    },
+    "both": {
+      "n": 11374,
+      "skill24": 0.0508
+    }
+  },
+  "factor_group_train": {
+    "gravity_only": {
+      "n": 561433,
+      "skill24": 0.0086
+    },
+    "macd_only": {
+      "n": 126248,
+      "skill24": 0.0379
+    },
+    "both": {
+      "n": 26645,
+      "skill24": 0.0555
+    }
+  },
+  "distribution_test": {
+    "p10": -0.0768,
+    "p25": -0.0416,
+    "p50": -0.0075,
+    "p75": 0.0248,
+    "p90": 0.0668,
+    "n_neg": 227,
+    "n_neg2": 163,
+    "n_pos2": 116
+  }
+}

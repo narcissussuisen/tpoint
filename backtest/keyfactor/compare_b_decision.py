@@ -39,7 +39,8 @@ def fnum(x, p=4):
     if x is None:
         return 'None'
     try:
-        return f'{float(x)*100:+.4f}%'
+        # 注意: fwd_rets 已 *100 (存的是百分数), 这里不再二次 *100 (修 2026-07-17 单位 bug)
+        return f'{float(x):+.4f}%'
     except Exception:
         return str(x)
 
@@ -176,7 +177,7 @@ def build_html(ts, new, old, oos, core_holds, oos_ok, unlock, verdict):
         return f'<tr><td>{k}</td><td>{a}</td><td>{b}</td></tr>'
     def fnum(x):
         if x is None: return '—'
-        try: return f'{float(x)*100:+.4f}%'
+        try: return f'{float(x):+.4f}%'   # fwd_rets 已 *100, 不再二次 *100 (修单位 bug)
         except: return str(x)
     body = ''
     # ①

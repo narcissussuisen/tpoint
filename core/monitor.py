@@ -9,17 +9,15 @@ T点监控 v9 — VWAP+ATR+趋势过滤+量价确认+情绪温度计
 飞书webhook直推 + 本地文件备份
 算法层见 indicators.py (monitor/backtest/selftest共用)
 """
-import os, sys, json, time, tempfile
+import os, sys, json, time
 import requests
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datasource import MootdxDataSource as TickFlow
-from indicators import (
-    compute_indicators, check_b_trigger, check_s_trigger, stars,
-    K1, K2, TEMP_HOT, TEMP_COLD,
-)
+from miji_alpha import compute_miji_indicators, check_b_trigger, check_s_trigger
+from indicators import stars, K1
 # 出场管理：接 exit_manager 的移动止损/硬止损/S信号出场（P0 待办）
 from exit_manager import make_config
 
@@ -57,9 +55,9 @@ STATE_FILE  = _cfg('state_file',  'STATE_FILE',  os.path.join(BASE_DIR, 'data', 
 METRICS_FILE = _cfg('metrics_file', 'METRICS_FILE', os.path.join(BASE_DIR, 'data', 'metrics.json'))
 PROMPT_FILE = _cfg('prompt_file', 'TP_PROMPT_FILE', os.path.join(BASE_DIR, '..', 'stock-pool', 'prompt-common.md'))
 WEBHOOK_URL = _cfg('webhook_url', 'TP_WEBHOOK_URL', "https://open.feishu.cn/open-apis/bot/v2/hook/a35d7f52-9ed2-47df-a929-f11aaf89025d")
-# 锁文件放到系统临时目录（跨平台），不再写死 /tmp
-LOCK_FILE = os.path.join(tempfile.gettempdir(), 'tpoint_monitor.lock')
-PID_FILE  = os.path.join(tempfile.gettempdir(), 'tpoint_monitor.pid')
+# 锁文件放到项目 data/ 目录（跨会话共享，避免 SYSTEM 与用户会话 temp 不同导致锁失效）
+LOCK_FILE = os.path.join(BASE_DIR, 'data', '.monitor.lock')
+PID_FILE  = os.path.join(BASE_DIR, 'data', '.monitor.pid')
 
 # ========== 出场管理配置（生产方向，已锁定） ==========
 # 仅移动止损：浮盈≥0.4% 激活，从浮动高点回撤 0.6% 触发平仓；关硬止损/时间止损；S信号作自然出场
@@ -236,7 +234,7 @@ def compute(sym):
     v = df['volume'].values.astype(float) if has_vol else None
     pc = STATE[sym]['PC']
 
-    data = compute_indicators(o, h, lo, c, v, pc, has_vol=has_vol)
+    data = compute_miji_indicators(o, h, lo, c, v, pc, has_vol=has_vol)
     data['df'] = df
     return data
 
@@ -478,45 +476,111 @@ def _log_event(msg):
     except Exception:
         pass
 
+def _is_process_alive(pid):
+    """检查 pid 是否仍在运行（同用户/跨用户均只查存在性，不杀）。"""
+    if pid is None or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)  # Windows: 检查进程是否存在；Unix: 同语义
+        return True
+    except (ProcessLookupError, OSError, PermissionError):
+        return False
+
+
+def _remove_if_exists(path):
+    """安全删除文件，忽略不存在的错误。"""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            return True
+    except (FileNotFoundError, OSError, PermissionError):
+        pass
+    return False
+
+
+def _clear_stale_lock(lock_file, pid_file):
+    """若锁文件/PID 文件指向的进程已死，或文件已残留，则清理。"""
+    # 1. 检查 PID 文件中的进程是否存活
+    holder = None
+    try:
+        if os.path.exists(pid_file):
+            with open(pid_file, 'r') as _pf:
+                _c = _pf.read().strip()
+            if _c.isdigit():
+                holder = int(_c)
+    except Exception:
+        pass
+
+    # 2. 若 holder 已死，或未指定 PID 但锁文件存在，则尝试清理
+    if holder is not None and not _is_process_alive(holder):
+        _log_event('STALE_LOCK holder=%d gone, cleaning' % holder)
+        _remove_if_exists(pid_file)
+        _remove_if_exists(lock_file)
+        return True
+    if holder is None and os.path.exists(lock_file):
+        # 没有 PID 文件但锁文件残留，也清理
+        _log_event('STALE_LOCK no pid file, cleaning lock_file')
+        _remove_if_exists(lock_file)
+        return True
+    return False
+
+
 def run():
     lock_file = LOCK_FILE
     pid_file = PID_FILE
-    # 获取锁；若被占用，尝试接管（同用户进程可用 os.kill 终止），否则让出
-    while True:
-        lf = open(lock_file, 'w')
+    # 获取锁；若被占用，先检查 stale 再尝试接管，避免无限循环
+    max_attempts = 10
+    attempt = 0
+    lf = None
+    while attempt < max_attempts:
+        attempt += 1
+        # 先清理 stale lock（holder 进程已死或文件残留）
+        _clear_stale_lock(lock_file, pid_file)
+
+        try:
+            lf = open(lock_file, 'w')
+        except Exception as _e:
+            _log_event('LOCK_OPEN_FAIL %r, retry' % _e)
+            time.sleep(1)
+            continue
+
         try:
             _acquire_lock(lf)
             break
         except (IOError, OSError):
-            _log_event('LOCK_CONFLICT, attempting takeover')
-            holder = None
+            _log_event('LOCK_CONFLICT attempt=%d, yielding' % attempt)
             try:
-                if os.path.exists(pid_file):
-                    with open(pid_file) as _pf:
-                        _c = _pf.read().strip()
-                    if _c.isdigit():
-                        holder = int(_c)
-                        os.kill(holder, 15)  # SIGTERM/TerminateProcess（同用户可杀）
-                        _log_event('takeover killed holder pid=%d' % holder)
-            except ProcessLookupError:
-                _log_event('takeover holder pid=%d already gone' % holder)
-            except (PermissionError, OSError) as _e:
-                _log_event('takeover cannot kill holder pid=%d (%r), yield' % (holder, _e))
-                sys.exit(0)
-            except Exception as _e:
-                _log_event('takeover unexpected %r, yield' % _e)
-                sys.exit(0)
-            try: os.remove(lock_file)
-            except Exception: pass
-            try: os.remove(pid_file)
-            except Exception: pass
-            time.sleep(2)
-            continue
+                lf.close()
+            except Exception:
+                pass
+            time.sleep(1)
+    else:
+        _log_event('LOCK_FAILED after %d attempts, exit' % max_attempts)
+        sys.exit(1)
+
     lf.write(str(os.getpid()))
     lf.flush()
     with open(pid_file, 'w') as pf:
         pf.write(str(os.getpid()))
     _log_event('LOCK_ACQUIRED pid=%d' % os.getpid())
+
+    # 注册退出清理：任何退出路径（return / sys.exit / 异常）都释放锁 + 清理 pid 文件
+    # 关键：Windows 下必须先关闭文件句柄，再删除文件，否则 os.remove 会因"文件被占用"失败。
+    import atexit
+    def _cleanup_lock():
+        try:
+            _release_lock(lf)
+        except Exception:
+            pass
+        try:
+            lf.close()
+        except Exception:
+            pass
+        _remove_if_exists(lock_file)
+        _remove_if_exists(pid_file)
+        _log_event('LOCK_RELEASED pid=%d' % os.getpid())
+    atexit.register(_cleanup_lock)
+
     st = load_state()
     syms = list(TARGETS.keys())
     print(f"[{datetime.now(CST).strftime('%H:%M:%S')}] v9 VWAP+ATR+趋势+量价+温度 启动 | {', '.join(TARGETS.values())}")

@@ -31,6 +31,7 @@ backtest/keyfactor/.feishu_push_log.jsonl
 backtest/keyfactor/.feishu_push_state.json
 backtest/keyfactor_data/_*.log
 backtest/keyfactor_data/_*.txt
+backtest/keyfactor_data/tmp*.txt
 backtest/keyfactor_data/download_*.log
 backtest/keyfactor_data/.download_ckpt.json
 backtest/keyfactor_data/.integrity_store.json

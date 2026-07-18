@@ -39,6 +39,9 @@ OUT_CSV_DAILY = os.path.join(DATA, 'keyfactor_results_daily.csv')
 OUT_JSON_DAILY = os.path.join(DATA, 'keyfactor_results_daily.json')
 OUT_OOS_CSV_DAILY = os.path.join(DATA, 'keyfactor_oos_time_daily.csv')
 OUT_OOS_JSON_DAILY = os.path.join(DATA, 'keyfactor_oos_time_daily.json')
+# --- OOS 归因 (RESONANCE=1 单因子 + 时段桶 + 分布, 2026-07-17) ---
+OUT_OOS_ATTR_CSV_DAILY = os.path.join(DATA, 'keyfactor_oos_attribution_daily.csv')
+OUT_OOS_ATTR_JSON_DAILY = os.path.join(DATA, 'keyfactor_oos_attribution_daily.json')
 
 class Patch:
     """临时 monkeypatch miji_engine 模块常量, 退出即还原。"""
@@ -112,7 +115,8 @@ def _segment_days(df):
     return groups
 
 def detect_miji_signals_daily(df, enable=(True, True, True), min_resonance=2,
-                               b_trend_filter=False, allow_reverse=True):
+                               b_trend_filter=False, allow_reverse=True,
+                               require_macd=False):
     """逐日检测: 每交易日 VWAP 重置 + 昨收按上一日收盘 + max_b/max_s 按日。
     返回信号 list, idx 已映射到整段 df 位置(供 fwd_rets 用)。
     注: MACD/ATR 也按日重算(日内指标语义); 每日起始 session 态清空(pos_ctx=0)。
@@ -138,7 +142,7 @@ def detect_miji_signals_daily(df, enable=(True, True, True), min_resonance=2,
         data = ME.compute_miji_indicators(o_d, h_d, lo_d, c_d, v_d, pc, has_vol=has_vol)
         sigs = ME.detect_miji_signals(data, pc, start_idx=2, min_resonance=min_resonance,
                                        b_trend_filter=b_trend_filter, allow_reverse=allow_reverse,
-                                       enable=enable)
+                                       require_macd=require_macd, enable=enable)
         for s in sigs:
             s2 = dict(s)
             s2['idx'] = gs + s['idx']   # 重映射回整段
@@ -146,18 +150,20 @@ def detect_miji_signals_daily(df, enable=(True, True, True), min_resonance=2,
         prev_close = float(c[ge - 1])
     return all_sigs
 
-def attr_for_config(cache, enable, min_res, daily=False, **monkey):
+def attr_for_config(cache, enable, min_res, daily=False, require_macd=False, **monkey):
     with Patch(**monkey):
         rows = []
         nsig = 0
         for item in cache:
             df = item['df']
             if daily:
-                sigs = detect_miji_signals_daily(df, enable=enable, min_resonance=min_res)
+                sigs = detect_miji_signals_daily(df, enable=enable, min_resonance=min_res,
+                                                  require_macd=require_macd)
             else:
                 data = item['data']; pc = item['pc']
                 sigs = ME.detect_miji_signals(data, pc, start_idx=2, min_resonance=min_res,
-                                              b_trend_filter=False, allow_reverse=True, enable=enable)
+                                              b_trend_filter=False, allow_reverse=True,
+                                              require_macd=require_macd, enable=enable)
             sigs = K.fwd_rets(df, sigs)
             rows.extend(K.build_attr_rows(sigs, df))
             nsig += len(sigs)
@@ -208,38 +214,43 @@ def load_cache(indir):
     print(f"  指标预计算完成 (阈值无关, 缓存 {len(cache)} 只)")
     return cache
 
-def phase3(cache, daily=False):
+def phase3(cache, daily=False, require_macd=False):
     """Phase 3 基线 + 归因。返回 (base_rows, n_base, base_skill, marginal)。"""
     tag = ' [daily]' if daily else ''
-    base_rows, n_base = attr_for_config(cache, (True, True, True), 2, daily=daily)
+    tag += ' [macd-req]' if require_macd else ''
+    base_rows, n_base = attr_for_config(cache, (True, True, True), 2, daily=daily,
+                                         require_macd=require_macd)
     base_skill = skill_stats(base_rows)
     marginal = factor_marginal(base_rows)
     print(f"  [Phase3{tag}] baseline 信号数={n_base}  skill(6/12/24)= "
           f"{base_skill[6][0]:+.4f}/{base_skill[12][0]:+.4f}/{base_skill[24][0]:+.4f}%")
     return base_rows, n_base, base_skill, marginal
 
-def phase4(cache, daily=False):
+def phase4(cache, daily=False, require_macd=False):
     """Phase 4 消融: 关 gravity/vol_div/macd_div。返回 abl dict。"""
     tag = ' [daily]' if daily else ''
+    tag += ' [macd-req]' if require_macd else ''
     abl = {}
     for name, en in [('all', (True, True, True)),
                      ('no_gravity', (False, True, True)),
                      ('no_vol_div', (True, False, True)),
                      ('no_macd_div', (True, True, False))]:
-        r, n = attr_for_config(cache, en, 2, daily=daily)
+        r, n = attr_for_config(cache, en, 2, daily=daily, require_macd=require_macd)
         sk = skill_stats(r)
         abl[name] = {'n': n, 'skill': {h: sk[h][0] for h in HORIZONS}}
         print(f"  [Phase4{tag}] 消融 {name:12s} n={n:5d} skill24={sk[24][0]:+.4f}%")
     return abl
 
-def phase5(cache, daily=False):
+def phase5(cache, daily=False, require_macd=False):
     """Phase 5 阈值扫描: VWAP_DEV×VOL_EXPAND×VOL_SHRINK + RESONANCE。返回 sweep_df。"""
     tag = ' [daily]' if daily else ''
+    tag += ' [macd-req]' if require_macd else ''
     sweep = []
     for dev in (0.6, 0.8, 1.0):
         for ve in (1.1, 1.2, 1.3):
             for vs in (0.7, 0.8, 0.9):
                 r, n = attr_for_config(cache, (True, True, True), 2, daily=daily,
+                                       require_macd=require_macd,
                                        VWAP_DEV_BUY=dev, VWAP_DEV_SELL=dev,
                                        VOL_EXPAND_RATIO=ve, VOL_SHRINK_RATIO=vs)
                 sk = skill_stats(r)
@@ -247,7 +258,8 @@ def phase5(cache, daily=False):
                              'n': n,
                              'skill6': sk[6][0], 'skill12': sk[12][0], 'skill24': sk[24][0]})
     for mr in (1, 2, 3):
-        r, n = attr_for_config(cache, (True, True, True), mr, daily=daily)
+        r, n = attr_for_config(cache, (True, True, True), mr, daily=daily,
+                               require_macd=require_macd)
         sk = skill_stats(r)
         sweep.append({'RESONANCE': mr, 'n': n,
                       'skill6': sk[6][0], 'skill12': sk[12][0], 'skill24': sk[24][0]})
@@ -288,19 +300,21 @@ def write_outputs(cache, base_rows, n_base, base_skill, marginal, abl, sweep_df,
     print(f"\n  落地: {out_csv}")
     print(f"  落地: {out_json}")
 
-def _attr_rows_one(item, min_res=2, enable=(True, True, True), daily=False):
+def _attr_rows_one(item, min_res=2, enable=(True, True, True), daily=False, require_macd=False):
     """单只票: 冻结配置跑检测 -> 含 idx + fwd 的 rows。"""
     df = item['df']
     if daily:
-        sigs = detect_miji_signals_daily(df, enable=enable, min_resonance=min_res)
+        sigs = detect_miji_signals_daily(df, enable=enable, min_resonance=min_res,
+                                          require_macd=require_macd)
     else:
         data, pc = item['data'], item['pc']
         sigs = ME.detect_miji_signals(data, pc, start_idx=2, min_resonance=min_res,
-                                      b_trend_filter=False, allow_reverse=True, enable=enable)
+                                      b_trend_filter=False, allow_reverse=True,
+                                      require_macd=require_macd, enable=enable)
     sigs = K.fwd_rets(df, sigs)
     return K.build_attr_rows(sigs, df)
 
-def phase_oos_time(cache, split_ratio=OOS_SPLIT, daily=False):
+def phase_oos_time(cache, split_ratio=OOS_SPLIT, daily=False, require_macd=False):
     """跨时段 OOS: 每只票前 split_ratio 为训练(样本内), 后为测试(OOS)。
     返回 (per_stock_list, agg_dict)。daily=True 时检测用逐日路径。"""
     per, sk_tr, sk_te, n_pos_te = [], [], [], 0
@@ -311,7 +325,7 @@ def phase_oos_time(cache, split_ratio=OOS_SPLIT, daily=False):
         split = int(split_ratio * N)
         if split < 50 or (N - split) < 50:
             continue
-        rows = _attr_rows_one(item, daily=daily)
+        rows = _attr_rows_one(item, daily=daily, require_macd=require_macd)
         train = [r for r in rows if r['idx'] < split and (r['idx'] + 24) <= split]
         test = [r for r in rows if r['idx'] >= split]
         tr = skill_stats(train)[24]
@@ -335,7 +349,7 @@ def phase_oos_time(cache, split_ratio=OOS_SPLIT, daily=False):
         'mean_skill24_test': round(float(np.mean(sk_te)), 4) if sk_te else None,
         'n_stocks_with_test': len(sk_te),
         'frac_test_positive': round(n_pos_te / len(sk_te), 3) if sk_te else None,
-        'config': 'frozen P0-P4 (RESONANCE=2, vol_div off, VWAP_DEV=0.6, macd_div swap)',
+        'config': f'frozen P0-P4 (RESONANCE=2, vol_div off, VWAP_DEV=0.6, macd_div swap, require_macd={require_macd})',
     }
     if sk_tr and sk_te:
         agg['delta_test_minus_train'] = round(float(np.mean(sk_te)) - float(np.mean(sk_tr)), 4)
@@ -352,6 +366,127 @@ def write_oos_time(per, agg, out_csv=OUT_OOS_CSV, out_json=OUT_OOS_JSON):
     print(f"  落地: {out_json}")
 
 
+# ========== OOS 归因 (RESONANCE=1 单因子 + 时段桶 + 分布, 2026-07-17) ==========
+# 目的: 找跨时段OOS退化(-0.35%逐股均值)的病灶——哪个因子/组合/时段在拖累。
+# 方法: 用 min_resonance=1 跑(让单因子信号通过), vol_div 已禁用故只剩 gravity/macd,
+#       按 (gravity,macd) 组合分组算 test skill24; test 段再切早/晚桶查 regime 漂移;
+#       输出每股 test skill 分布(p10..p90 + n_neg/n_neg2/n_pos2)。
+def phase_oos_attribution(cache, split_ratio=OOS_SPLIT, daily=False):
+    per = []
+    g_only_te, m_only_te, both_te = [], [], []    # test 段按因子组的 skill 值(跨股池化)
+    g_only_tr, m_only_tr, both_tr = [], [], []    # train 段对照
+    te_early_vals, te_late_vals = [], []           # 每股 test 早/晚 skill(池化)
+
+    def _sk(rs):
+        v = [(r['fwd24'] if r['type'] == 'B' else -r['fwd24'])
+             for r in rs if r.get('fwd24') is not None]
+        return (float(np.mean(v)), len(v)) if v else (None, 0)
+
+    for item in cache:
+        df = item['df']; N = len(df)
+        if N < 200:
+            continue
+        split = int(split_ratio * N)
+        if split < 50 or (N - split) < 50:
+            continue
+        # RESONANCE=1: 单因子信号也通过 (归因用, 非冻结配置)
+        rows = _attr_rows_one(item, min_res=1, enable=(True, True, True), daily=daily)
+        train = [r for r in rows if r['idx'] < split and (r['idx'] + 24) <= split]
+        test = [r for r in rows if r['idx'] >= split]
+        mid = split + (N - split) // 2
+        tr = _sk(train); te = _sk(test)
+        te_e = _sk([r for r in test if r['idx'] < mid])
+        te_l = _sk([r for r in test if r['idx'] >= mid])
+        sym = os.path.basename(item.get('fp', '?')).replace('_1m.csv', '')
+        per.append({'sym': sym, 'n_bars': N, 'split': split,
+                    'n_train': tr[1],
+                    'skill24_train': round(tr[0], 4) if tr[0] is not None else None,
+                    'n_test': te[1],
+                    'skill24_test': round(te[0], 4) if te[0] is not None else None,
+                    'skill24_test_early': round(te_e[0], 4) if te_e[0] is not None else None,
+                    'skill24_test_late': round(te_l[0], 4) if te_l[0] is not None else None})
+        for r in test:
+            if r.get('fwd24') is None:
+                continue
+            sk = r['fwd24'] if r['type'] == 'B' else -r['fwd24']
+            if r['g'] == 1 and r['md'] == 0:
+                g_only_te.append(sk)
+            elif r['g'] == 0 and r['md'] == 1:
+                m_only_te.append(sk)
+            elif r['g'] == 1 and r['md'] == 1:
+                both_te.append(sk)
+        for r in train:
+            if r.get('fwd24') is None:
+                continue
+            sk = r['fwd24'] if r['type'] == 'B' else -r['fwd24']
+            if r['g'] == 1 and r['md'] == 0:
+                g_only_tr.append(sk)
+            elif r['g'] == 0 and r['md'] == 1:
+                m_only_tr.append(sk)
+            elif r['g'] == 1 and r['md'] == 1:
+                both_tr.append(sk)
+        if te_e[0] is not None:
+            te_early_vals.append(te_e[0])
+        if te_l[0] is not None:
+            te_late_vals.append(te_l[0])
+
+    te_skills = [p['skill24_test'] for p in per if p['skill24_test'] is not None]
+
+    def _pct(q):
+        if not te_skills:
+            return None
+        s = sorted(te_skills); k = (len(s) - 1) * q; f = int(k)
+        c = min(f + 1, len(s) - 1)
+        return round(s[f] + (s[c] - s[f]) * (k - f), 4)
+
+    def _gmean(v):
+        return round(float(np.mean(v)), 4) if v else None
+
+    agg = {
+        'config': 'RESONANCE=1 (single-factor pass) for attribution; vol_div off',
+        'split_ratio': split_ratio, 'n_stocks': len(per),
+        'mean_skill24_test': _gmean(te_skills),
+        'median_skill24_test': round(float(np.median(te_skills)), 4) if te_skills else None,
+        'mean_skill24_test_early': _gmean(te_early_vals),
+        'mean_skill24_test_late': _gmean(te_late_vals),
+        'factor_group_test': {
+            'gravity_only': {'n': len(g_only_te), 'skill24': _gmean(g_only_te)},
+            'macd_only':    {'n': len(m_only_te), 'skill24': _gmean(m_only_te)},
+            'both':         {'n': len(both_te), 'skill24': _gmean(both_te)},
+        },
+        'factor_group_train': {
+            'gravity_only': {'n': len(g_only_tr), 'skill24': _gmean(g_only_tr)},
+            'macd_only':    {'n': len(m_only_tr), 'skill24': _gmean(m_only_tr)},
+            'both':         {'n': len(both_tr), 'skill24': _gmean(both_tr)},
+        },
+        'distribution_test': {
+            'p10': _pct(0.1), 'p25': _pct(0.25), 'p50': _pct(0.5),
+            'p75': _pct(0.75), 'p90': _pct(0.9),
+            'n_neg': int(sum(1 for x in te_skills if x < 0)),
+            'n_neg2': int(sum(1 for x in te_skills if x < -0.02)),
+            'n_pos2': int(sum(1 for x in te_skills if x > 0.02)),
+        },
+    }
+    print(f"  [OOS-attrib] {len(per)}只 RESONANCE=1: test mean={agg['mean_skill24_test']} "
+          f"median={agg['median_skill24_test']}")
+    print(f"    因子组(test): gravity_only={agg['factor_group_test']['gravity_only']} "
+          f"macd_only={agg['factor_group_test']['macd_only']} "
+          f"both={agg['factor_group_test']['both']}")
+    print(f"    因子组(train): gravity_only={agg['factor_group_train']['gravity_only']} "
+          f"macd_only={agg['factor_group_train']['macd_only']} both={agg['factor_group_train']['both']}")
+    print(f"    时段桶(test): early={agg['mean_skill24_test_early']} late={agg['mean_skill24_test_late']}")
+    print(f"    分布(test): {agg['distribution_test']}")
+    return per, agg
+
+
+def write_oos_attribution(per, agg, out_csv=OUT_OOS_ATTR_CSV_DAILY, out_json=OUT_OOS_ATTR_JSON_DAILY):
+    pd.DataFrame(per).to_csv(out_csv, index=False, encoding='utf-8-sig')
+    with open(out_json, 'w', encoding='utf-8') as f:
+        json.dump(agg, f, ensure_ascii=False, indent=2)
+    print(f"  落地: {out_csv}")
+    print(f"  落地: {out_json}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--indir', default=DEF_IN)
@@ -360,6 +495,10 @@ def main():
                     help='P5 跨时段 OOS: 前66%%训练/后34%%测试, 配置冻结, 只度量不调参')
     ap.add_argument('--daily', action='store_true',
                     help='B修正: 逐日检测(VWAP日内重置+昨收按日+max按日), 输出 _daily 文件, 不覆盖旧结果')
+    ap.add_argument('--oos-attrib', action='store_true',
+                    help='OOS归因: RESONANCE=1单因子+时段桶+分布, 找退化病灶')
+    ap.add_argument('--require-macd', action='store_true',
+                    help='T1.5: macd-required门控(B需macd投票,排除gravity-only), 生产默认')
     args = ap.parse_args()
     indir = os.path.join(HERE, '..', '..', 'backtest', 'backtest_data') if args.seedtest else args.indir
     files = sorted(glob.glob(os.path.join(indir, '*_1m.csv')))
@@ -368,14 +507,19 @@ def main():
         return
     cache = load_cache(indir)
     if args.oos_time:
-        per, agg = phase_oos_time(cache, daily=args.daily)
+        per, agg = phase_oos_time(cache, daily=args.daily, require_macd=args.require_macd)
         write_oos_time(per, agg,
                        out_csv=OUT_OOS_CSV_DAILY if args.daily else OUT_OOS_CSV,
                        out_json=OUT_OOS_JSON_DAILY if args.daily else OUT_OOS_JSON)
         return
-    base_rows, n_base, base_skill, marginal = phase3(cache, daily=args.daily)
-    abl = phase4(cache, daily=args.daily)
-    sweep_df = phase5(cache, daily=args.daily)
+    if args.oos_attrib:
+        per, agg = phase_oos_attribution(cache, daily=args.daily)
+        write_oos_attribution(per, agg)
+        return
+    base_rows, n_base, base_skill, marginal = phase3(cache, daily=args.daily,
+                                                       require_macd=args.require_macd)
+    abl = phase4(cache, daily=args.daily, require_macd=args.require_macd)
+    sweep_df = phase5(cache, daily=args.daily, require_macd=args.require_macd)
     write_outputs(cache, base_rows, n_base, base_skill, marginal, abl, sweep_df,
                  seedtest=args.seedtest,
                  out_csv=OUT_CSV_DAILY if args.daily else OUT_CSV,
