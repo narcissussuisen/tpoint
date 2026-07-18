@@ -22,6 +22,7 @@ v9 监控告警引擎（watchdog sidecar）。
 signals/errors/last_bar_ts/status）。monitor 崩溃 → 心跳过期 → 触发"服务中断"。
 """
 import os, sys, json, time, argparse
+from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from feishu_alert import send as feishu_send
@@ -68,8 +69,32 @@ def _fmt(v, unit=''):
     return f"{v}{unit}"
 
 
+def is_trading_today():
+    """是否A股交易日 (与 monitor.is_trading_today 一致)。
+    alert_engine 在休市日跳过评估, 避免 monitor 按设计退出(not trading today)、
+    心跳不维护时误报 service_down。"""
+    now = datetime.now()
+    if now.weekday() >= 5:
+        return False
+    today_str = now.strftime('%Y-%m-%d')
+    holidays_2026 = {
+        '2026-01-01', '2026-01-02',
+        '2026-01-26', '2026-01-27', '2026-01-28', '2026-01-29', '2026-01-30',
+        '2026-02-02', '2026-02-03',
+        '2026-04-06',
+        '2026-05-01', '2026-05-04', '2026-05-05',
+        '2026-06-19',
+        '2026-09-25', '2026-09-28', '2026-09-29', '2026-09-30',
+        '2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07',
+    }
+    return today_str not in holidays_2026
+
+
 def evaluate(sample, buffer, now, cfg):
     """返回需要发送的告警 dict 列表（不含冷却判断）。"""
+    # 休市日 monitor 按设计退出(not trading today)、心跳不维护 -> 跳过评估, 避免误报 service_down
+    if not is_trading_today():
+        return []
     m = cfg['monitor']
     stale = m.get('service_stale_s', 120)
 

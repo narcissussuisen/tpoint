@@ -1,0 +1,78 @@
+{
+  "n_symbols": 333,
+  "min_resonance": 2,
+  "b_trend_filter": false,
+  "vol_swap": false,
+  "baseline_skill": {
+    "6": 0.022386258039112743,
+    "12": 0.033337655860349126,
+    "24": 0.04891934891047519
+  },
+  "ablation": {
+    "all": {
+      "n": 7619,
+      "skill": {
+        "6": 0.022386258039112743,
+        "12": 0.033337655860349126,
+        "24": 0.04891934891047519
+      }
+    },
+    "no_gravity": {
+      "n": 0,
+      "skill": {
+        "6": null,
+        "12": null,
+        "24": null
+      }
+    },
+    "no_vol_div": {
+      "n": 7619,
+      "skill": {
+        "6": 0.022386258039112743,
+        "12": 0.033337655860349126,
+        "24": 0.04891934891047519
+      }
+    },
+    "no_macd_div": {
+      "n": 0,
+      "skill": {
+        "6": null,
+        "12": null,
+        "24": null
+      }
+    }
+  },
+  "factor_importance_drop_skill24": {
+    "gravity": 0.04892,
+    "vol_div": 0.0,
+    "macd_div": 0.04892
+  },
+  "factor_ranking": [
+    "gravity",
+    "macd_div",
+    "vol_div"
+  ],
+  "resonance_sweep": [
+    {
+      "RESONANCE": 1,
+      "n": 7992,
+      "skill6": 0.003263038038038039,
+      "skill12": -0.005720695695695697,
+      "skill24": 0.004878365865865862
+    },
+    {
+      "RESONANCE": 2,
+      "n": 7619,
+      "skill6": 0.022386258039112743,
+      "skill12": 0.033337655860349126,
+      "skill24": 0.04891934891047519
+    },
+    {
+      "RESONANCE": 3,
+      "n": 0,
+      "skill6": null,
+      "skill12": null,
+      "skill24": null
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "split_ratio": 0.66,
+  "n_stocks": 4070,
+  "mean_skill24_train": 0.025,
+  "mean_skill24_test": 0.0397,
+  "n_stocks_with_test": 4070,
+  "frac_test_positive": 0.774,
+  "config": "frozen P0-P4 (RESONANCE=2, vol_div off, VWAP_DEV=0.6, macd_div swap, require_macd=True)",
+  "delta_test_minus_train": 0.0148
+}
