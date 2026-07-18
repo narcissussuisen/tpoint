@@ -46,3 +46,6 @@ backtest/keyfactor_data/_subset50/
 # Junk files
 =
 nul
+状态*
+编写*
+backtest/keyfactor_data/study_final.log
