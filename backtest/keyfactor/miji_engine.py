@@ -120,9 +120,14 @@ def volume_divergence_signal(h, lo, c, v, i,
     v = np.asarray(v, dtype=float)
     start = max(0, i - w)
 
+    # 走平封板/一字/停牌：OHLC 全等，无有效极值，跳过
+    if h[i] == lo[i]:
+        return 0, ''
+    # 严格极值判定：价格须严格超越【前序】窗口极值(不含自身)才算创新高/新低
+    # 切片用 [start:i] 排除自身；若含自身则 h[i] 恒等于窗口max，严格 > 永远为 False
     # 局部新高/新低判定
-    local_high = h[i] >= h[start:i+1].max()
-    local_low = lo[i] <= lo[start:i+1].min()
+    local_high = h[i] > h[start:i].max()
+    local_low = lo[i] < lo[start:i].min()
 
     if not (local_high or local_low):
         return 0, ''
@@ -225,8 +230,13 @@ def macd_divergence_signal(h, lo, c, dif, dea, hist, i, w=LOCAL_W):
         return 0, ''
 
     start = max(0, i - w)
-    local_high = h[i] >= h[start:i+1].max()
-    local_low = lo[i] <= lo[start:i+1].min()
+    # 走平封板/一字/停牌：OHLC 全等，无有效极值，跳过（避免涨停顶平盘 bar 误判局部新高/新低→000938 虚假买点）
+    if h[i] == lo[i]:
+        return 0, ''
+    # 严格极值判定：价格须严格超越【前序】窗口极值(不含自身)才算创新高/新低
+    # 切片用 [start:i] 排除自身；若含自身则 h[i] 恒等于窗口max，严格 > 永远为 False
+    local_high = h[i] > h[start:i].max()
+    local_low = lo[i] < lo[start:i].min()
 
     # 金叉/死叉判定
     golden_cross = dif[i] > dea[i] and dif[i-1] <= dea[i-1]

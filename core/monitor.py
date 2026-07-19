@@ -30,7 +30,7 @@ def _load_version():
         with open(os.path.join(BASE_DIR, 'VERSION'), encoding='utf-8') as f:
             return f.read().strip()
     except Exception:
-        return '9.1.3'
+        return '9.1.4'
 VERSION = _load_version()
 
 def _env_or(name, default):

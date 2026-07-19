@@ -1,77 +1,36 @@
-# CHANGELOG
+# miji 版本算法说明（CHANGELOG）
 
-All notable changes to this project will be documented in this file.
-Format based on [Keep a Changelog](https://keepachangelog.com/),
-versioning follows [Semantic Versioning](https://semver.org/).
+> 版本号规则：MAJOR.MINOR.PATCH；PATCH=同一算法框架内的修复/硬化（每个修复 +1）。
+> 说明仅标注各版本**核心算法与信号语义**的差异，便于回溯。
 
----
+## v9.0.0
+- miji 做T策略初始版本（基线）。
 
-## [9.1.0] - 2026-07-13
+## v9.1.0
+- 关键因子研究线基线：三因子共振引擎初版（gravity + vol_div + macd_div，分钟级）。
+- 〔注：tag `v9.1.0` 与 `v9.0.0` 同指提交 `ed53f40`，属误打；`v9.0.0` 已删除，以 `v9.1.0` 为准。〕
 
-### Added
-- `detect_signals_v2()` — first-principles factor iteration (mean-reversion + momentum confirmation + asymmetric B/S design)
-  - B: VWAP-K1*ATR oversold zone + reversal K-line + EMA20/RSI momentum + volume + trend==1; downtrend day adds yang-line + body>=0.3ATR + RSI<35 + EMA20 rising
-  - S: VWAP+K2*ATR extreme overbought + local top(15min) + RSI>=55 falling + close<prev + volume; no trend restriction
-  - Cross-signal cooldown (gap minutes between B and S)
-  - Constants: K1_V2=0.8, K2_V2=1.8, M_V2=1.2, S_RSI_GATE=55, B_RSI_OVERSOLD=35
-- `datasource.py` — `_server_ok()` data-validation fallback (servers that connect but return empty data now auto-fallback to bestip)
-- `scripts/playback_gl.py` — real-code T+0 playback for GanLiYaoYe (603087.SH)
-- `scripts/playback_gl_0709.py` — full v9 system run on 2026-07-09 real data with candidate diagnostics
-- `scripts/factor_v2_iterate.py` — v2 factor grid-search self-iteration on 3-day real data
-- `scripts/factor_v2_report.py` — v2 comparison report generator
-- `scripts/e2e_simulation.py` — full-chain simulation (start -> fetch -> detect -> alert -> report)
-- `scripts/e2e_report_send.py` — send e2e report to Feishu
-- `docs/t0_playbook.md` — T+0 forward trading playbook
-- `docs/factor_v2_compare.html` — old-v9 vs new-v2 three-day comparison report
-- `docs/playback_gl_report.html` — GanLiYaoYe playback report
-- `docs/playback_gl_0709_report.html` — 07-09 full system run report
+## v9.1.1
+- MACD swap 版：卖点形态→`+1`触发B / 买点形态→`-1`触发S。研究态 skill 由 `-2.44%` 升至 `+2.77%`。
+- 〔注：该 swap 使 B/S 语义与 MD 文档"急拉不追→卖 / 急跌不杀→买"相反，v9.1.2 已撤销。〕
 
-### Changed
-- `monitor.py` — concurrent fetch (ThreadPoolExecutor), self-healing lock takeover, pre-market heartbeat
-- `config/monitor_config.json` — scan_duration threshold 10s -> 45s; 6 alert rules
-- `scripts/install_tasks.bat` — pure ASCII + CRLF encoding fix
-- `scripts/run_monitor.bat` / `run_engine.bat` — path fix (core/*.py, logs/)
+## v9.1.2
+- 撤销 MACD swap，恢复 MD 文档语义：卖点（价格新高）→`-1`触发S / 买点（价格新低）→`+1`触发B。
+- 早盘 `i < LOCAL_W(15)` 降级 gravity-only（macd 未成型时不误杀）。
+- webhook 修正；推送双口径（当日% / 持仓%）；对称T卡片。
 
-### Fixed
-- Zombie single-instance lock (PID holders in SYSTEM session 0)
-- datasource empty-data bug (TCP connects but returns no bars -> auto-fallback to bestip)
-- pc_map bug in factor iteration (used current-day close as PC instead of previous-day close)
+## v9.1.3（commit `1ed2c7a`）
+- A1 动态出场标签：触及上/下轨按价格相对 VWAP±K1·ATR 实际位置动态填，修正 000938 那种"价在+5%上轨之上却标触及下轨"误导。
+- A2 涨停开空抑制：当日最高涨幅≥阈值（主板10%/创业板·科创板20%/北交所30%）时 gate 反T开空（锚定 + 开仓双 gate）。
+- 数据源硬化：mootdx 主源（= a-stock-data 真实行情）+ 腾讯 `qt.gtimg.cn` 实时快照兜底；空返回显式报错。
+- 卡片精简：4 字段（点位/仓位/时间戳/依据）+ 调试参数折叠至「备注」。
+- 推送标题动态模板 `{代码} {操作} {仓位}成`（买绿/卖红/出场蓝）。
+- 自由双向配对 + 动态 2/4 成仓位（按信号强度，非固定模板）。
+- 持续监控：方向冷却改为 bar-index（`COLDOWN_BARS`），不再用冻结墙钟 `now`，replay 单次扫描可捕获全天所有有效波动点。
 
-### Results
-- v2 factor: 4 signals / 3 real / 75% hit rate (old v9: 1 signal / 0 real / 0%)
-- 07-09 (wide swing 4.7%): v2 caught 1 real B (+0.61%); old v9 caught 0
-- 07-10 (surge +5.95%): v2 caught 2 real S; old v9 caught 0
-- 07-13 (drop -2.3%): v2 correctly stayed flat; old v9 had 1 false signal
-
----
-
-## [9.0.0] - 2026-07-07
-
-### Added — initial v9 release ("miji")
-- `indicators.py` — pure algorithm layer: VWAP/ATR/EMA/ADX/RSI/sentiment thermometer/volume ratio + B/S signal detection
-  - B: trend==1 + lower-band touch + reversal K-line + volume ratio>=2.0
-  - S: trend in {-1,0} + upper-band touch + reversal K-line + volume ratio>=2.0
-  - Constants: K1=1.0, K2=2.0, VOL_THRESHOLD=2.0, MAX_B_DAILY=12, MAX_S_DAILY=12
-- `exit_manager.py` — trailing stop-loss (0.4% activate, 0.6% trail), hard stop, time stop, S-signal exit, EOD force-close
-- `entry_filter.py` — entry quality filter
-- `monitor.py` — production monitor: real-time signal detection + Feishu push + single-instance lock + state persistence
-- `alert_engine.py` — watchdog alert engine: polls metrics.json, evaluates 6 alert rules, pushes Feishu cards
-- `datasource.py` — Mootdx/通达信 data source (TCP 7709, multi-server fallback)
-- `feishu_alert.py` — Feishu interactive card builder
-- `backtest/backtest.py` — v8 vs v9 hit-rate comparison
-- `backtest/backtest_extended.py` — extended backtest with exit manager
-- `backtest/backtest_exit.py` — exit manager backtest
-- `backtest/diagnostic.py` — B-signal diagnostic tool
-- `backtest/compare.py` — strategy comparison tool
-- `backtest/download_data.py` — historical data downloader
-- `backtest/backtest_minute.py` — minute-level backtest
-- `tests/selftest.py` — local algorithm validation with synthetic data
-- `docs/design.md` — v9 design document (VWAP paradigm shift from v8)
-- `docs/deploy.md` — deployment guide
-- `scripts/install_tasks.bat` — register SYSTEM scheduled tasks
-- `scripts/run_monitor.bat` / `run_engine.bat` — service launchers
-- `scripts/restart.bat` — one-click restart
-- `config/monitor_config.json` — Feishu webhook + monitor settings + 6 alert rules
-
-### Replaces
-- v8 support/resistance crossing strategy (LONGCROSS-based, 0 S-signals in downtrend)
+## v9.1.4（本提交）
+- **核心 MACD 严格极值判定**：`local_high = h[i] > h[start:i].max()`、`local_low = lo[i] < lo[start:i].min()`（原 `<=`/`>=` 且切片含自身 `h[start:i+1]` → 改为**严格 `<`/`>` 且对比【前序】窗口极值(不含自身 `h[start:i]`)**）——"价格创新高/新低"须真正严格超越此前所有 K 线，平局(与前高相等)不再触发；避免含自身切片下严格 `>` 恒为 False 导致 MACD 信号整体失效的回归。
+- **走平封板保护**：`if h[i] == lo[i]: return 0`（一字/停牌/涨停封板 OHLC 全等）直接跳过，不在平盘 bar 误判局部极值。
+- **修复 000938 涨停顶虚假买点**：2026-07-16 `X[B]@10:32`（-9.19%）根因 = 涨停封板平盘 bar 同时满足 `lo[i] <= lo[win].min()` 误判新低 → 虚假 `+1` → 反T回补在涨停顶触发。严格化 + 走平跳过后该回补消失，仅剩合法 `S@09:32`。
+- **全量同步**：`macd_divergence_signal` 与 `volume_divergence_signal` 同款修复，且 `core/miji_alpha.py`（实盘）与 `backtest/keyfactor/miji_engine.py`（研究态）语义保持一致，避免 live/回测漂移。
+- 清理：`core/monitor.py` 删除死常量 `COLDOWN = 120`（方向冷却已由 `COLDOWN_BARS` 接管）；`data/signal.txt` 解除索引追踪（真正被 .gitignore 忽略）。
