@@ -9,6 +9,8 @@ datasource.py — mootdx 数据源，替代 tickflow
   4. mootdx 有 volume 字段（tickflow intraday 不确定），利好 v9 的 VWAP
 """
 import socket
+import urllib.request
+import re
 import pandas as pd
 import numpy as np
 from mootdx.quotes import Quotes
@@ -78,6 +80,12 @@ def _to_mootdx_sym(sym):
     return code, market
 
 
+def _tencent_code(sym):
+    """tickflow 符号 → 腾讯行情代码前缀：深交所 sz / 上交所 sh"""
+    code = sym.split('.')[0]
+    return ('sz' if sym.endswith('.SZ') else 'sh') + code
+
+
 class MootdxDataSource:
     """替代 tickflow.TickFlow，接口对齐。
     用法：tf = MootdxDataSource(); tf.klines.get(sym, period='1d', count=60)"""
@@ -112,6 +120,8 @@ class MootdxDataSource:
             self.reconnect()
             df = self.client.bars(symbol=code, frequency=freq, offset=count)
         if df is None or len(df) == 0:
+            print(f"  ⚠️ mootdx日K返回空 {sym}（服务器连通但无数据）。"
+                  f"如需真实行情备份，请走 tdx-connector / westock-mcp 连接器。")
             return None
         # 字段对齐 tickflow
         df = df.copy()
@@ -138,6 +148,8 @@ class MootdxDataSource:
             self.reconnect()
             df = self.client.bars(symbol=code, frequency=8, offset=320)
         if df is None or len(df) == 0:
+            print(f"  ⚠️ mootdx分钟K返回空 {sym}（服务器连通但无数据）。"
+                  f"如需真实行情备份，请走 tdx-connector / westock-mcp 连接器。")
             return None
         df = df.copy()
         if 'datetime' in df.columns:
@@ -169,6 +181,65 @@ class MootdxDataSource:
         """财务快照（37字段），market: 0深圳 1上海"""
         code, market = _to_mootdx_sym(sym)
         return self.client.finance(symbol=code, market=market)
+
+    def tencent_realtime(self, sym):
+        """腾讯财经 HTTP 实时快照（HTTPS，无需 TCP 7709，不封 IP）。
+        作为 mootdx 挂掉时的实时价备份源（a-stock-data 行情层之一）。
+        返回 dict(name/open/prev_close/price/volume) 或 None。"""
+        try:
+            url = 'https://qt.gtimg.cn/q=' + _tencent_code(sym)
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            raw = urllib.request.urlopen(req, timeout=8).read().decode('gbk', errors='ignore')
+            m = re.search(r'"([^"]+)"', raw)
+            if not m:
+                return None
+            f = m.group(1).split('~')
+            if len(f) < 6:
+                return None
+            return {
+                'name': f[1],
+                'code': f[2],
+                'price': float(f[3]),
+                'prev_close': float(f[4]),
+                'open': float(f[5]),
+                'volume': int(f[6]) if f[6].isdigit() else 0,
+            }
+        except Exception as e:
+            print(f"  ⚠️ 腾讯实时快照失败 {sym}: {e}")
+            return None
+
+    def historical_1m(self, sym, day, offset=2000):
+        """历史某日 1m K线（mootdx 主源）。
+        拉取 offset 根 1m 再按 trade_date==day 过滤，供历史日模拟（如 161129 的 07-17）使用。
+        注意：mootdx 对 LOF 基金(如161129)常返回空 → 此时应走 tdx-connector / westock-mcp
+        连接器兜底拉取，再写成 1m CSV（datasource 无法在模块内调用 MCP 工具）。"""
+        code, _ = _to_mootdx_sym(sym)
+        try:
+            df = self.client.bars(symbol=code, frequency=8, offset=offset)
+        except Exception as e:
+            print(f"  ⚠️ mootdx历史1m获取失败 {sym}: {e}, 重连重试")
+            self.reconnect()
+            df = self.client.bars(symbol=code, frequency=8, offset=offset)
+        if df is None or len(df) == 0:
+            raise RuntimeError(
+                f"mootdx 未返回 {sym} 的1m数据（LOF/基金常如此）。"
+                f"请改用 tdx-connector 或 westock-mcp 连接器拉取历史1m再写入 CSV。"
+            )
+        df = df.copy()
+        if 'datetime' in df.columns:
+            dt = pd.to_datetime(df['datetime'])
+            df['trade_time'] = dt
+            df['trade_date'] = dt.dt.strftime('%Y-%m-%d')
+        if 'vol' in df.columns:
+            df['volume'] = df['vol']
+            df = df.drop(columns=['vol'])
+        if 'volume' not in df.columns:
+            df['volume'] = 0.0
+        df['volume'] = df['volume'].clip(lower=0)
+        day_df = df[df['trade_date'] == day].reset_index(drop=True)
+        if len(day_df) == 0:
+            raise RuntimeError(f"mootdx 返回的1m数据不含 {day}（可能该日无交易或数据缺失）。")
+        return day_df
 
 
 # 兼容别名：让 monitor 的 `from tickflow import TickFlow` 改为

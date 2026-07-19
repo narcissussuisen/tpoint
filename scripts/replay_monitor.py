@@ -29,6 +29,12 @@ os.makedirs(LOG_DIR, exist_ok=True)
 # 持仓股候选（长飞光纤 601869 缺 CSV，已排除）
 HELD = ['300975.SZ', '603938.SH', '300395.SZ', '301526.SZ']
 
+# 本地名称覆盖（不在 live 持仓文件 TARGETS 内、仅模拟推送用的标的）
+NAME_OVERRIDE = {'161129.SZ': '原油LOF易方达'}
+
+def sym_name(sym):
+    return NAME_OVERRIDE.get(sym, M.TARGETS.get(sym, sym))
+
 
 def load_day(sym, day):
     """读 sym 的 1m CSV，返回 (day_df, pc, warm) 或 None。"""
@@ -85,7 +91,7 @@ def dry_run_full(sym, day):
     data = build_data(day_df, pc)
     M.STATE[sym] = {'PC': pc, 'WARM': warm}
     st = {}
-    sigs = M.detect_for(sym, M.TARGETS.get(sym, sym), data, st)
+    sigs = M.detect_for(sym, sym_name(sym), data, st)
     return sigs, day_df, pc, warm, data
 
 
@@ -129,7 +135,7 @@ def replay(sym, day, dry_run=False, webhook=None, window=30, gap=1.5):
         print(f'❌ {sym} {day} 无数据')
         return False
     sigs_preview, day_df, pc, warm, data = r
-    name = M.TARGETS.get(sym, sym)
+    name = sym_name(sym)
     full_n = len(day_df)
 
     if webhook:
@@ -165,17 +171,22 @@ def replay(sym, day, dry_run=False, webhook=None, window=30, gap=1.5):
             continue
         msgs = []
         for s in sigs:
-            msg = '[SIM] ' + M.emit(*s)   # 加 [SIM] 前缀，区分实盘
+            msg = M.emit_signal(s, sym=sym, sim=True)   # 卡片内 footer 已加 [SIM] 前缀
             msgs.append(msg)
             all_emitted.append(s)
-            log(f'[scan {scan}] {s[0]} @{bar_time} price={s[1]:.2f} chg={s[2]:+.2f}% '
+            sig_time = s[12][11:16] if len(s) > 12 and s[12] and len(s[12]) >= 16 else bar_time
+            log(f'[scan {scan}] {s[0]} @{sig_time} price={s[1]:.2f} chg={s[2]:+.2f}% '
                 f'level={s[4]} reason={s[10]}')
         if dry_run:
-            log(f'[scan {scan}] DRY-RUN 不推送，{len(msgs)}条文本预览:')
+            log(f'[scan {scan}] DRY-RUN 不推送，{len(msgs)}条预览:')
+            import json as _json
             for m in msgs:
-                log('  ----\n' + m)
+                if isinstance(m, dict):
+                    log('  ----\n' + _json.dumps(m, ensure_ascii=False, indent=1))
+                else:
+                    log('  ----\n' + str(m))
         else:
-            ok = M.push_batch(msgs)
+            ok = M.push_batch(msgs, sim=True)
             if ok:
                 push_ok += 1
             else:
@@ -187,7 +198,8 @@ def replay(sym, day, dry_run=False, webhook=None, window=30, gap=1.5):
     log(f'=== 回放结束: {scan}轮, 发出{len(all_emitted)}条信号, 推送成功{push_ok}失败{push_fail} ===')
     log('--- 信号汇总 ---')
     for s in all_emitted:
-        log(f'  {s[0]:1} price={s[1]:.2f} chg={s[2]:+.2f}% level={s[4]} reason={s[10]}')
+        sig_time = s[12][11:16] if len(s) > 12 and s[12] and len(s[12]) >= 16 else '?'
+        log(f'  {s[0]:1} @{sig_time} price={s[1]:.2f} chg={s[2]:+.2f}% level={s[4]} reason={s[10]}')
     logf.close()
     print(f'\n日志: {log_path}')
     return True

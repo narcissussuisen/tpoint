@@ -24,6 +24,15 @@ from exit_manager import make_config
 # ========== 路径配置化（跨平台，无需硬编码绝对路径） ==========
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+def _load_version():
+    """读 VERSION 文件，失败回退硬编码（与 VERSION 文件同步）。"""
+    try:
+        with open(os.path.join(BASE_DIR, 'VERSION'), encoding='utf-8') as f:
+            return f.read().strip()
+    except Exception:
+        return '9.1.3'
+VERSION = _load_version()
+
 def _env_or(name, default):
     """环境变量优先，否则用默认（脚本相对路径 / 原值）。"""
     v = os.environ.get(name)
@@ -54,7 +63,7 @@ SIGNAL_FILE = _cfg('signal_file', 'SIGNAL_FILE', os.path.join(BASE_DIR, 'data', 
 STATE_FILE  = _cfg('state_file',  'STATE_FILE',  os.path.join(BASE_DIR, 'data', 'state.json'))
 METRICS_FILE = _cfg('metrics_file', 'METRICS_FILE', os.path.join(BASE_DIR, 'data', 'metrics.json'))
 PROMPT_FILE = _cfg('prompt_file', 'TP_PROMPT_FILE', os.path.join(BASE_DIR, '..', 'stock-pool', 'prompt-common.md'))
-WEBHOOK_URL = _cfg('webhook_url', 'TP_WEBHOOK_URL', "https://open.feishu.cn/open-apis/bot/v2/hook/a35d7f52-9ed2-47df-a929-f11aaf89025d")
+WEBHOOK_URL = _cfg('webhook_url', 'TP_WEBHOOK_URL', "https://open.feishu.cn/open-apis/bot/v2/hook/1d241455-447b-4017-b9a3-4ecb61912369")
 # 锁文件放到项目 data/ 目录（跨会话共享，避免 SYSTEM 与用户会话 temp 不同导致锁失效）
 LOCK_FILE = os.path.join(BASE_DIR, 'data', '.monitor.lock')
 PID_FILE  = os.path.join(BASE_DIR, 'data', '.monitor.pid')
@@ -90,6 +99,14 @@ COOLDOWN = 120          # B/S共用冷却(秒)
 MAX_B_DAILY = 12
 MAX_S_DAILY = 12
 
+# 任务三/四：自由双向 + 动态仓位
+COLDOWN_BARS = 3      # 同方向信号最小间隔(bar)，替代原墙钟秒级冷却（replay 单次 detect_for 下 now 冻结会导致仅首信号触发）
+MAX_SIZE_PCT = 8       # 单标的累计仓位上限(成)
+def strength_size(g_dev_pct, m_present):
+    """按信号强度推导仓位(成)：强(偏离≥2% 或 含MACD背离)→4成，否则2成。"""
+    strong = (abs(g_dev_pct) >= 2.0) or bool(m_present)
+    return 4 if strong else 2
+
 # ========== 监控标的 (沿用v8: 从持仓文件自动同步) ==========
 def get_exchange(code):
     if code.startswith(('000','001','002','003','300','301')):
@@ -97,6 +114,17 @@ def get_exchange(code):
     if code.startswith(('600','601','603','605','688')):
         return '.SH'
     return '.SZ'
+
+def _limit_up_threshold(sym):
+    """涨停阈值（日内最高涨幅≥此值即视为涨停 regime）。
+    与 tickflow 前复权口径一致：PC 与 1m 同为前复权，日涨幅比值保真。
+    主板 10% / 创业板(300/301)·科创板(688) 20% / 北交所(8/4/92) 30%。"""
+    code = sym.split('.')[0]
+    if code.startswith(('300','301','688')):
+        return 0.20
+    if code.startswith(('8','4','92')):
+        return 0.30
+    return 0.10
 
 def load_targets():
     prompt_file = PROMPT_FILE
@@ -186,16 +214,33 @@ def now_ts():
 _last_push_ts = 0
 MIN_PUSH_INTERVAL = 5
 
-def push_batch(signals_text):
+def push_batch(items, sim=False):
+    """发推送。CARD_MODE: items 是 card dict 列表，逐条发 interactive 卡片；否则 items 是 text 列表，join 发 text。"""
     global _last_push_ts
-    if not signals_text:
+    if not items:
         return
     now = time.time()
     wait = MIN_PUSH_INTERVAL - (now - _last_push_ts)
     if wait > 0:
         time.sleep(wait)
-    text = '\n\n'.join(signals_text)
-    print(f"  📡 PUSH 准备: {len(signals_text)}条, 内容前60字: {text[:60]}")
+    if CARD_MODE:
+        ok_all = True
+        for item in items:
+            print(f"  📡 PUSH(card) 准备: {str(item)[:60]}")
+            try:
+                r = requests.post(WEBHOOK_URL, json=item, timeout=5)
+                _last_push_ts = time.time()
+                resp = r.json()
+                print(f"  📡 PUSH 响应: status={r.status_code} code={resp.get('code')} msg={resp.get('msg')}")
+                if not (r.status_code == 200 and resp.get('code') == 0):
+                    ok_all = False
+                    print(f"  ⚠️ PUSH 失败: {r.text[:200]}")
+            except Exception as e:
+                ok_all = False
+                print(f"  ⚠️ PUSH 异常: {e}")
+        return ok_all
+    text = '\n\n'.join(items)
+    print(f"  📡 PUSH 准备: {len(items)}条, 内容前60字: {text[:60]}")
     try:
         r = requests.post(WEBHOOK_URL, json={
             "msg_type": "text", "content": {"text": text}
@@ -235,35 +280,127 @@ def compute(sym):
     data['df'] = df
     return data
 
-def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name, tag='', exit_reason=''):
+def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name, tag='', exit_reason='', day_chg=None, bar_trade_time='', pos_pct=None):
+    """构造推送文本并写 signal.txt。v9.1.2: 加 [K:HH:MM] 信号K时刻 + EXIT 双口径(当日涨跌/持仓盈亏)。"""
+    k_tag = f' [K:{bar_trade_time[11:16]}]' if bar_trade_time and len(bar_trade_time) >= 16 else ''
     # 出场管理推送（接 exit_manager）：B开仓后跟踪，TRAIL/S触发平仓提醒
     if sig_type == 'X':
         reason = f" [{exit_reason}]" if exit_reason else ''
         chg_sign = '+' if chg_pct >= 0 else ''
+        day_sign = '+' if (day_chg or 0) >= 0 else ''
+        day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
         lines = [
-            f"🔵 {name} EXIT{reason}{' ' + tag if tag else ''}",
-            f"现价 {price:.2f}（{chg_sign}{chg_pct:.1f}%）",
+            f"🔵 {name} EXIT{reason} {pos_pct if pos_pct is not None else POS_PCT}成{(' ' + tag) if tag else ''}{k_tag}",
+            f"现价 {price:.2f}（当日 {day_str} / 持仓 {chg_sign}{chg_pct:.1f}%）",
             f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}"
         ]
         msg = '\n'.join(lines)
         print(msg)
         with open(SIGNAL_FILE, 'a') as f:
-            f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]\n{msg}\n\n")
+            f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n{msg}\n\n")
         return msg
     emoji = '🟢' if sig_type == 'B' else '🔴'
     op_type = 'BUY' if sig_type == 'B' else 'SELL'
     chg_sign = '+' if chg_pct >= 0 else ''
     star = stars(sig_type, temp, vol_r)
     lines = [
-        f"{emoji} {name} {op_type} {star}{' ' + tag if tag else ''}",
+        f"{emoji} {name} {op_type} {pos_pct if pos_pct is not None else POS_PCT}成 {star}{(' ' + tag) if tag else ''}{k_tag}",
         f"现价 {price:.2f}（{chg_sign}{chg_pct:.1f}%）",
         f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}"
     ]
     msg = '\n'.join(lines)
     print(msg)
     with open(SIGNAL_FILE, 'a') as f:
-        f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]\n{msg}\n\n")
+        f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n{msg}\n\n")
     return msg
+
+# ========= 飞书交互卡片（v9.1.2 重建，对齐测试群买卖卡片模板） =========
+CARD_MODE = True   # True: 发 interactive 卡片；False: 回退纯文本 emit
+POS_PCT = 3         # 单次做T仓位（成），替代原硬编码"3成"
+
+def _map_sample(sig_type, tag):
+    """样例标签映射：B+均线引力→回踩支撑 / S+均线引力→反弹遇阻 / MACD→背离。"""
+    t = (tag or '').strip('[]')
+    if sig_type == 'B':
+        if '均线引力' in t: return '回踩支撑'
+        if 'MACD' in t or '绿柱' in t: return '背离企稳'
+    elif sig_type == 'S':
+        if '均线引力' in t: return '反弹遇阻'
+        if 'MACD' in t or '红柱' in t: return '背离见顶'
+    return t if t else '—'
+
+def emit_card(s, sym=None, sim=False):
+    """构造飞书 interactive 卡片（v9.1.3 精简版）。
+    正文仅留 4 项：①标的·操作·仓位 ②操作点位 ③操作依据 ④信号时间戳；
+    其余调试参数（RSI/温度/量比/距触发%/原tag）折叠到卡片底部「备注」灰显。
+    s = 13元组。配色：买入=绿 / 卖出=红 / 出场=蓝（与用户约定一致）。
+    """
+    sig_type, price, chg, level_val, level_type, rsi, temp, vol_r, name, tag, exit_reason, day_chg, bar_tt = s[:13]
+    pos_pct = s[13] if len(s) >= 14 else POS_PCT
+    is_b, is_s, is_x = sig_type == 'B', sig_type == 'S', sig_type == 'X'
+    # 标题 + 配色（用户约定：买绿 / 卖红 / 出场蓝）
+    code = (sym.split('.')[0] if sym else (name or ''))
+    if is_b:
+        op, color = '买入', 'green'
+    elif is_s:
+        op, color = '卖出', 'red'
+    else:
+        if exit_reason in ('STOP', 'TRAIL', 'TIME'):
+            op, color = '止损', 'blue'
+        elif exit_reason == 'B':   # 空仓回补 = 买回
+            op, color = '买入', 'green'
+        else:                     # exit_reason == 'S' 平多 = 卖平
+            op, color = '卖出', 'red'
+    title = f'{code} {op} {pos_pct}成'
+    star = stars(sig_type, temp, vol_r)
+    op = '买入' if is_b else '卖出' if is_s else '出场'
+    chg_sign = '+' if chg >= 0 else ''
+    sample = _map_sample(sig_type, tag)
+    bt = bar_tt[11:16] if bar_tt and len(bar_tt) >= 16 else ''
+    # 行1：标的·操作｜做T仓位 ★
+    line1 = f"{name}·{op}｜做T·{pos_pct}成 {star}"
+    # 行2：操作点位（买卖用动态 level_type；出场双口径）
+    if is_x:
+        day_sign = '+' if (day_chg or 0) >= 0 else ''
+        day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
+        reason = f" [{exit_reason}]" if exit_reason else ''
+        line2 = f"现价 {price:.2f}（当日 {day_str} / 持仓 {chg_sign}{chg:.1f}%）{reason}"
+    else:
+        line2 = f"现价 {price:.2f}（{chg_sign}{chg:.1f}%）｜{level_type} {level_val:.2f}"
+    # 行3：操作依据
+    line3 = f"依据：{sample}"
+    # 行4：信号K时间戳
+    line4 = f"信号K：{bt}"
+    # 备注（底部折叠，灰显）：调试参数
+    trigger_pct = (level_val - price) / price * 100 if price > 0 else 0.0
+    trig_sign = '+' if trigger_pct >= 0 else ''
+    footer = (f"RSI={rsi:.0f} 温={temp:.0f} 量比={vol_r:.1f} "
+              f"距触发{trig_sign}{trigger_pct:.1f}% 原tag=\"{tag}\" ｜ "
+              f"v9 ({VERSION})·SIM·仅供参考非投资建议")
+    if sim:
+        footer += " [SIM]"
+    md = lambda t: {"tag": "lark_md", "content": t}
+    elements = [
+        {"tag": "div", "text": md(f"**{line1}**")},
+        {"tag": "div", "text": md(line2)},
+        {"tag": "div", "text": md(line3)},
+        {"tag": "div", "text": md(line4)},
+        {"tag": "hr"},
+        {"tag": "note", "elements": [{"tag": "plain_text", "content": footer}]},
+    ]
+    return {
+        "msg_type": "interactive",
+        "card": {
+            "header": {"template": color, "title": {"tag": "plain_text", "content": title[:100]}},
+            "elements": elements,
+        },
+    }
+
+def emit_signal(s, sym=None, sim=False):
+    """dispatch：CARD_MODE→卡片，否则纯文本 fallback。返回 msg_or_card。sym 用于卡片标题(标的代码)。"""
+    if CARD_MODE:
+        return emit_card(s, sim=sim)
+    return emit(*s)
 
 def load_state():
     try:
@@ -308,16 +445,31 @@ def _compute_stop_price(entry_price, atr, entry_idx, cfg):
     return entry_price - cfg['stop_atr_mult'] * atr[entry_idx]
 
 
-def _mk_exit(reason, name, price, pos, vwap, atr, rsi14, temp, vol_ratio, i):
-    """构造一条 EXIT 信号元组（11元组，末位为 exit_reason）。"""
+def _mk_exit(reason, name, price, pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times):
+    """构造一条 EXIT 信号元组（13元组）。v9.1.2: 加 day_chg(当日涨跌) + bar_trade_time。
+    v9.1.2-trend: 支持 side 对称（多仓/空仓）+ 'B'回补 reason。"""
+    side = pos.get('side', 'long')
     entry = pos['entry_price']
-    chg = (price - entry) / entry * 100 if entry > 0 else 0.0
+    if side == 'long':
+        chg = (price - entry) / entry * 100 if entry > 0 else 0.0       # 多仓盈亏
+    else:
+        chg = (entry - price) / entry * 100 if entry > 0 else 0.0       # 空仓盈亏(卖高-买低)
+    day_chg = (price - pc) / pc * 100 if pc > 0 else 0.0         # 当日涨跌幅
     if reason == 'TRAIL':
-        level_val = pos['max_fav'] * (1 - EXIT_CFG['trail_pct'] / 100.0)
+        if side == 'long':
+            level_val = pos['max_fav'] * (1 - EXIT_CFG['trail_pct'] / 100.0)
+        else:
+            level_val = pos['max_fav'] * (1 + EXIT_CFG['trail_pct'] / 100.0)
         level_type = '移动止损线'
-    elif reason == 'S':
-        level_val = vwap[i] + K1 * atr[i]
-        level_type = '触及上轨'
+    elif reason in ('S', 'B'):   # 多仓平多 / 空仓回补：按 price 相对 VWAP±K1·ATR 实际位置动态标注
+        upper = vwap[i] + K1 * atr[i]
+        lower = vwap[i] - K1 * atr[i]
+        if price >= upper:
+            level_val, level_type = upper, '触及上轨'
+        elif price <= lower:
+            level_val, level_type = lower, '触及下轨'
+        else:
+            level_val, level_type = price, '区间内'
     elif reason == 'STOP':
         level_val = pos['stop_price'] if pos['stop_price'] > -1e8 else price
         level_type = '硬止损线'
@@ -325,15 +477,19 @@ def _mk_exit(reason, name, price, pos, vwap, atr, rsi14, temp, vol_ratio, i):
         level_val = price
         level_type = '超时强平'
     tag = f"[{pos.get('entry_reason','')}]" if pos.get('entry_reason') else ''
+    bt = str(trade_times[i]) if trade_times is not None and i < len(trade_times) else ''
     return ('X', price, chg, level_val, level_type,
-            rsi14[i], temp[i], vol_ratio[i], name, tag, reason)
+            rsi14[i], temp[i], vol_ratio[i], name, tag, reason, day_chg, bt)
 
 
 def detect_for(sym, name, data, st):
-    """v9 信号检测 + 出场管理跟踪（接 exit_manager）。
+    """v9 信号检测 + 出场管理（v9.1.3+：自由双向 / 动态仓位 / 持续监控）。
 
-    算法判定统一走 indicators.check_*_trigger，与回测/selftest 一致。
-    出场管理：B开仓→移动止损跟踪→S信号/回撤触发平仓并推送 EXIT（单仓位日内T）。
+    - 取消严格 B/S 交替配对（任务三）：每根 bar 独立评估买卖；同侧累加仓位，
+      反向强信号按持仓规模平仓（如两笔2成买入→多4成，遇强卖出→提示卖出4成）。
+    - 仓位不固定模板，由信号强度动态推导（strength_size）。
+    - 监控全时段持续（任务四）：不限制每日仅一次完整周期；以 bar 索引冷却放行
+      所有有效波动点，replay 单次 detect_for 下也能连续触发。
     """
     signals = []
     now = now_ts()
@@ -347,104 +503,160 @@ def detect_for(sym, name, data, st):
     c = data['c']; lo = data['lo']; vwap = data['vwap']; atr = data['atr']
     trend = data['trend']; rsi14 = data['rsi']; temp = data['temp']; vol_ratio = data['vol_ratio']
     n = data['n']; df = data['df']
+    trade_times = df['trade_time'].values if df is not None else None
 
-    # 当前持仓（跨扫描/重启持久化在 st 中）
-    pos = st.get(f'pos_{sym}')  # None 或 {'entry_price','entry_idx','max_fav','entry_reason','stop_price'}
+    # 当前持仓（跨扫描/重启持久化在 st 中）；新增 size_pct 累计仓位(成)
+    pos = st.get(f'pos_{sym}')  # None 或 {'side','entry_price','entry_idx','max_fav','entry_reason','stop_price','size_pct'}
 
-    unchecked = 0; b_match = 0; s_match = 0
+    run_hi_max = -1e9   # 当日截至当前 bar 的最高价（涨停 regime 判定，A2）
     for i in range(2, n):
         bar_key = f"bar_{sym}_{i}"
         if st.get(bar_key):
             continue
-        unchecked += 1
         if atr[i] <= 0:
             st[bar_key] = now
             continue
+        run_hi_max = max(run_hi_max, data['h'][i])
+        near_limit_up = ((run_hi_max - pc) / pc >= _limit_up_threshold(sym)) if pc > 0 else False
 
-        exited = False
-        had_pos = pos is not None
-        # ===== 持仓中：出场管理检查（优先级 硬止损 > S信号 > 移动止损 > 时间止损）=====
-        if had_pos:
-            if c[i] > pos['max_fav']:
-                pos['max_fav'] = float(c[i])
+        # ===== 持仓中：出场管理（硬止损 > 反向信号 > 移动止损 > 时间止损） =====
+        if pos is not None:
+            side = pos['side']
+            if side == 'long':
+                if c[i] > pos['max_fav']:
+                    pos['max_fav'] = float(c[i])
+            else:
+                if c[i] < pos['max_fav']:
+                    pos['max_fav'] = float(c[i])
+            sz = pos['size_pct']
+            exited = False
             # 1) 硬止损（生产默认关）
-            if EXIT_CFG['use_stop']:
+            if not exited and EXIT_CFG['use_stop']:
                 if EXIT_CFG['stop_mode'] == 'trend':
-                    if trend is not None and trend[i] == -1:
-                        signals.append(_mk_exit('STOP', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i))
+                    if trend is not None and ((side == 'long' and trend[i] == -1) or (side == 'short' and trend[i] == 1)):
+                        signals.append(_mk_exit('STOP', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                         pos = None; exited = True
                 else:
-                    if lo[i] <= pos['stop_price']:
-                        signals.append(_mk_exit('STOP', name, pos['stop_price'], pos, vwap, atr, rsi14, temp, vol_ratio, i))
+                    if side == 'long' and lo[i] <= pos['stop_price']:
+                        signals.append(_mk_exit('STOP', name, pos['stop_price'], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                         pos = None; exited = True
-            # 2) S信号出场（自然目标，保留）
+                    elif side == 'short' and c[i] >= pos['stop_price']:
+                        signals.append(_mk_exit('STOP', name, pos['stop_price'], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
+                        pos = None; exited = True
+            # 2) 反向信号自然平仓
             if not exited and EXIT_CFG['s_signal_exit']:
-                ts, rs = check_s_trigger(data, i)
-                if ts:
-                    signals.append(_mk_exit('S', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i))
-                    pos = None; exited = True
-            # 3) 移动止损（浮盈保护，生产核心杠杆）
-            if not exited and EXIT_CFG['use_trailing']:
-                fav_ret = (pos['max_fav'] - pos['entry_price']) / pos['entry_price'] * 100
-                if fav_ret >= EXIT_CFG['trail_activate_pct']:
-                    trail_stop = pos['max_fav'] * (1 - EXIT_CFG['trail_pct'] / 100.0)
-                    if c[i] <= trail_stop and trail_stop > pos['stop_price']:
-                        signals.append(_mk_exit('TRAIL', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i))
+                if side == 'long':
+                    ts, rs = check_s_trigger(data, i)
+                    if ts:
+                        signals.append(_mk_exit('S', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                         pos = None; exited = True
-            # 4) 时间止损（超时强平）
+                else:
+                    tb, rb = check_b_trigger(data, i)
+                    if tb:
+                        signals.append(_mk_exit('B', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
+                        pos = None; exited = True
+            # 3) 移动止损（浮盈保护；多仓/空仓对称）
+            if not exited and EXIT_CFG['use_trailing']:
+                if side == 'long':
+                    fav_ret = (pos['max_fav'] - pos['entry_price']) / pos['entry_price'] * 100
+                    if fav_ret >= EXIT_CFG['trail_activate_pct']:
+                        trail_stop = pos['max_fav'] * (1 - EXIT_CFG['trail_pct'] / 100.0)
+                        if c[i] <= trail_stop and trail_stop > pos['stop_price']:
+                            signals.append(_mk_exit('TRAIL', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
+                            pos = None; exited = True
+                else:
+                    fav_ret = (pos['entry_price'] - pos['max_fav']) / pos['entry_price'] * 100
+                    if fav_ret >= EXIT_CFG['trail_activate_pct']:
+                        trail_stop = pos['max_fav'] * (1 + EXIT_CFG['trail_pct'] / 100.0)
+                        if c[i] >= trail_stop and trail_stop < pos['stop_price']:
+                            signals.append(_mk_exit('TRAIL', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
+                            pos = None; exited = True
+            # 4) 时间止损
             if not exited and EXIT_CFG['use_time'] and (i - pos['entry_idx']) >= EXIT_CFG['time_stop_bars']:
-                signals.append(_mk_exit('TIME', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i))
+                signals.append(_mk_exit('TIME', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                 pos = None; exited = True
+            st[bar_key] = now
+            continue
 
-        # ===== 空仓：B建仓 / S提醒（仅本bar开头无持仓才走，避免出场bar重复推送）=====
-        if not had_pos:
-            tb, rb = check_b_trigger(data, i)
-            if tb:
-                b_match += 1
-                if b_count < MAX_B_DAILY:
-                    last = st.get(f'_cooldown_{sym}_B', 0)
-                    if now - last >= COOLDOWN:
-                        chg = (c[i] - pc) / pc * 100
-                        st[f'_cooldown_{sym}_B'] = now
-                        b_count += 1
-                        lower_std = vwap[i] - K1 * atr[i]
-                        tag = f'[{rb}]' if rb and rb != '回踩下轨' else ''
+        # ===== 空仓：自由双向 + 动态仓位（任务三/四） =====
+        tb, rb = check_b_trigger(data, i)
+        ts, rs = check_s_trigger(data, i)
+        if not (tb or ts):
+            st[bar_key] = now
+            continue
+        # 买入 / 开多（或加多 / 平空回补）
+        if tb:
+            s_pct = strength_size((c[i] - vwap[i]) / vwap[i] * 100.0, 'MACD' in (rb or ''))
+            last_b = st.get(f'_cooldown_{sym}_B', -9999)
+            if s_pct > 0 and (i - last_b) >= COLDOWN_BARS and b_count < MAX_B_DAILY:
+                st[f'_cooldown_{sym}_B'] = i
+                b_count += 1
+                chg = (c[i] - pc) / pc * 100
+                tag = f'[{rb}]' if rb and rb != '回踩下轨' else ''
+                lower_std = vwap[i] - K1 * atr[i]
+                if pos is None:
+                    signals.append(('B', c[i], chg, lower_std, '触及下轨',
+                                    rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', s_pct))
+                    pos = {'side': 'long', 'entry_price': float(c[i]), 'entry_idx': i,
+                            'max_fav': float(c[i]), 'entry_reason': rb or '',
+                            'stop_price': _compute_stop_price(float(c[i]), atr, i, EXIT_CFG), 'size_pct': s_pct}
+                elif pos['side'] == 'long':   # 加仓（累加同侧）
+                    add = min(s_pct, MAX_SIZE_PCT - pos['size_pct'])
+                    if add > 0:
+                        ns = pos['size_pct'] + add
+                        pos['entry_price'] = (pos['entry_price'] * pos['size_pct'] + c[i] * add) / ns
+                        pos['max_fav'] = max(pos['max_fav'], float(c[i]))
+                        pos['size_pct'] = ns
                         signals.append(('B', c[i], chg, lower_std, '触及下轨',
-                                        rsi14[i], temp[i], vol_ratio[i], name, tag, ''))
-                        # 开仓：进入出场管理跟踪（单仓位日内T）
-                        pos = {'entry_price': float(c[i]), 'entry_idx': i,
-                               'max_fav': float(c[i]), 'entry_reason': rb or '',
-                               'stop_price': _compute_stop_price(float(c[i]), atr, i, EXIT_CFG)}
-            ts, rs = check_s_trigger(data, i)
-            if ts:
-                s_match += 1
-                if s_count < MAX_S_DAILY:
-                    last = st.get(f'_cooldown_{sym}_S', 0)
-                    if now - last >= COOLDOWN:
-                        chg = (c[i] - pc) / pc * 100
-                        st[f'_cooldown_{sym}_S'] = now
-                        s_count += 1
-                        upper_std = vwap[i] + K1 * atr[i]
-                        tag = f'[{rs}]' if rs and rs != '反弹遇阻' else ''
+                                        rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', add))
+                else:   # 空仓中遇B → 平空回补（买入），按 min(信号强度, 空仓规模)
+                    sz = min(s_pct, pos['size_pct'])
+                    if sz > 0:
+                        chg2 = (pos['entry_price'] - c[i]) / pos['entry_price'] * 100
+                        signals.append(_mk_exit('B', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
+                        pos['size_pct'] -= sz
+                        if pos['size_pct'] <= 0:
+                            pos = None
+        # 卖出 / 开空（或加空 / 平多），对称；涨停 regime 抑制开空（A2）
+        if ts:
+            s_pct = strength_size((c[i] - vwap[i]) / vwap[i] * 100.0, 'MACD' in (rs or ''))
+            last_s = st.get(f'_cooldown_{sym}_S', -9999)
+            if s_pct > 0 and (i - last_s) >= COLDOWN_BARS and s_count < MAX_S_DAILY and not near_limit_up:
+                st[f'_cooldown_{sym}_S'] = i
+                s_count += 1
+                chg = (c[i] - pc) / pc * 100
+                tag = f'[{rs}]' if rs and rs != '反弹遇阻' else ''
+                upper_std = vwap[i] + K1 * atr[i]
+                if pos is None:
+                    signals.append(('S', c[i], chg, upper_std, '触及上轨',
+                                    rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', s_pct))
+                    pos = {'side': 'short', 'entry_price': float(c[i]), 'entry_idx': i,
+                            'max_fav': float(c[i]), 'entry_reason': rs or '',
+                            'stop_price': _compute_stop_price(float(c[i]), atr, i, EXIT_CFG), 'size_pct': s_pct}
+                elif pos['side'] == 'short':   # 加仓（累加同侧）
+                    add = min(s_pct, MAX_SIZE_PCT - pos['size_pct'])
+                    if add > 0:
+                        ns = pos['size_pct'] + add
+                        pos['entry_price'] = (pos['entry_price'] * pos['size_pct'] + c[i] * add) / ns
+                        pos['max_fav'] = min(pos['max_fav'], float(c[i]))
+                        pos['size_pct'] = ns
                         signals.append(('S', c[i], chg, upper_std, '触及上轨',
-                                        rsi14[i], temp[i], vol_ratio[i], name, tag, ''))
-        else:
-            # 持仓中：统计S匹配（日志用），不再发独立S推送（已由 EXIT 覆盖）
-            ts, rs = check_s_trigger(data, i)
-            if ts:
-                s_match += 1
-
+                                        rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', add))
+                else:   # 多仓中遇S → 平多（卖出），按 min(信号强度, 多仓规模)
+                    sz = min(s_pct, pos['size_pct'])
+                    if sz > 0:
+                        chg2 = (c[i] - pos['entry_price']) / pos['entry_price'] * 100
+                        signals.append(_mk_exit('S', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
+                        pos['size_pct'] -= sz
+                        if pos['size_pct'] <= 0:
+                            pos = None
         st[bar_key] = now
-
-    if unchecked > 0:
-        print(f"  [{datetime.now(CST).strftime('%H:%M:%S')}] {name} n={n} unchecked={unchecked} "
-              f"b_match={b_match} s_match={s_match} B={b_count}/{MAX_B_DAILY} S={s_count}/{MAX_S_DAILY}"
-              f" 持仓={'Y' if pos else 'N'}")
 
     st[f'_b_count_{sym}_{today}'] = b_count
     st[f'_s_count_{sym}_{today}'] = s_count
     st[f'pos_{sym}'] = pos  # 持久化持仓（跨扫描/重启）
     return signals
+
 
 def is_trading_today():
     now = datetime.now(CST)
@@ -686,10 +898,7 @@ def run():
                                 break
                     sigs = detect_for(sym, name, data, st)
                     for s in sigs:
-                        (sig_type, price, chg, level_val, level_type,
-                         rsi, temp, vol_r, sig_name, tag, exit_reason) = s
-                        msg = emit(sig_type, price, chg, level_val, level_type,
-                                   rsi, temp, vol_r, sig_name, tag, exit_reason=exit_reason)
+                        msg = emit_signal(s, sym=sym)
                         batch.append(msg)
                 except Exception as e:
                     err_count += 1

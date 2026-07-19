@@ -214,8 +214,9 @@ def macd_divergence_signal(h, lo, c, dif, dea, hist, i, w=LOCAL_W):
     卖点: 价格创新高 + MACD红柱缩短 + 快慢线死叉(或即将死叉)
     买点: 价格创新低 + MACD绿柱收缩 + 快慢线金叉(或即将金叉)
 
-    [P0① swap 已验证] 原买卖符号写反: 交换后(local_high块->+1 / local_low块->-1)
-    使 baseline skill24 由 -2.44% -> +2.77%, 为当前最优 macd_div 实现。
+    [v9.1.2 撤销swap] 恢复MD文档语义: 卖点(价格新高)→-1触发S, 买点(价格新低)→+1触发B。
+    v9.1.1 曾做 swap(卖点→+1/买点→-1) 因研究态 skill24 -2.44%→+2.77%, 但 B/S 语义
+    与 MD 文档"急拉不追→卖/急跌不杀→买"相反; v9.1.2 撤销, OOS 待重新验证。
     (P0② 试过"真实枢轴背离"重构, 两种方向均打不过本 swap 版, 已弃用。)
 
     返回: (factor: +1 buy / -1 sell / 0 neutral, detail: str)
@@ -245,7 +246,7 @@ def macd_divergence_signal(h, lo, c, dif, dea, hist, i, w=LOCAL_W):
         if not reasons and dif[i] > dea[i] and dif[i] < dif[i-1] and hist[i] > 0:
             reasons.append('DIF拐头')
         if reasons:
-            return 1, '+'.join(reasons)
+            return -1, '+'.join(reasons)   # [v9.1.2] 卖点(价格新高)→-1 触发S
 
     # --- 买点: 价格新低 + (绿柱收缩 OR 金叉) ---  [swap: 返回 -1]
     if local_low:
@@ -257,7 +258,7 @@ def macd_divergence_signal(h, lo, c, dif, dea, hist, i, w=LOCAL_W):
         if not reasons and dif[i] < dea[i] and dif[i] > dif[i-1] and hist[i] < 0:
             reasons.append('DIF拐头')
         if reasons:
-            return -1, '+'.join(reasons)
+            return 1, '+'.join(reasons)    # [v9.1.2] 买点(价格新低)→+1 触发B
 
     return 0, ''
 
@@ -353,7 +354,10 @@ def detect_miji_signals(data, pc, start_idx=2,
             if not (b_trend_filter and trend is not None and trend[i] == -1 and not reversed_exempt):
                 buy_factors = {'gravity': g_factor, 'vol_div': v_factor, 'macd_div': m_factor}
                 buy_score = sum(1 for f in buy_factors.values() if f == 1)
-                buy_pass = (m_factor == 1) if require_macd else (buy_score >= min_resonance)
+                if require_macd and i < LOCAL_W:
+                    buy_pass = (g_factor == 1)   # [v9.1.2] 早盘降级 gravity-only
+                else:
+                    buy_pass = (m_factor == 1) if require_macd else (buy_score >= min_resonance)
                 if buy_pass:
                     details = []
                     if g_factor == 1: details.append(f'均线引力(dev={g_dev:.2f}%)')

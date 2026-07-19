@@ -248,7 +248,7 @@ def macd_divergence_signal(h, lo, c, dif, dea, hist, i, w=LOCAL_W):
         if not reasons and dif[i] > dea[i] and dif[i] < dif[i-1] and hist[i] > 0:
             reasons.append('DIF拐头')
         if reasons:
-            return 1, '+'.join(reasons)
+            return -1, '+'.join(reasons)   # [v9.1.2] 卖点(价格新高)→-1 触发S
 
     # --- 买点: 价格新低 + (绿柱收缩 OR 金叉) ---
     if local_low:
@@ -261,7 +261,7 @@ def macd_divergence_signal(h, lo, c, dif, dea, hist, i, w=LOCAL_W):
         if not reasons and dif[i] < dea[i] and dif[i] > dif[i-1] and hist[i] < 0:
             reasons.append('DIF拐头')
         if reasons:
-            return -1, '+'.join(reasons)
+            return 1, '+'.join(reasons)    # [v9.1.2] 买点(价格新低)→+1 触发B
 
     return 0, ''
 
@@ -395,7 +395,10 @@ def detect_miji_signals(data, pc, start_idx=2,
             if not (b_trend_filter and trend is not None and trend[i] == -1 and not reversed_exempt):
                 buy_factors = {'gravity': g_factor, 'vol_div': v_factor, 'macd_div': m_factor}
                 buy_score = sum(1 for f in buy_factors.values() if f == 1)
-                buy_pass = (m_factor == 1) if require_macd else (buy_score >= min_resonance)
+                if require_macd and i < LOCAL_W:
+                    buy_pass = (g_factor == 1)   # [v9.1.2] 早盘降级 gravity-only
+                else:
+                    buy_pass = (m_factor == 1) if require_macd else (buy_score >= min_resonance)
                 if buy_pass:
                     details = []
                     if g_factor == 1: details.append(f'均线引力(dev={g_dev:.2f}%)')
@@ -469,8 +472,13 @@ def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, require_macd=
     buy_score = sum(1 for f in [g_factor, v_factor, m_factor] if f == 1)
     sell_score = sum(1 for f in [g_factor, v_factor, m_factor] if f == -1)
 
-    b_trig = (m_factor == 1) if require_macd else (buy_score >= min_resonance)
-    s_trig = (m_factor == -1) if require_macd else (sell_score >= min_resonance)
+    # [v9.1.2] i<LOCAL_W 时 macd_div 恒0(require_macd下B/S会哑火), 降级为 gravity-only
+    if require_macd and i < LOCAL_W:
+        b_trig = (g_factor == 1)
+        s_trig = (g_factor == -1)
+    else:
+        b_trig = (m_factor == 1) if require_macd else (buy_score >= min_resonance)
+        s_trig = (m_factor == -1) if require_macd else (sell_score >= min_resonance)
 
     b_detail = ''
     if b_trig:
