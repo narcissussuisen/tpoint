@@ -12,11 +12,13 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 import kf_utils as K
 import miji_engine as ME
 from run_study import _segment_days, HORIZONS
 
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
+DATA = KEYFACTOR_DATA_DIR
 SUBSET = os.path.join(DATA, '_subset400')
 OUT_JSON = os.path.join(DATA, 'macd_required_oos.json')
 

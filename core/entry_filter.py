@@ -10,9 +10,9 @@ B进场质量过滤 — 用真实 round-trip 数据做特征诊断, 找出分隔
   3. 用与出场管理回测一致的 simulate_day(单仓位) 对比: 不过滤 vs 各候选过滤,
      在看家配置(移动止损出场)下给出胜率/盈亏比/总收益, 确认提升。
 
-数据: tickflow 已落地 1m CSV (7标的×约21交易日), 离线零成本。
+数据: tickflow 已落地 1m CSV (离线), 标的来源 = data/watchlist.json（单一真相源）。
 """
-import sys, os
+import sys, os, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 import pandas as pd
@@ -20,11 +20,30 @@ from datetime import datetime
 from indicators import compute_indicators, detect_signals
 from exit_manager import simulate_day, aggregate_metrics, make_config
 
-TARGETS = {
-    '300975.SZ': '商络电子', '601869.SH': '长飞光纤', '603938.SH': '三孚股份',
-    '300395.SZ': '菲利华', '301526.SZ': '国际复材',
-    '300757.SZ': '罗博特科', '688820.SH': '盛合晶微',
-}
+def _load_entry_targets():
+    """动态加载标的：① watchlist.json → ② backtest_data/ 目录自动发现。
+    2026-07-21 移除硬编码持仓列表，统一为单一数据源。"""
+    # 优先：从项目 watchlist.json 加载
+    _wl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'watchlist.json')
+    try:
+        if os.path.exists(_wl_path):
+            with open(_wl_path, encoding='utf-8') as f:
+                wl = json.load(f)
+            if wl and isinstance(wl, dict) and len(wl) > 0:
+                return wl
+    except Exception:
+        pass
+    # 兜底：自动发现 backtest_data/ 下有 1m CSV 的标的
+    _bd = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backtest_data')
+    targets = {}
+    if os.path.isdir(_bd):
+        for fn in os.listdir(_bd):
+            if fn.endswith('_1m.csv'):
+                sym = fn.replace('_1m.csv', '')
+                targets[sym] = sym  # name fallback = code
+    return targets
+
+TARGETS = _load_entry_targets()
 
 
 # ========== 数据加载(返回 data 以便取特征) ==========

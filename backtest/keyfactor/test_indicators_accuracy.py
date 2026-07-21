@@ -13,12 +13,14 @@ import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 sys.path.insert(0, os.path.join(HERE, '..', '..', 'core'))   # 让 import indicators 命中 core/
 import kf_utils as K
 import indicators as IND
 from run_study import _segment_days, HORIZONS
 
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
+DATA = KEYFACTOR_DATA_DIR
 SUBSET = os.path.join(DATA, '_subset400')
 OUT_JSON = os.path.join(DATA, 'indicators_accuracy.json')
 

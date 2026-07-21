@@ -10,10 +10,12 @@
 import os, json, glob, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 import run_study as RS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
+DATA = KEYFACTOR_DATA_DIR
 INDIR = os.path.join(DATA, '1m')
 OUT = os.path.join(DATA, 'keyfactor_lean.json')
 MIN_RES = 2  # 选中配置: RESONANCE=2.0

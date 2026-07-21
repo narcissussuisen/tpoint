@@ -14,11 +14,20 @@ import indicators as V9
 from indicators import compute_indicators, detect_signals
 
 tf = MootdxDataSource()
-TARGETS = {
-    '300975.SZ': '商络电子', '601869.SH': '长飞光纤', '603938.SH': '三孚股份',
-    '300395.SZ': '菲利华', '301526.SZ': '国际复材',
-    '300757.SZ': '罗博特科', '688820.SH': '盛合晶微',  # 已清仓但可回测
-}
+
+def _load_targets():
+    """动态加载标的：data/watchlist.json（单一真相源）。2026-07-21 移除硬编码。"""
+    import json as _j, os as _o
+    _p = _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), '..', 'data', 'watchlist.json')
+    try:
+        if _o.path.exists(_p):
+            with open(_p, encoding='utf-8') as _f:
+                return _j.load(_f)
+    except Exception:
+        pass
+    return {}
+
+TARGETS = _load_targets()
 DAILY_COUNT = 500  # 约2年
 
 

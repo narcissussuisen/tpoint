@@ -3,6 +3,18 @@
 > 版本号规则：MAJOR.MINOR.PATCH；PATCH=同一算法框架内的修复/硬化（每个修复 +1）。
 > 说明仅标注各版本**核心算法与信号语义**的差异，便于回溯。
 
+## v9.2.0 — floor 门控正式上线（替代 strict）
+- **架构解耦**：新建 `backtest/keyfactor/_gate_floor.py` 共享门控模块（`gate_buy`/`gate_sell` 纯函数），消除 `miji_engine.py` 与 `miji_alpha.py` 的重复门控逻辑。
+- **门控切换**：生产默认 `MACD_GATE_MODE` 从 `strict` → `floor`（通过 `run_monitor.bat`/`run_engine.bat` 环境变量设置，无需改动算法代码）。
+- **改进1 — 价格天花板 S 冷却期**：`floor_sell_cooldown_bars`（OOS 扫出最优值），上次天花板 S 后 N bar 内禁止再以"价格天花板"触发 S，抑制趋势日卖飞噪声。
+- **改进2 — 涨停/近涨停日 S 抑制**：`floor_suppress_day_chg`（OOS 扫出最优值），日涨幅≥阈值时关闭价格天花板 S 通道，仅保留 MACD 背离 S。
+- **改进3 — 趋势诊断**（预留）：`floor_trend_threshold` 趋势感知缩放框架已搭好，参数暂按默认（无缩放）。待多日 OOS 确认趋势-噪声关系后启用。
+- **验证**：106 标的 OOS 参数扫描（冷却期 10 值 + 涨停抑制 8 值 + 趋势分组诊断），选拐点处最优参数；`py_compile` + 今日真实 1m 无回归重放验证通过。
+
+## v9.1.5 — 数据源韧性 + 静默零信号告警 + tf 预热
+- datasource: `_retry_with_backoff` 退避重连；修正 3-4 行死区；腾讯兜底开盘即生效。
+- monitor: 静默零信号告警（连续 6 轮≈90s 无 bar→信号群 1d241455）+ tf 预热校验。
+
 ## v9.0.0
 - miji 做T策略初始版本（基线）。
 
@@ -34,3 +46,19 @@
 - **修复 000938 涨停顶虚假买点**：2026-07-16 `X[B]@10:32`（-9.19%）根因 = 涨停封板平盘 bar 同时满足 `lo[i] <= lo[win].min()` 误判新低 → 虚假 `+1` → 反T回补在涨停顶触发。严格化 + 走平跳过后该回补消失，仅剩合法 `S@09:32`。
 - **全量同步**：`macd_divergence_signal` 与 `volume_divergence_signal` 同款修复，且 `core/miji_alpha.py`（实盘）与 `backtest/keyfactor/miji_engine.py`（研究态）语义保持一致，避免 live/回测漂移。
 - 清理：`core/monitor.py` 删除死常量 `COLDOWN = 120`（方向冷却已由 `COLDOWN_BARS` 接管）；`data/signal.txt` 解除索引追踪（真正被 .gitignore 忽略）。
+
+## v9.1.5（复盘韧性改进，2026-07-21）
+> 背景：当日 161129 全天 0 信号根因 = 开盘数据源（mootdx LOF 分钟K 返回空 + 腾讯兜底同窗口为空 → compute 返 None），且旧进程 tf 初始化窗口抛 NoneType 错；系统因 `errors=0` 静默吞掉整日。
+- **① 数据源韧性（core/datasource.py）**：
+  - 新增 `_retry_with_backoff`（指数退避 1/2/4s 封顶 <15s），套用于 `intraday()`/`get()`/`historical_1m()` 的 mootdx 取数，失败即重连再试。
+  - **修正 3–4 行死区**：旧逻辑 mootdx 给 3–4 行时不走腾讯兜底、compute 又拒收 `<5` → 静默 None；现 mootdx 行数 `<5` 即触发腾讯分时兜底，并**优先真实 OHLC（mootdx≥5 行）**，否则选腾讯；两源皆 `<5` 才返回少量数据（compute 仍拒收，但已显式日志）。
+  - 腾讯分时兜底开盘即生效（LOF/T+0 基金救命稻草）。
+- **② 静默零信号告警（core/monitor.py，P0）**：
+  - `run()` 维护 per-symbol `_miss_{sym}` 计数（持久化于 state.json，跨重启）；本轮无 bar 则 +1，有数据则清零并解除去抖锁。
+  - 阈值 `ALERT_MISS_ROUNDS=6`（≈90s 持续无 bar）→ 推**信号群 webhook `1d241455`**（已与用户确认）告警「⚠️ 数据源中断告警：XX 已连续 N 轮无分钟K…」。
+  - 误报治理：仅交易时段计数；开盘宽限期 `ALERT_GRACE_MIN=5`（09:30–09:35 与 13:00–13:05 不计数）；去抖（告警一次后置 `alerted_miss_` 锁，数据恢复才清除，避免刷屏）。
+  - `load_state` 清理新增 `_miss_`/`alerted_miss_` 键（跨日重置）。
+- **③ tf 预热（core/monitor.py）**：
+  - 新增 `_warmup_tf()`：进程锁后、主循环前强制 `TickFlow()` + 建立连接 + 校验取数（对标 `_server_ok`），失败指数退避重试 3 次；全失败返回 False 并标记 `st['_tf_unhealthy']`，**不退出进程**（避免与自启冲突），交由 ② 感知。
+  - `if tf is None` 软兜底保留；初始化失败一次性推 `🚨 数据源初始化失败` 告警。
+- 验证：`py_compile` 通过；单测 `_retry_with_backoff`（重试/超限抛）、`intraday` 源选择 5 场景、开盘宽限期边界 + 去抖状态机全 OK；真实 1m 重放无回归（161129 今日仍 `strict(B=2,S=1)`）。

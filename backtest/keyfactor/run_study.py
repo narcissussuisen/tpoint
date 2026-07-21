@@ -17,12 +17,14 @@ import sys, os, glob, json, argparse
 import numpy as np
 import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 import kf_utils as K
 import miji_engine as ME
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
-DEF_IN = os.path.join(DATA, '1m')
+DATA = KEYFACTOR_DATA_DIR
+DEF_IN = KEYFACTOR_1M_DIR
 OUT_CSV = os.path.join(DATA, 'keyfactor_results.csv')
 OUT_JSON = os.path.join(DATA, 'keyfactor_summary.json')
 HORIZONS = [6, 12, 24]

@@ -7,13 +7,15 @@ Phase 0 — 从「有效 A股 代码空间」直接随机抽样 (绕开 mootdx �
   每个前缀 000-999 全生成 -> 全代码空间 -> 均匀随机抽 N=400 (种子42)。
   说明: 这是 A股代码空间的均匀随机样本 ≈ universe 随机抽样; 下载器会自动跳过
         退市/不存在代码(返回空), 故「落地成功」的集合即干净 A股非ST 样本。
-  落地: backtest/keyfactor_data/sample_manifest.csv (含 code/sym/name/market/board)
+  落地: KEYFACTOR_DATA_DIR（默认 F:\workbuddy\keyfactor_data）/sample_manifest.csv (含 code/sym/name/market/board)
 """
 import os, random
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
+DATA = KEYFACTOR_DATA_DIR
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 OUT = os.path.join(DATA, 'sample_manifest.csv')
 N = 400
 SEED = 42

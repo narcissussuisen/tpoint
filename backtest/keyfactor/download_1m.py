@@ -2,7 +2,7 @@
 """
 Phase 1 — 分层抽样清单的 1 个月(5000 根)1 分钟历史数据落地。
 数据源: mootdx (datasource.tdx_client), 等价于 tickflow。
-落地: backtest/keyfactor_data/1m/{sym}_1m.csv  (与 seed schema 完全一致)
+落地: KEYFACTOR_DATA_DIR（默认 F:\workbuddy\keyfactor_data）/1m/{sym}_1m.csv  (与 seed schema 完全一致)
 schema: symbol,name,timestamp,trade_date,trade_time,open,high,low,close,volume,amount
 
 分页策略(对 offset 语义鲁棒): 多次 bars(frequency=8) 取页, 合并后按
@@ -11,12 +11,14 @@ datetime 排序去重, 取最近 target 根。若某页为空/异常则停止。
 """
 import sys, os, time, argparse
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'core'))
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 from datasource import tdx_client
 import pandas as pd
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
+DATA = KEYFACTOR_DATA_DIR
 ONED = os.path.join(DATA, '1m')
 MANIFEST = os.path.join(DATA, 'sample_manifest.csv')
 os.makedirs(ONED, exist_ok=True)

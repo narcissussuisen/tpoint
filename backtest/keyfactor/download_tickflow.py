@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tickflow 完整服务落地 1m 历史数据 (3-6 月 / 全市场样本)。
 替代 mootdx(datasource.tdx_client)；用 tickflow API key (env TICKFLOW_API_KEY)。
-落地: backtest/keyfactor_data/1m/{sym}_1m.csv
+落地: KEYFACTOR_DATA_DIR（默认 F:\workbuddy\keyfactor_data）/1m/{sym}_1m.csv
 schema: symbol,name,timestamp,trade_date,trade_time,open,high,low,close,volume,amount
 分页: tf.klines.get(period='1m', count=5000, end_time=<最旧ts>) 逐步回退。
    实测 count 上限=5000 (~20.8 交易日 ≈ 1 月); 6 页 ≈ 6 月。
@@ -21,7 +21,9 @@ from tickflow import TickFlow
 from dl_core import verify_csv, classify, DlError, IntegrityError, NetworkError
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, "..", "keyfactor_data")
+DATA = KEYFACTOR_DATA_DIR
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 ONED = os.path.join(DATA, "1m")
 os.makedirs(ONED, exist_ok=True)
 SHORT_MARKER = os.path.join(DATA, ".short_history.txt")

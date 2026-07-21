@@ -19,15 +19,30 @@ import pandas as pd
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # tpoint root
 sys.path.insert(0, os.path.join(BASE, 'core'))   # 让 import monitor 可解析
 sys.path.insert(0, BASE)
+sys.path.insert(0, os.path.join(BASE, 'backtest', 'keyfactor'))
+from _paths import KEYFACTOR_DATA_DIR
 
 import monitor as M   # 模块级执行 load_targets()/EXIT_CFG；tf=None 懒加载，import 安全
 
-DATA_1M = os.path.join(BASE, 'backtest', 'keyfactor_data', '1m')
+DATA_1M = os.path.join(KEYFACTOR_DATA_DIR, '1m')
 LOG_DIR = os.path.join(BASE, 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 
-# 持仓股候选（长飞光纤 601869 缺 CSV，已排除）
-HELD = ['300975.SZ', '603938.SH', '300395.SZ', '301526.SZ']
+# 持仓股候选：从 watchlist.json 动态读取（单一真相源，2026-07-21 移除硬编码）
+def _load_held():
+    import json as _j, os as _o
+    _p = _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), '..', 'data', 'watchlist.json')
+    try:
+        if _o.path.exists(_p):
+            with open(_p, encoding='utf-8') as _f:
+                wl = _j.load(_f)
+            if wl:
+                return list(wl.keys())
+    except Exception:
+        pass
+    return []
+
+HELD = _load_held()
 
 # 本地名称覆盖（不在 live 持仓文件 TARGETS 内、仅模拟推送用的标的）
 NAME_OVERRIDE = {'161129.SZ': '原油LOF易方达'}

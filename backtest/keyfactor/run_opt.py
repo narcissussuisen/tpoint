@@ -21,11 +21,13 @@ holdout: 按标的切分, 仅在测试标的上跑 baseline, 报 skill24 (样本
 import os, json, glob, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 import kf_utils as K
 import miji_engine as ME
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
+DATA = KEYFACTOR_DATA_DIR
 INDIR = os.path.join(DATA, '1m')
 HORIZONS = [6, 12, 24]
 

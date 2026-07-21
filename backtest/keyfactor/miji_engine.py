@@ -10,6 +10,7 @@ faithfully implements the MD document:
 纯算法层, 无数据源依赖, 与 indicators.py 风格一致。
 monitor / backtest / selftest 共用此模块。
 """
+import os
 import numpy as np
 
 # ========== 可调参数 ==========
@@ -39,6 +40,16 @@ SIGNAL_GAP = 8            # 同型+跨型信号最小间隔(bar)
 LOCAL_W = 15              # 局部新高/新低窗口(bar)
 MAX_B_DAILY = 12
 MAX_S_DAILY = 12
+
+# --- MACD 门控（分级，可切换，与 live miji_alpha 同构）---
+# strict : B需MACD底背离/S需顶背离（生产默认）
+# off    : 纯共振，不强制MACD
+# floor  : strict基础 + 价格地板B(创session新低+偏离VWAP超阈)/天花板S
+MACD_GATE_MODE = os.environ.get('MACD_GATE_MODE', 'strict').lower()
+FLOOR_DEV_PCT = 1.5
+
+# 共享门控模块（消除 miji_engine/miji_alpha 双重维护）
+from _gate_floor import _is_new_low, _is_new_high, gate_buy, gate_sell  # noqa: E402
 
 
 # ========== 技巧一: 分时均线"引力定律" ==========
@@ -307,8 +318,14 @@ def detect_miji_signals(data, pc, start_idx=2,
                         max_b=MAX_B_DAILY, max_s=MAX_S_DAILY,
                         min_resonance=RESONANCE_THRESHOLD,
                         b_trend_filter=False, allow_reverse=True,
-                        require_macd=False,
-                        enable=(True, True, True)):
+                        macd_gate_mode='strict', require_macd=None,
+                        enable=(True, True, True),
+                        **floor_kwargs):
+    """检测做T信号。floor_kwargs 透传给 gate_buy/gate_sell：
+       floor_dev_pct, floor_sell_cooldown_bars, floor_buy_cooldown_bars,
+       floor_suppress_day_chg, floor_trend_threshold"""
+    if require_macd is not None:
+        macd_gate_mode = 'strict' if require_macd else 'off'
     """做T秘籍三因子共振信号检测
 
     共振公式 (MD文档核心):
@@ -333,6 +350,9 @@ def detect_miji_signals(data, pc, start_idx=2,
     pos_ctx = 0
     rev_open = -999  # 反T开窗的S所在bar; -999=无
     trend = data.get('trend')
+    # floor 冷却计数器（只在 floor 模式有效）
+    last_buy_floor_bar = -999
+    last_sell_ceil_bar = -999
 
     for i in range(max(start_idx, 2), n):
         if atr[i] <= 0:
@@ -364,15 +384,23 @@ def detect_miji_signals(data, pc, start_idx=2,
             if not (b_trend_filter and trend is not None and trend[i] == -1 and not reversed_exempt):
                 buy_factors = {'gravity': g_factor, 'vol_div': v_factor, 'macd_div': m_factor}
                 buy_score = sum(1 for f in buy_factors.values() if f == 1)
-                if require_macd and i < LOCAL_W:
-                    buy_pass = (g_factor == 1)   # [v9.1.2] 早盘降级 gravity-only
-                else:
-                    buy_pass = (m_factor == 1) if require_macd else (buy_score >= min_resonance)
+                # ---- MACD 门控（分级, 委托 _gate_floor）----
+                buy_kw = {k: v for k, v in floor_kwargs.items()
+                          if k in ('floor_dev_pct', 'floor_buy_cooldown_bars',
+                                   'floor_trend_threshold')}
+                buy_pass, buy_base, buy_floor = gate_buy(
+                    g_factor, m_factor, g_dev, i,
+                    macd_gate_mode=macd_gate_mode, c=c, lo=lo,
+                    last_buy_floor_bar=last_buy_floor_bar, **buy_kw,
+                )
+                if buy_floor:
+                    last_buy_floor_bar = i
                 if buy_pass:
                     details = []
                     if g_factor == 1: details.append(f'均线引力(dev={g_dev:.2f}%)')
                     if v_factor == 1: details.append(f'量价{v_detail}')
                     if m_factor == 1: details.append(f'MACD{m_detail}')
+                    if buy_floor: details.append(f'价格地板(新低dev={g_dev:.2f}%)')
                     sigs.append({
                         'type': 'B', 'idx': i, 'price': round(float(c[i]), 2),
                         'chg': round(day_chg, 2),
@@ -392,12 +420,23 @@ def detect_miji_signals(data, pc, start_idx=2,
         if sc < max_s and (i - s_last) >= SIGNAL_GAP and (i - b_last) >= SIGNAL_GAP:
             sell_factors = {'gravity': g_factor, 'vol_div': v_factor, 'macd_div': m_factor}
             sell_score = sum(1 for f in sell_factors.values() if f == -1)
-            sell_pass = (m_factor == -1) if require_macd else (sell_score >= min_resonance)
+            # ---- MACD 门控（分级, 委托 _gate_floor）----
+            sell_kw = {k: v for k, v in floor_kwargs.items()
+                       if k in ('floor_dev_pct', 'floor_sell_cooldown_bars',
+                                'floor_trend_threshold', 'floor_suppress_day_chg')}
+            sell_pass, sell_base, sell_ceil = gate_sell(
+                g_factor, m_factor, g_dev, i,
+                macd_gate_mode=macd_gate_mode, c=c, h=h, 
+                day_chg=day_chg, last_sell_ceil_bar=last_sell_ceil_bar, **sell_kw,
+            )
+            if sell_ceil:
+                last_sell_ceil_bar = i
             if sell_pass:
                 details = []
                 if g_factor == -1: details.append(f'均线引力(dev={g_dev:.2f}%)')
                 if v_factor == -1: details.append(f'量价{v_detail}')
                 if m_factor == -1: details.append(f'MACD{m_detail}')
+                if sell_ceil: details.append(f'价格天花板(新高dev={g_dev:.2f}%)')
                 sigs.append({
                     'type': 'S', 'idx': i, 'price': round(float(c[i]), 2),
                     'chg': round(day_chg, 2),
@@ -421,7 +460,7 @@ def detect_miji_signals(data, pc, start_idx=2,
 
 # ========== 便捷函数: 单bar三因子快照 (monitor实时用) ==========
 
-def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD):
+def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, macd_gate_mode=MACD_GATE_MODE):
     """单bar三因子共振判定, 供monitor实时调用.
 
     返回: (b_triggered, s_triggered, b_detail, s_detail, snapshot)
@@ -441,8 +480,27 @@ def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD):
     buy_score = sum(1 for f in [g_factor, v_factor, m_factor] if f == 1)
     sell_score = sum(1 for f in [g_factor, v_factor, m_factor] if f == -1)
 
-    b_trig = buy_score >= min_resonance
-    s_trig = sell_score >= min_resonance
+    # ---- MACD 门控（分级, 与 live miji_alpha 同构）----
+    if macd_gate_mode == 'off':
+        b_base = (g_factor == 1)
+        s_base = (g_factor == -1)
+    elif macd_gate_mode in ('strict', 'floor'):
+        if i < LOCAL_W:
+            b_base = (g_factor == 1)
+            s_base = (g_factor == -1)
+        else:
+            b_base = (m_factor == 1)
+            s_base = (m_factor == -1)
+    else:
+        b_base = s_base = False
+
+    b_floor = s_ceil = False
+    if macd_gate_mode == 'floor':
+        b_floor = _is_new_low(c, lo, i) and (g_dev <= -FLOOR_DEV_PCT)
+        s_ceil = _is_new_high(c, h, i) and (g_dev >= FLOOR_DEV_PCT)
+
+    b_trig = bool(b_base or b_floor)
+    s_trig = bool(s_base or s_ceil)
 
     b_detail = ''
     if b_trig:
@@ -450,6 +508,7 @@ def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD):
         if g_factor == 1: parts.append(f'均线引力(dev={g_dev:.2f}%)')
         if v_factor == 1: parts.append(f'量价{v_detail}')
         if m_factor == 1: parts.append(f'MACD{m_detail}')
+        if b_floor: parts.append(f'价格地板(新低dev={g_dev:.2f}%)')
         b_detail = ' + '.join(parts)
 
     s_detail = ''
@@ -457,7 +516,8 @@ def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD):
         parts = []
         if g_factor == -1: parts.append(f'均线引力(dev={g_dev:.2f}%)')
         if v_factor == -1: parts.append(f'量价{v_detail}')
-        if m_factor == -1: parts.append(f'MACD{m_detail}')
+        if m_factor == -1: details.append(f'MACD{m_detail}')
+        if s_ceil: parts.append(f'价格天花板(新高dev={g_dev:.2f}%)')
         s_detail = ' + '.join(parts)
 
     snapshot = {
@@ -651,7 +711,7 @@ def detect_miji_signals_5m_index(sym, index_sym='000300', index_market=1, count=
     return final, meta
 
 
-def check_miji_trigger_5m_index(data, idx_c, idx_prev_close, min_resonance=RESONANCE_THRESHOLD):
+def check_miji_trigger_5m_index(data, idx_c, idx_prev_close, min_resonance=RESONANCE_THRESHOLD, macd_gate_mode=MACD_GATE_MODE):
     """单bar实时触发(供 monitor 调用), 带大盘指数门控。
 
     data           : 个股5分钟已算指标(compute_miji_indicators 产出)
@@ -661,7 +721,7 @@ def check_miji_trigger_5m_index(data, idx_c, idx_prev_close, min_resonance=RESON
     返回：(b_trig, s_trig, b_detail, s_detail, snapshot)
     snapshot 追加 idx_trend / idx_day_chg。
     """
-    b_trig, s_trig, b_detail, s_detail, snap = check_miji_trigger(data, len(data['c']) - 1, min_resonance)
+    b_trig, s_trig, b_detail, s_detail, snap = check_miji_trigger(data, len(data['c']) - 1, min_resonance, macd_gate_mode=macd_gate_mode)
     t = int(compute_trend(idx_c, IDX_MA_FAST, IDX_MA_SLOW)[-1])
     chg = (idx_c[-1] / idx_prev_close - 1) if idx_prev_close > 0 else 0.0
     if b_trig and not index_buy_at(t, chg):

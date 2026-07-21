@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Phase 0 — 从 universe_pool.csv 分层抽样 250 只 (大/中/小盘 + 板块分层代理)
-落地: backtest/keyfactor_data/sample_manifest.csv
+落地: KEYFACTOR_DATA_DIR（默认 F:\workbuddy\keyfactor_data）/sample_manifest.csv
 分层键: (market_label, board) 作为市值/板块代理 (无需额外市值接口)。
 配额: 按各层样本量比例分配, 保证每层>=1 (若层非空), 总数=250, 可复现(seed=42)。
 """
@@ -10,7 +10,9 @@ import pandas as pd
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
+DATA = KEYFACTOR_DATA_DIR
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 POOL = os.path.join(DATA, 'universe_pool.csv')
 OUT = os.path.join(DATA, 'sample_manifest.csv')
 N = 250

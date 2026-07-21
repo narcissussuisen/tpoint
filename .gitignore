@@ -49,3 +49,10 @@ nul
 状态*
 编写*
 backtest/keyfactor_data/study_final.log
+
+# 进程锁/pid (运行时文件)
+data/.monitor.lock
+data/.monitor.pid
+data/.alert_engine.lock
+data/.alert_engine.pid
+.monitor.log

@@ -20,11 +20,13 @@ import datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 
 import pandas as pd
 from dl_core import IntegrityStore, verify_csv, expected_days
 
-DATA = os.path.join(HERE, "..", "keyfactor_data")
+DATA = KEYFACTOR_DATA_DIR
 MANIFEST = os.path.join(DATA, "universe_ashare_full.csv")
 ONED = os.path.join(DATA, "1m")
 SHORT_MARKER = os.path.join(DATA, ".short_history.txt")

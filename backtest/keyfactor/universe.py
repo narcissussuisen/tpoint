@@ -4,15 +4,17 @@ Phase 0 — 枚举大A股非ST universe。
 数据源: mootdx 原生 `cli.client.get_security_list(market, start)` (StdQuotes 无此方法, 必须用裸 pytdx 客户端)。
   - 每页 1000 条, 需分页 (start=0,1000,2000... 直到 <1000 或空)。
   - 列表混入「板块表头」(主板Ａ股/创业板...) 与「指数」(999999 上证指数/000001...), 须过滤。
-落地: backtest/keyfactor_data/universe_pool.csv
+落地: KEYFACTOR_DATA_DIR（默认 F:\workbuddy\keyfactor_data）/universe_pool.csv
 列: code,name,market,market_label,sym,board,is_b_share,is_st
 """
 import sys, os, re
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'core'))
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 from datasource import tdx_client
 import pandas as pd
 
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'keyfactor_data')
+OUT_DIR = KEYFACTOR_DATA_DIR
 os.makedirs(OUT_DIR, exist_ok=True)
 OUT = os.path.join(OUT_DIR, 'universe_pool.csv')
 MKT_LABEL = {0: 'SZ', 1: 'SH', 2: 'BJ'}

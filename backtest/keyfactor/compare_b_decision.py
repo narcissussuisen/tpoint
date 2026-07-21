@@ -19,7 +19,9 @@ import os, json, datetime
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
+DATA = KEYFACTOR_DATA_DIR
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 
 F_NEW_JSON  = os.path.join(DATA, 'keyfactor_results_daily.json')
 F_OLD_JSON  = os.path.join(DATA, 'keyfactor_summary.json')

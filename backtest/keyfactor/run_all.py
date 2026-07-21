@@ -14,13 +14,15 @@
 """
 import sys, os, argparse, glob
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 import run_study as RS
 from feishu_push import push
 from phase6_report import md, load
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
-DEF_IN = os.path.join(DATA, '1m')
+DATA = KEYFACTOR_DATA_DIR
+DEF_IN = KEYFACTOR_1M_DIR
 
 def main():
     ap = argparse.ArgumentParser()

@@ -8,9 +8,10 @@ Phase 6 — 结论生成器: 解析 keyfactor_summary.json + keyfactor_results.c
 """
 import sys, os, json, argparse
 import pandas as pd
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
+DATA = KEYFACTOR_DATA_DIR
 SJSON = os.path.join(DATA, 'keyfactor_summary.json')
 SCSV = os.path.join(DATA, 'keyfactor_results.csv')
 

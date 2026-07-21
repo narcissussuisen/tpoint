@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tpoint 策略 2026-07-21 运行复盘报告</title>
+<style>
+  :root {
+    --bg:#f5f7fa; --card:#ffffff; --ink:#1f2733; --sub:#5b6675; --line:#e4e9f0;
+    --up:#d8392b; --down:#15934a; --accent:#2f6fed; --warn:#b7791f; --ok:#15934a;
+    --hbg:#eef3fb;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.65; font-size:15px; }
+  .wrap { max-width:1080px; margin:0 auto; padding:28px 22px 60px; }
+  h1 { font-size:25px; margin:0 0 4px; }
+  .sub { color:var(--sub); font-size:14px; margin-bottom:18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:20px 22px; margin:16px 0; box-shadow:0 1px 3px rgba(20,40,80,.04); }
+  h2 { font-size:19px; margin:4px 0 14px; padding-left:11px; border-left:4px solid var(--accent); }
+  h3 { font-size:15.5px; margin:18px 0 8px; color:var(--accent); }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; margin:8px 0 6px; }
+  th,td { border:1px solid var(--line); padding:8px 10px; text-align:right; }
+  th { background:var(--hbg); font-weight:600; text-align:center; }
+  td.lbl, th.lbl { text-align:left; }
+  .up { color:var(--up); font-weight:600; }
+  .down { color:var(--down); font-weight:600; }
+  .ok { color:var(--ok); font-weight:600; }
+  .bad { color:var(--up); font-weight:600; }
+  .warn { color:var(--warn); font-weight:600; }
+  .tag { display:inline-block; padding:1px 8px; border-radius:20px; font-size:12px; font-weight:600; }
+  .tag.r { background:#fdecea; color:var(--up); }
+  .tag.g { background:#e8f6ee; color:var(--down); }
+  ul { margin:8px 0; padding-left:20px; }
+  li { margin:5px 0; }
+  .kv { display:flex; flex-wrap:wrap; gap:10px 26px; margin:6px 0; }
+  .kv div { font-size:14px; }
+  .kv b { color:var(--ink); }
+  .note { color:var(--sub); font-size:13px; font-style:italic; }
+  .summary li { margin:7px 0; }
+  code { background:#eef1f6; padding:1px 6px; border-radius:5px; font-size:13px; }
+  .pill { background:#eef3fb; color:var(--accent); padding:2px 9px; border-radius:6px; font-size:12.5px; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>tpoint 策略运行复盘报告</h1>
+<div class="sub">交易日 <b>2026-07-21（周二）</b> · 标的 <b>161129 原油LOF易方达</b> / <b>688347 华虹宏力</b> · 引擎 miji_alpha v9.1.4（1分钟K · MACD_GATE_MODE=strict）</div>
+
+<div class="card">
+<h2>〇、结论摘要</h2>
+<ul class="summary">
+  <li><span class="pill">系统</span> 监控进程今日<b>正常启动并存活</b>（Startup V9Launch 自启；16:22 自检健康；metrics 心跳新鲜；PID 存活）。</li>
+  <li><span class="pill">实测信号</span> 688347 录得 <b>1 次 BUY</b>（入场 335.5，未平仓，持仓在盘中冻结）；<b>161129 今日 0 信号</b>。</li>
+  <li><span class="pill">根因</span> 开盘 <b>09:31–09:35</b> 监控日志反复出现 <code>原油LOF易方达 no intraday data</code> 与 <code>'NoneType' object has no attribute 'klines'</code>（tf 未初始化）——交易时段数据源对两标的（尤其 LOF 161129）分钟K<b>返回空 / 断流</b>，致 161129 全天未被有效扫描、688347 仅在前 2 根 bar 取得数据后扫描即中断。</li>
+  <li><span class="pill">离线验证</span> 用与生产<b>完全一致</b>的引擎在收盘后已恢复的行情上重放：161129 本应产生 <b>2B+1S</b>、688347 应产生完整 B/S 序列。→ <b>策略逻辑正确，问题在数据 / 初始化可用性，而非市场条件或参数</b>。</li>
+  <li><span class="pill">偏离度</span> 今日两标的波动率与成交量均<b>显著放大</b>（161129 成交 158× 常态中位、振幅 6.5%；688347 涨停 +20%、振幅 15.8%），市场条件远满足触发前置，故"信号少"并非行情平淡所致。</li>
+</ul>
+</div>
+
+<!-- ========== 1. 市场条件 ========== -->
+<div class="card">
+<h2>一、市场条件诊断</h2>
+<p>下表为两标的今日（2026-07-21）真实行情（来源：mootdx 通达信 TCP 7709，与生产同源）。策略三因子共振的<b>前置条件</b>是：价格相对 VWAP 有足够偏离（引力）、日内存在波动（ATR&gt;0）、有成交与背离结构。结论：<b>两标的均强烈满足前置条件</b>，市场条件不是信号缺失原因。</p>
+<table>
+<tr><th class="lbl">指标</th><th>161129 原油LOF</th><th>688347 华虹</th><th>前置要求（隐含）</th><th>是否满足</th></tr>
+<tr><td class="lbl">开盘价</td><td>1.995</td><td>339.85</td><td>—</td><td>—</td></tr>
+<tr><td class="lbl">最高价</td><td>2.0</td><td>397.78</td><td>—</td><td>—</td></tr>
+<tr><td class="lbl">最低价</td><td>1.876</td><td>335.0</td><td>—</td><td>—</td></tr>
+<tr><td class="lbl">收盘价</td><td>1.908</td><td>397.78</td><td>—</td><td>—</td></tr>
+<tr><td class="lbl">涨跌幅</td><td><span class="down">-4.36%</span></td><td><span class="up">+20.00%</span></td><td>有方向即可</td><td class="ok">满足</td></tr>
+<tr><td class="lbl">日内振幅</td><td>6.499%</td><td>15.783%</td><td>&gt;1% 为宜</td><td class="ok">显著满足</td></tr>
+<tr><td class="lbl">ATR(1m,末值)</td><td>0.0046（0.243%）</td><td>0.2326（0.058%）</td><td>ATR&gt;0</td><td class="ok">满足</td></tr>
+<tr><td class="lbl">成交量 / 常态中位</td><td>158×</td><td>125×</td><td>放量更利背离</td><td class="ok">大幅放量</td></tr>
+<tr><td class="lbl">平均|偏离VWAP|</td><td>0.596%</td><td>6.206%</td><td>偏离越大越易触发</td><td class="ok">满足</td></tr>
+<tr><td class="lbl">最大|偏离VWAP|</td><td>2.44%</td><td>10.806%</td><td>—</td><td>—</td></tr>
+</table>
+<p class="note">读数：161129 最大单根偏离 VWAP 达 −2.44%（深度超卖），688347 最高 +10.81%（深度超买）。两者均反复穿越引力带，<b>行情层面具备充足触发素材</b>。</p>
+</div>
+
+<!-- ========== 2. 参数审查 ========== -->
+<div class="card">
+<h2>二、策略参数审查</h2>
+<p>生产配置（来自 <code>core/miji_alpha.py</code> 与 <code>monitor.py</code>）：当前以 <b>MACD_GATE_MODE='strict'</b> 运行——即 bar≥15 后，买点必须叠加 MACD 底背离、卖点必须叠加 MACD 顶背离，单纯 VWAP 引力超卖/超买不再直接触发。</p>
+<table>
+<tr><th class="lbl">参数</th><th>当前值</th><th>默认/对照</th><th>对信号的影响</th></tr>
+<tr><td class="lbl">MACD_GATE_MODE</td><td><b>strict</b></td><td>off（纯引力，无MACD门控）</td><td class="warn">最强过滤器：仅放行 MACD 背离确认的引力信号</td></tr>
+<tr><td class="lbl">VWAP_DEV_BUY / SELL</td><td>0.6 / 0.6</td><td>0.8（旧）</td><td>放宽引力带，已利于触发</td></tr>
+<tr><td class="lbl">VOL_DIV_ENABLED</td><td>False</td><td>True（旧）</td><td>量价背离因子关闭（实证净负，属有意优化）</td></tr>
+<tr><td class="lbl">RESONANCE_THRESHOLD</td><td>2</td><td>2</td><td class="note">死参数，仅元信息，不参与触发</td></tr>
+<tr><td class="lbl">ATR_PERIOD / SIGNAL_GAP</td><td>14 / 8</td><td>14 / 8</td><td>同基准</td></tr>
+<tr><td class="lbl">移动止损</td><td>激活0.4% / 回撤0.6%</td><td>—</td><td>仅浮盈≥0.4%后启动，需 0.6% 回撤才平仓</td></tr>
+<tr><td class="lbl">MAX_B / MAX_S 每日</td><td>12 / 12</td><td>12 / 12</td><td>上限宽松，非瓶颈</td></tr>
+</table>
+<h3>可能造成"漏信号"的参数项</h3>
+<ul>
+  <li><b>MACD 严格门控（头号嫌疑）</b>：今日 161129 有 <b>126</b> 根 bar 满足引力超卖（本可买），但仅 <b>3</b> 根同时具备 MACD 底背离 → 严格门控实际放行 2 买。若为 <code>off</code> 模式（纯引力），引力即可买 → 5 买 / 3 卖。即严格门控"过滤"了 <b>123/126</b> 的超卖机会。</li>
+  <li><b>VOL_DIV_ENABLED=False</b>：量价背离因子完全关闭，使"三因子"退化为"双因子"，少一层确认——但属有意优化（净负），且非今日零信号之因。</li>
+  <li><b>RESONANCE_THRESHOLD=2</b>：为死参数，不参与触发判定，无影响。</li>
+</ul>
+<p class="note">结论：参数整体<b>偏严</b>（尤其 MACD 严格门控会压低信号频次），但它只"少给信号"而非"零信号"——引擎在拿到数据时仍稳定产出信号。今日零信号的根因在数据层，参数只是次要的灵敏度调节项。若希望提高灵敏度，可评估 <code>MACD_GATE_MODE='off'</code> 或 <code>'floor'</code>（价格新低/新高+偏离超阈即触发）。</p>
+</div>
+
+<!-- ========== 3. 对比分析 ========== -->
+<div class="card">
+<h2>三、对比分析（161129 近可得信号日）</h2>
+<p>用同一引擎重放 161129 近期交易日，与今日对比。注：仅 <b>3</b> 个近交易日能取到 161129 的 1m 数据（LOF 分钟K在 mootdx 上部分日期缺失，<b>进一步印证数据可用性问题</b>），故以这 3 日作为正常信号日样本。</p>
+<table>
+<tr><th class="lbl">交易日</th><th>涨跌幅</th><th>日内振幅</th><th>成交/中位</th><th>引力超卖bar数</th><th>MACD买背离bar</th><th>strict 买/卖</th><th>off 买/卖</th></tr>
+<tr><td class="lbl">2026-07-21（今）</td><td><span class="down">-4.36%</span></td><td>6.499%</td><td>158×</td><td>126</td><td>3</td><td>2 / 1</td><td>5 / 3</td></tr>
+<tr><td class="lbl">2026-07-20</td><td><span class="up">+9.98%</span></td><td>4.461%</td><td>133×</td><td>29</td><td>0</td><td>1 / 2</td><td>2 / 4</td></tr>
+<tr><td class="lbl">2026-07-17</td><td><span class="up">+3.30%</span></td><td>6.67%</td><td>249×</td><td>175</td><td>3</td><td>3 / 2</td><td>6 / 4</td></tr>
+<tr><td class="lbl">2026-07-16</td><td><span class="down">-5.08%</span></td><td>3.189%</td><td>85×</td><td>21</td><td>0</td><td>1 / 1</td><td>3 / 4</td></tr>
+
+</table>
+<h3>量化偏离</h3>
+<ul>
+  <li>市场活跃度：今日振幅 <b>6.499%</b> vs 3日均值 <b>4.77%</b>（<span class="up">+36%</span>）；成交 <b>158×</b> vs 均值 <b>155×</b>（持平）。→ 今日行情<b>不弱于</b>正常信号日。</li>
+  <li>信号产出：3个正常信号日平均 <b>1.7 买 / 1.7 卖</b>；离线重放今日应得 <b>2 买 / 1 卖</b>（同量级）。但<b>实时产出 = 0</b>。</li>
+  <li><b>偏离判定</b>：在行情更活跃的前提下实时信号反而为 0，而离线重放同引擎同数据可得正常值 → 偏离 100% 来自<b>执行层（盘中扫描断流）</b>，而非市场模式偏离。</li>
+</ul>
+</div>
+
+<!-- ========== 4. 数据支撑 ========== -->
+<div class="card">
+<h2>四、数据支撑：关键指标实测 vs 触发阈值</h2>
+<p>下表以 161129 为例，列出核心算法指标实测值与触发阈值的差距，定位"信号未触发"的直接阻断项。</p>
+<table>
+<tr><th class="lbl">指标</th><th>今日实测</th><th>触发阈值</th><th>差距</th><th>是否满足</th></tr>
+<tr><td class="lbl">引力买（价格≤VWAP−0.6·ATR）</td><td>最超卖 dev=−2.44%</td><td>dev ≤ -0.15%</td><td>−2.29%（远超）</td><td class="ok">满足（126根）</td></tr>
+<tr><td class="lbl">MACD 底背离(m_factor==1)</td><td>3 根</td><td>严格门控下≥1根（bar≥15）</td><td>+3 根（有但稀少）</td><td class="warn">部分满足（仅3根）</td></tr>
+<tr><td class="lbl">量价背离因子</td><td>关闭</td><td>n/a</td><td>—</td><td class="note">不参与</td></tr>
+<tr><td class="lbl">共振分(RESONANCE_THRESHOLD)</td><td>元信息</td><td>不参与触发</td><td>—</td><td class="note">死参数</td></tr>
+<tr><td class="lbl"><b>盘中分钟K数据可得性（隐含前置）</b></td><td><b>交易时段为空</b></td><td>intraday 非空</td><td><b>断流</b></td><td class="bad">不满足 ← 真正阻断项</td></tr>
+</table>
+<p>688347（卖点侧）：最超买 dev=+10.806%，卖阈值仅需 dev ≥ +0.03%（引力满足 218 根）；严格门控下需 MACD 顶背离（实测 8 根），离线重放可得 9 卖。但实时因开盘后扫描断流，仅记录 1 买、0 卖。</p>
+<p class="note">直接原因总结：161129 实时"无信号"的<b>直接阻断项是盘中分钟K数据不可得（数据层）</b>，而非任何算法阈值——引力阈值（−0.14%）与 MACD 背离阈值（≥1根）在今日行情下均能被满足（离线重放已验证）。</p>
+</div>
+
+<!-- ========== 5. 系统状态 ========== -->
+<div class="card">
+<h2>五、系统状态验证</h2>
+<div class="kv">
+  <div><b>启动：</b><span class="ok">正常</span></div>
+  <div><b>进程：</b>存活（PID 见 16:22 自检）</div>
+  <div><b>自检：</b>16:22 健康（仅良性重复自检 WARN）</div>
+  <div><b>心跳：</b>新鲜（≤120s）</div>
+</div>
+<h3>开盘异常（关键证据）</h3>
+<ul>
+  <li>09:31:55 今次启动，加载 watchlist 2 标的（原油LOF易方达、华虹宏力），日K刷新 688347 pc=331.48。</li>
+  <li>09:31–09:35 连续出现 <code>原油LOF易方达 no intraday data</code> 与 <code>'NoneType' object has no attribute 'klines'</code>（tf 未初始化）——属 07-21 已知的 tf 初始化缺陷类。</li>
+  <li>结果：161129 全天无有效扫描（state.json 无 <code>bar_161129</code> 键、无 07-21 计数）；688347 仅在前 2 根 bar 取得数据生成 1 买后，扫描即中断（持仓 max_fav 冻结于 341.5，远低于日内高点 397.78）。</li>
+</ul>
+<h3>系统实际给出的信号</h3>
+<table>
+<tr><th class="lbl">标的</th><th>实时信号</th><th>说明</th></tr>
+<tr><td class="lbl">688347 华虹</td><td><span class="tag g">BUY ×1</span></td><td>入场 335.5（bar2，dev=−1.36%）；0 卖；持仓在盘中冻结。收盘 +20% 涨停，该多仓理论浮盈约 +18.5%，但因扫描断流未触发移动止损/卖出。</td></tr>
+<tr><td class="lbl">161129 原油LOF</td><td><span class="tag r">无信号</span></td><td>全天未扫描（数据不可得），实时 0 信号。</td></tr>
+</table>
+<h3>若正常运行能否准确提示预期建议？</h3>
+<p>能。离线重放（同引擎、同 bar、数据恢复后）确认：161129 应提示 <b>2 次买点 + 1 次卖点</b>（含 bar67 买 1.921、bar214 买 1.910 等 MACD 背离买点）；688347 应提示开盘超卖买点并随涨停过程给出卖出/移动止损序列（共 9 卖）。<b>今日"信号未达预期"本质是运行中数据源断流导致扫描失效，并非策略失效。</b></p>
+<h3>改进建议</h3>
+<ul>
+  <li><b>数据源韧性</b>：mootdx 连接采用指数退避重连；腾讯分时兜底在<b>开盘即生效</b>（当前 LOF 开盘常空，需提前兜底），覆盖 161129 这类 LOF/T+0 基金。</li>
+  <li><b>静默零信号告警</b>：新增"连续 N 根 bar 数据缺失 / 某标的 M 轮未扫描"告警，避免像今日这样静默吞掉整日信号。</li>
+  <li><b>tf 预热</b>：进程启动阶段主动预热并校验 <code>tf.klines</code>，消除 'NoneType' 初始化窗口。</li>
+  <li><b>参数（可选）</b>：评估 <code>MACD_GATE_MODE='off'</code> / <code>'floor'</code> 提升信号灵敏度（代价是更多弱信号/噪声）。</li>
+</ul>
+</div>
+
+<div class="card">
+<h2>附：数据与方法</h2>
+<ul>
+  <li>行情：mootdx 通达信 TCP 7709（与生产同源）；引擎 miji_alpha v9.1.4，1 分钟 K，复刻生产 <code>MACD_GATE_MODE='strict'</code> 与 <code>detect_for</code> 出场逻辑（移动止损 0.4%/0.6%）。</li>
+  <li>离线重放对当日/历史每根 bar 全量复算，与生产逐轮扫描语义一致；'off' 列为对照（纯引力无 MACD 门控）。</li>
+  <li>实时信号与系统状态取自 <code>data/state.json</code>、<code>data/metrics.json</code> 与 <code>logs/monitor_console.log</code>、<code>logs/selfcheck/</code>（2026-07-21）。</li>
+  <li>报告生成时间：2026-07-21 17:19:14。</li>
+</ul>
+</div>
+
+</div>
+</body>
+</html>

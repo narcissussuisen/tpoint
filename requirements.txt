@@ -1,0 +1,4 @@
+requests>=2.30
+numpy>=1.24
+pandas>=2.0
+mootdx>=0.11

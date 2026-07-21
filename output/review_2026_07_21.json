@@ -1,0 +1,992 @@
+{
+  "today": {
+    "161129.SZ": {
+      "sym": "161129.SZ",
+      "name": "原油LOF易方达",
+      "day": "2026-07-21",
+      "stats": {
+        "open": 1.995,
+        "high": 2.0,
+        "low": 1.876,
+        "close": 1.908,
+        "pc": 1.995,
+        "day_chg_pct": -4.361,
+        "total_volume": 950920400.0,
+        "atr_last": 0.0046,
+        "atr_pct": 0.243,
+        "intraday_range_pct": 6.499,
+        "avg_abs_dev_vwap_pct": 0.596,
+        "max_abs_dev_vwap_pct": 2.44,
+        "n_bars": 240,
+        "total_volume_vs_med": 157.978
+      },
+      "strict": {
+        "n_signals": 5,
+        "b_count": 2,
+        "s_count": 1,
+        "signals": [
+          [
+            "S",
+            60,
+            1.958,
+            "MACDMACD死叉"
+          ],
+          [
+            "B_exit",
+            64,
+            1.936,
+            "均线引力(dev=-0.72%) + MACD绿柱收缩"
+          ],
+          [
+            "B",
+            67,
+            1.921,
+            "均线引力(dev=-1.09%) + MACD绿柱收缩"
+          ],
+          [
+            "TRAIL",
+            72,
+            1.941,
+            "trail"
+          ],
+          [
+            "B",
+            214,
+            1.91,
+            "均线引力(dev=-0.79%) + MACD绿柱收缩"
+          ]
+        ],
+        "final_pos": {
+          "side": "long",
+          "entry_price": 1.91,
+          "max_fav": 1.91,
+          "entry_reason": "均线引力(dev=-0.79%) + MACD绿柱收缩",
+          "size_pct": 4
+        },
+        "diag": {
+          "g_oversold": 126,
+          "g_overbought": 26,
+          "m_buydiv": 3,
+          "m_selldiv": 1,
+          "max_os_dev": -2.44,
+          "max_ob_dev": 1.511,
+          "miss_buy": 123,
+          "miss_sell": 26
+        }
+      },
+      "off": {
+        "n_signals": 15,
+        "b_count": 5,
+        "s_count": 3,
+        "signals": [
+          [
+            "B",
+            60,
+            1.958,
+            "均线引力(dev=-0.46%)"
+          ],
+          [
+            "S_exit",
+            71,
+            1.953,
+            "均线引力(dev=0.63%)"
+          ],
+          [
+            "S",
+            74,
+            1.959,
+            "均线引力(dev=0.85%)"
+          ],
+          [
+            "B_exit",
+            79,
+            1.933,
+            "均线引力(dev=-0.54%)"
+          ],
+          [
+            "B",
+            80,
+            1.934,
+            "均线引力(dev=-0.46%)"
+          ],
+          [
+            "TRAIL",
+            84,
+            1.926,
+            "trail"
+          ],
+          [
+            "B",
+            85,
+            1.919,
+            "均线引力(dev=-1.17%)"
+          ],
+          [
+            "S_exit",
+            135,
+            1.934,
+            "均线引力(dev=0.61%)"
+          ],
+          [
+            "S",
+            136,
+            1.939,
+            "均线引力(dev=0.85%)"
+          ],
+          [
+            "TRAIL",
+            152,
+            1.936,
+            "trail"
+          ],
+          [
+            "S",
+            153,
+            1.939,
+            "均线引力(dev=0.74%)"
+          ],
+          [
+            "B_exit",
+            169,
+            1.919,
+            "均线引力(dev=-0.40%)"
+          ],
+          [
+            "B",
+            170,
+            1.914,
+            "均线引力(dev=-0.66%)"
+          ],
+          [
+            "TRAIL",
+            182,
+            1.913,
+            "trail"
+          ],
+          [
+            "B",
+            183,
+            1.919,
+            "均线引力(dev=-0.36%)"
+          ]
+        ],
+        "final_pos": {
+          "side": "long",
+          "entry_price": 1.919,
+          "max_fav": 1.925,
+          "entry_reason": "均线引力(dev=-0.36%)",
+          "size_pct": 2
+        },
+        "diag": {
+          "g_oversold": 126,
+          "g_overbought": 26,
+          "m_buydiv": 3,
+          "m_selldiv": 1,
+          "max_os_dev": -2.44,
+          "max_ob_dev": 1.511,
+          "miss_buy": 123,
+          "miss_sell": 26
+        }
+      }
+    },
+    "688347.SH": {
+      "sym": "688347.SH",
+      "name": "华虹宏力",
+      "day": "2026-07-21",
+      "stats": {
+        "open": 339.85,
+        "high": 397.78,
+        "low": 335.0,
+        "close": 397.78,
+        "pc": 331.48,
+        "day_chg_pct": 20.001,
+        "total_volume": 35406600.0,
+        "atr_last": 0.2326,
+        "atr_pct": 0.058,
+        "intraday_range_pct": 15.783,
+        "avg_abs_dev_vwap_pct": 6.206,
+        "max_abs_dev_vwap_pct": 10.806,
+        "n_bars": 240,
+        "total_volume_vs_med": 125.377
+      },
+      "strict": {
+        "n_signals": 20,
+        "b_count": 1,
+        "s_count": 9,
+        "signals": [
+          [
+            "B",
+            2,
+            335.5,
+            "均线引力(dev=-1.36%)"
+          ],
+          [
+            "S_exit",
+            4,
+            343.0,
+            "均线引力(dev=0.90%)"
+          ],
+          [
+            "S",
+            6,
+            343.0,
+            "均线引力(dev=0.87%)"
+          ],
+          [
+            "TRAIL",
+            42,
+            346.57,
+            "trail"
+          ],
+          [
+            "S",
+            47,
+            349.94,
+            "均线引力(dev=1.40%) + MACD红柱缩短"
+          ],
+          [
+            "TRAIL",
+            50,
+            352.0,
+            "trail"
+          ],
+          [
+            "S",
+            56,
+            363.63,
+            "均线引力(dev=4.91%) + MACD红柱缩短"
+          ],
+          [
+            "TRAIL",
+            58,
+            363.25,
+            "trail"
+          ],
+          [
+            "S",
+            61,
+            366.7,
+            "均线引力(dev=5.55%) + MACD红柱缩短"
+          ],
+          [
+            "TRAIL",
+            66,
+            368.38,
+            "trail"
+          ],
+          [
+            "S",
+            67,
+            366.01,
+            "均线引力(dev=5.14%) + MACDMACD死叉"
+          ],
+          [
+            "TRAIL",
+            72,
+            363.17,
+            "trail"
+          ],
+          [
+            "S",
+            82,
+            375.01,
+            "均线引力(dev=7.09%) + MACD红柱缩短"
+          ],
+          [
+            "TRAIL",
+            90,
+            377.97,
+            "trail"
+          ],
+          [
+            "S",
+            99,
+            385.79,
+            "均线引力(dev=9.42%) + MACD红柱缩短"
+          ],
+          [
+            "TRAIL",
+            105,
+            379.9,
+            "trail"
+          ],
+          [
+            "S",
+            176,
+            386.65,
+            "均线引力(dev=7.60%) + MACD红柱缩短"
+          ],
+          [
+            "TRAIL",
+            182,
+            387.83,
+            "trail"
+          ],
+          [
+            "S",
+            202,
+            396.5,
+            "均线引力(dev=9.84%) + MACD红柱缩短"
+          ],
+          [
+            "TRAIL",
+            209,
+            393.74,
+            "trail"
+          ]
+        ],
+        "final_pos": null,
+        "diag": {
+          "g_oversold": 5,
+          "g_overbought": 218,
+          "m_buydiv": 0,
+          "m_selldiv": 8,
+          "max_os_dev": -1.36,
+          "max_ob_dev": 10.806,
+          "miss_buy": 5,
+          "miss_sell": 210
+        }
+      },
+      "off": {
+        "n_signals": 7,
+        "b_count": 2,
+        "s_count": 2,
+        "signals": [
+          [
+            "B",
+            2,
+            335.5,
+            "均线引力(dev=-1.36%)"
+          ],
+          [
+            "S_exit",
+            4,
+            343.0,
+            "均线引力(dev=0.90%)"
+          ],
+          [
+            "S",
+            6,
+            343.0,
+            "均线引力(dev=0.87%)"
+          ],
+          [
+            "B_exit",
+            39,
+            341.27,
+            "均线引力(dev=-0.97%)"
+          ],
+          [
+            "B",
+            40,
+            341.58,
+            "均线引力(dev=-0.87%)"
+          ],
+          [
+            "S_exit",
+            42,
+            346.57,
+            "均线引力(dev=0.58%)"
+          ],
+          [
+            "S",
+            43,
+            349.0,
+            "均线引力(dev=1.27%)"
+          ]
+        ],
+        "final_pos": {
+          "side": "short",
+          "entry_price": 349.0,
+          "max_fav": 348.0,
+          "entry_reason": "均线引力(dev=1.27%)",
+          "size_pct": 2
+        },
+        "diag": {
+          "g_oversold": 5,
+          "g_overbought": 218,
+          "m_buydiv": 0,
+          "m_selldiv": 8,
+          "max_os_dev": -1.36,
+          "max_ob_dev": 10.806,
+          "miss_buy": 5,
+          "miss_sell": 210
+        }
+      }
+    }
+  },
+  "prior_signal_days_161129": [
+    {
+      "sym": "161129.SZ",
+      "name": "原油LOF易方达",
+      "day": "2026-07-20",
+      "stats": {
+        "open": 1.928,
+        "high": 1.995,
+        "low": 1.906,
+        "close": 1.995,
+        "pc": 1.814,
+        "day_chg_pct": 9.978,
+        "total_volume": 691601600.0,
+        "atr_last": 0.0018,
+        "atr_pct": 0.092,
+        "intraday_range_pct": 4.461,
+        "avg_abs_dev_vwap_pct": 0.99,
+        "max_abs_dev_vwap_pct": 2.469,
+        "n_bars": 240,
+        "total_volume_vs_med": 132.702
+      },
+      "strict": {
+        "n_signals": 5,
+        "b_count": 1,
+        "s_count": 2,
+        "signals": [
+          [
+            "B",
+            3,
+            1.915,
+            "均线引力(dev=-0.47%)"
+          ],
+          [
+            "TRAIL",
+            9,
+            1.912,
+            "trail"
+          ],
+          [
+            "S",
+            13,
+            1.938,
+            "均线引力(dev=0.74%)"
+          ],
+          [
+            "TRAIL",
+            16,
+            1.946,
+            "trail"
+          ],
+          [
+            "S",
+            159,
+            1.966,
+            "均线引力(dev=1.26%) + MACD红柱缩短"
+          ]
+        ],
+        "final_pos": {
+          "side": "short",
+          "entry_price": 1.966,
+          "max_fav": 1.966,
+          "entry_reason": "均线引力(dev=1.26%) + MACD红柱缩短",
+          "size_pct": 4
+        },
+        "diag": {
+          "g_oversold": 29,
+          "g_overbought": 189,
+          "m_buydiv": 0,
+          "m_selldiv": 1,
+          "max_os_dev": -0.702,
+          "max_ob_dev": 2.469,
+          "miss_buy": 29,
+          "miss_sell": 188
+        }
+      },
+      "off": {
+        "n_signals": 11,
+        "b_count": 2,
+        "s_count": 4,
+        "signals": [
+          [
+            "B",
+            3,
+            1.915,
+            "均线引力(dev=-0.47%)"
+          ],
+          [
+            "TRAIL",
+            9,
+            1.912,
+            "trail"
+          ],
+          [
+            "S",
+            13,
+            1.938,
+            "均线引力(dev=0.74%)"
+          ],
+          [
+            "TRAIL",
+            16,
+            1.946,
+            "trail"
+          ],
+          [
+            "S",
+            17,
+            1.946,
+            "均线引力(dev=0.91%)"
+          ],
+          [
+            "TRAIL",
+            38,
+            1.942,
+            "trail"
+          ],
+          [
+            "S",
+            39,
+            1.944,
+            "均线引力(dev=0.51%)"
+          ],
+          [
+            "B_exit",
+            84,
+            1.931,
+            "均线引力(dev=-0.27%)"
+          ],
+          [
+            "B",
+            85,
+            1.932,
+            "均线引力(dev=-0.21%)"
+          ],
+          [
+            "S_exit",
+            110,
+            1.938,
+            "均线引力(dev=0.15%)"
+          ],
+          [
+            "S",
+            111,
+            1.942,
+            "均线引力(dev=0.35%)"
+          ]
+        ],
+        "final_pos": {
+          "side": "short",
+          "entry_price": 1.942,
+          "max_fav": 1.936,
+          "entry_reason": "均线引力(dev=0.35%)",
+          "size_pct": 2
+        },
+        "diag": {
+          "g_oversold": 29,
+          "g_overbought": 189,
+          "m_buydiv": 0,
+          "m_selldiv": 1,
+          "max_os_dev": -0.702,
+          "max_ob_dev": 2.469,
+          "miss_buy": 29,
+          "miss_sell": 188
+        }
+      }
+    },
+    {
+      "sym": "161129.SZ",
+      "name": "原油LOF易方达",
+      "day": "2026-07-17",
+      "stats": {
+        "open": 1.81,
+        "high": 1.829,
+        "low": 1.708,
+        "close": 1.814,
+        "pc": 1.756,
+        "day_chg_pct": 3.303,
+        "total_volume": 1187568100.0,
+        "atr_last": 0.0084,
+        "atr_pct": 0.465,
+        "intraday_range_pct": 6.67,
+        "avg_abs_dev_vwap_pct": 1.348,
+        "max_abs_dev_vwap_pct": 4.199,
+        "n_bars": 240,
+        "total_volume_vs_med": 248.641
+      },
+      "strict": {
+        "n_signals": 10,
+        "b_count": 3,
+        "s_count": 2,
+        "signals": [
+          [
+            "B",
+            2,
+            1.794,
+            "均线引力(dev=-0.70%)"
+          ],
+          [
+            "S_exit",
+            8,
+            1.823,
+            "均线引力(dev=0.84%)"
+          ],
+          [
+            "S",
+            9,
+            1.818,
+            "均线引力(dev=0.48%)"
+          ],
+          [
+            "TRAIL",
+            26,
+            1.798,
+            "trail"
+          ],
+          [
+            "S",
+            55,
+            1.796,
+            "MACD红柱缩短"
+          ],
+          [
+            "TRAIL",
+            64,
+            1.783,
+            "trail"
+          ],
+          [
+            "B",
+            74,
+            1.734,
+            "均线引力(dev=-3.34%) + MACD绿柱收缩"
+          ],
+          [
+            "TRAIL",
+            108,
+            1.745,
+            "trail"
+          ],
+          [
+            "B",
+            162,
+            1.744,
+            "均线引力(dev=-1.84%) + MACD绿柱收缩"
+          ],
+          [
+            "TRAIL",
+            175,
+            1.753,
+            "trail"
+          ]
+        ],
+        "final_pos": null,
+        "diag": {
+          "g_oversold": 175,
+          "g_overbought": 34,
+          "m_buydiv": 3,
+          "m_selldiv": 1,
+          "max_os_dev": -4.199,
+          "max_ob_dev": 2.865,
+          "miss_buy": 172,
+          "miss_sell": 34
+        }
+      },
+      "off": {
+        "n_signals": 19,
+        "b_count": 6,
+        "s_count": 4,
+        "signals": [
+          [
+            "B",
+            2,
+            1.794,
+            "均线引力(dev=-0.70%)"
+          ],
+          [
+            "S_exit",
+            8,
+            1.823,
+            "均线引力(dev=0.84%)"
+          ],
+          [
+            "S",
+            9,
+            1.818,
+            "均线引力(dev=0.48%)"
+          ],
+          [
+            "B_exit",
+            18,
+            1.802,
+            "均线引力(dev=-0.50%)"
+          ],
+          [
+            "B",
+            19,
+            1.801,
+            "均线引力(dev=-0.54%)"
+          ],
+          [
+            "TRAIL",
+            23,
+            1.793,
+            "trail"
+          ],
+          [
+            "B",
+            24,
+            1.785,
+            "均线引力(dev=-1.33%)"
+          ],
+          [
+            "TRAIL",
+            34,
+            1.798,
+            "trail"
+          ],
+          [
+            "B",
+            35,
+            1.801,
+            "均线引力(dev=-0.32%)"
+          ],
+          [
+            "S_exit",
+            121,
+            1.783,
+            "均线引力(dev=0.36%)"
+          ],
+          [
+            "S",
+            122,
+            1.787,
+            "均线引力(dev=0.57%)"
+          ],
+          [
+            "B_exit",
+            132,
+            1.77,
+            "均线引力(dev=-0.53%)"
+          ],
+          [
+            "B",
+            133,
+            1.771,
+            "均线引力(dev=-0.46%)"
+          ],
+          [
+            "TRAIL",
+            145,
+            1.771,
+            "trail"
+          ],
+          [
+            "B",
+            146,
+            1.774,
+            "均线引力(dev=-0.29%)"
+          ],
+          [
+            "S_exit",
+            218,
+            1.782,
+            "均线引力(dev=0.71%)"
+          ],
+          [
+            "S",
+            219,
+            1.784,
+            "均线引力(dev=0.81%)"
+          ],
+          [
+            "TRAIL",
+            229,
+            1.79,
+            "trail"
+          ],
+          [
+            "S",
+            230,
+            1.789,
+            "均线引力(dev=1.02%)"
+          ]
+        ],
+        "final_pos": {
+          "side": "short",
+          "entry_price": 1.789,
+          "max_fav": 1.789,
+          "entry_reason": "均线引力(dev=1.02%)",
+          "size_pct": 2
+        },
+        "diag": {
+          "g_oversold": 175,
+          "g_overbought": 34,
+          "m_buydiv": 3,
+          "m_selldiv": 1,
+          "max_os_dev": -4.199,
+          "max_ob_dev": 2.865,
+          "miss_buy": 172,
+          "miss_sell": 34
+        }
+      }
+    },
+    {
+      "sym": "161129.SZ",
+      "name": "原油LOF易方达",
+      "day": "2026-07-16",
+      "stats": {
+        "open": 1.751,
+        "high": 1.795,
+        "low": 1.739,
+        "close": 1.756,
+        "pc": 1.85,
+        "day_chg_pct": -5.081,
+        "total_volume": 371940900.0,
+        "atr_last": 0.0055,
+        "atr_pct": 0.314,
+        "intraday_range_pct": 3.189,
+        "avg_abs_dev_vwap_pct": 0.51,
+        "max_abs_dev_vwap_pct": 1.634,
+        "n_bars": 80,
+        "total_volume_vs_med": 85.113
+      },
+      "strict": {
+        "n_signals": 4,
+        "b_count": 1,
+        "s_count": 1,
+        "signals": [
+          [
+            "B",
+            3,
+            1.744,
+            "均线引力(dev=-0.25%)"
+          ],
+          [
+            "S_exit",
+            6,
+            1.755,
+            "均线引力(dev=0.39%)"
+          ],
+          [
+            "S",
+            9,
+            1.76,
+            "均线引力(dev=0.55%)"
+          ],
+          [
+            "TRAIL",
+            27,
+            1.761,
+            "trail"
+          ]
+        ],
+        "final_pos": null,
+        "diag": {
+          "g_oversold": 21,
+          "g_overbought": 33,
+          "m_buydiv": 0,
+          "m_selldiv": 0,
+          "max_os_dev": -1.5,
+          "max_ob_dev": 1.634,
+          "miss_buy": 21,
+          "miss_sell": 33
+        }
+      },
+      "off": {
+        "n_signals": 13,
+        "b_count": 3,
+        "s_count": 4,
+        "signals": [
+          [
+            "B",
+            3,
+            1.744,
+            "均线引力(dev=-0.25%)"
+          ],
+          [
+            "S_exit",
+            6,
+            1.755,
+            "均线引力(dev=0.39%)"
+          ],
+          [
+            "S",
+            9,
+            1.76,
+            "均线引力(dev=0.55%)"
+          ],
+          [
+            "B_exit",
+            22,
+            1.751,
+            "均线引力(dev=-0.43%)"
+          ],
+          [
+            "B",
+            23,
+            1.748,
+            "均线引力(dev=-0.58%)"
+          ],
+          [
+            "S_exit",
+            30,
+            1.767,
+            "均线引力(dev=0.49%)"
+          ],
+          [
+            "S",
+            31,
+            1.773,
+            "均线引力(dev=0.78%)"
+          ],
+          [
+            "TRAIL",
+            41,
+            1.779,
+            "trail"
+          ],
+          [
+            "S",
+            42,
+            1.782,
+            "均线引力(dev=1.14%)"
+          ],
+          [
+            "TRAIL",
+            52,
+            1.783,
+            "trail"
+          ],
+          [
+            "S",
+            53,
+            1.781,
+            "均线引力(dev=0.74%)"
+          ],
+          [
+            "B_exit",
+            64,
+            1.749,
+            "均线引力(dev=-1.08%)"
+          ],
+          [
+            "B",
+            65,
+            1.741,
+            "均线引力(dev=-1.50%)"
+          ]
+        ],
+        "final_pos": {
+          "side": "long",
+          "entry_price": 1.741,
+          "max_fav": 1.756,
+          "entry_reason": "均线引力(dev=-1.50%)",
+          "size_pct": 2
+        },
+        "diag": {
+          "g_oversold": 21,
+          "g_overbought": 33,
+          "m_buydiv": 0,
+          "m_selldiv": 0,
+          "max_os_dev": -1.5,
+          "max_ob_dev": 1.634,
+          "miss_buy": 21,
+          "miss_sell": 33
+        }
+      }
+    }
+  ],
+  "meta": {
+    "generated_at": "2026-07-21 21:24:23",
+    "engine": "miji_alpha v9.1.4 (1m, strict MACD gate)",
+    "MACD_GATE_MODE": "strict"
+  }
+}

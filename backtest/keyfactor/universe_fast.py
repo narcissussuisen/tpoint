@@ -4,10 +4,12 @@
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'core'))
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 from datasource import tdx_client
 import pandas as pd
 
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'keyfactor_data')
+OUT_DIR = KEYFACTOR_DATA_DIR
 os.makedirs(OUT_DIR, exist_ok=True)
 OUT = os.path.join(OUT_DIR, 'universe_pool.csv')
 MKT_LABEL = {0: 'SZ', 1: 'SH', 2: 'BJ'}

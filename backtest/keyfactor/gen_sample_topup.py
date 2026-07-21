@@ -8,7 +8,9 @@ import os, random
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, '..', 'keyfactor_data')
+DATA = KEYFACTOR_DATA_DIR
+from _paths import KEYFACTOR_DATA_DIR, KEYFACTOR_1M_DIR
+
 OUT = os.path.join(DATA, 'sample_manifest.csv')
 N_ADD = 400
 SEED = 42

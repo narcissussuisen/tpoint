@@ -1,0 +1,204 @@
+{
+  "cooldown": {
+    "0": {
+      "n_signals": 26688,
+      "nB": 15691,
+      "nS": 10997,
+      "n_rounds": 6337,
+      "total_net_T": 5741.69,
+      "per_signal_netT": 0.2151,
+      "sell_acc12_pct": 50.9,
+      "mean_net_T_pct": 0.9061,
+      "elapsed_s": 10.8
+    },
+    "3": {
+      "n_signals": 26688,
+      "nB": 15691,
+      "nS": 10997,
+      "n_rounds": 6337,
+      "total_net_T": 5741.69,
+      "per_signal_netT": 0.2151,
+      "sell_acc12_pct": 50.9,
+      "mean_net_T_pct": 0.9061,
+      "elapsed_s": 10.7
+    },
+    "5": {
+      "n_signals": 26688,
+      "nB": 15691,
+      "nS": 10997,
+      "n_rounds": 6337,
+      "total_net_T": 5741.69,
+      "per_signal_netT": 0.2151,
+      "sell_acc12_pct": 50.9,
+      "mean_net_T_pct": 0.9061,
+      "elapsed_s": 10.8
+    },
+    "8": {
+      "n_signals": 26618,
+      "nB": 15691,
+      "nS": 10927,
+      "n_rounds": 6337,
+      "total_net_T": 5739.03,
+      "per_signal_netT": 0.2156,
+      "sell_acc12_pct": 51.0,
+      "mean_net_T_pct": 0.9056,
+      "elapsed_s": 10.7
+    },
+    "10": {
+      "n_signals": 26498,
+      "nB": 15691,
+      "nS": 10807,
+      "n_rounds": 6331,
+      "total_net_T": 5697.08,
+      "per_signal_netT": 0.215,
+      "sell_acc12_pct": 50.9,
+      "mean_net_T_pct": 0.8999,
+      "elapsed_s": 10.7
+    },
+    "12": {
+      "n_signals": 26415,
+      "nB": 15691,
+      "nS": 10724,
+      "n_rounds": 6328,
+      "total_net_T": 5665.05,
+      "per_signal_netT": 0.2145,
+      "sell_acc12_pct": 50.9,
+      "mean_net_T_pct": 0.8952,
+      "elapsed_s": 10.7
+    },
+    "15": {
+      "n_signals": 26299,
+      "nB": 15691,
+      "nS": 10608,
+      "n_rounds": 6323,
+      "total_net_T": 5628.86,
+      "per_signal_netT": 0.214,
+      "sell_acc12_pct": 50.9,
+      "mean_net_T_pct": 0.8902,
+      "elapsed_s": 10.6
+    },
+    "20": {
+      "n_signals": 26140,
+      "nB": 15694,
+      "nS": 10446,
+      "n_rounds": 6320,
+      "total_net_T": 5566.74,
+      "per_signal_netT": 0.213,
+      "sell_acc12_pct": 50.7,
+      "mean_net_T_pct": 0.8808,
+      "elapsed_s": 10.6
+    },
+    "25": {
+      "n_signals": 25995,
+      "nB": 15694,
+      "nS": 10301,
+      "n_rounds": 6313,
+      "total_net_T": 5520.83,
+      "per_signal_netT": 0.2124,
+      "sell_acc12_pct": 50.6,
+      "mean_net_T_pct": 0.8745,
+      "elapsed_s": 10.5
+    },
+    "30": {
+      "n_signals": 25865,
+      "nB": 15693,
+      "nS": 10172,
+      "n_rounds": 6307,
+      "total_net_T": 5490.92,
+      "per_signal_netT": 0.2123,
+      "sell_acc12_pct": 50.6,
+      "mean_net_T_pct": 0.8706,
+      "elapsed_s": 10.6
+    }
+  },
+  "suppress": {
+    "5": {
+      "n_signals": 25984,
+      "nS": 10289,
+      "sell_acc12_pct": 50.8,
+      "elapsed_s": 10.5
+    },
+    "8": {
+      "n_signals": 26407,
+      "nS": 10714,
+      "sell_acc12_pct": 50.9,
+      "elapsed_s": 10.5
+    },
+    "10": {
+      "n_signals": 26503,
+      "nS": 10811,
+      "sell_acc12_pct": 50.9,
+      "elapsed_s": 10.5
+    },
+    "12": {
+      "n_signals": 26550,
+      "nS": 10859,
+      "sell_acc12_pct": 50.9,
+      "elapsed_s": 10.5
+    },
+    "15": {
+      "n_signals": 26600,
+      "nS": 10909,
+      "sell_acc12_pct": 51.0,
+      "elapsed_s": 10.6
+    },
+    "18": {
+      "n_signals": 26613,
+      "nS": 10922,
+      "sell_acc12_pct": 51.0,
+      "elapsed_s": 11.0
+    },
+    "20": {
+      "n_signals": 26618,
+      "nS": 10927,
+      "sell_acc12_pct": 51.0,
+      "elapsed_s": 10.6
+    },
+    "25": {
+      "n_signals": 26627,
+      "nS": 10936,
+      "sell_acc12_pct": 50.9,
+      "elapsed_s": 10.6
+    }
+  },
+  "trend_diag": {
+    "-99% ~ -3%": {
+      "n_days": 0,
+      "nB": 4058,
+      "nS": 882,
+      "B_acc12": 35.7,
+      "S_acc12": 66.8
+    },
+    "-3% ~ -1%": {
+      "n_days": 0,
+      "nB": 3846,
+      "nS": 1591,
+      "B_acc12": 40.7,
+      "S_acc12": 60.7
+    },
+    "-1% ~ 1%": {
+      "n_days": 0,
+      "nB": 4012,
+      "nS": 2900,
+      "B_acc12": 47.2,
+      "S_acc12": 52.1
+    },
+    "1% ~ 3%": {
+      "n_days": 0,
+      "nB": 2043,
+      "nS": 2607,
+      "B_acc12": 52.2,
+      "S_acc12": 46.8
+    },
+    "3% ~ 99%": {
+      "n_days": 0,
+      "nB": 1298,
+      "nS": 2649,
+      "B_acc12": 58.1,
+      "S_acc12": 42.6
+    }
+  },
+  "best_cooldown": "8",
+  "n_symbols": 30,
+  "n_day_segments": 3779
+}

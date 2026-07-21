@@ -21,11 +21,107 @@ v9 监控告警引擎（watchdog sidecar）。
 数据来源：monitor 每轮扫描末写入 metrics.json（含 ts/scan_duration_s/
 signals/errors/last_bar_ts/status）。monitor 崩溃 → 心跳过期 → 触发"服务中断"。
 """
-import os, sys, json, time, argparse
+import os, sys, json, time, argparse, atexit
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from feishu_alert import send as feishu_send
+
+# ========== 单实例锁（2026-07-20 加固：防止 engine 静默重复运行 → 飞书告警重发） ==========
+# 与 monitor 同款机制：data/.alert_engine.lock + data/.alert_engine.pid
+DATA_DIR  = os.path.join(BASE_DIR, 'data')
+LOCK_FILE = os.path.join(DATA_DIR, '.alert_engine.lock')
+PID_FILE  = os.path.join(DATA_DIR, '.alert_engine.pid')
+
+if os.name == 'nt':
+    import msvcrt
+    def _ae_acquire_lock(lf):
+        lf.seek(0); msvcrt.locking(lf.fileno(), msvcrt.LK_NBLCK, 1)
+    def _ae_release_lock(lf):
+        try:
+            lf.seek(0); msvcrt.locking(lf.fileno(), msvcrt.LK_UNLCK, 1)
+        except Exception:
+            pass
+else:
+    import fcntl
+    def _ae_acquire_lock(lf):
+        fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    def _ae_release_lock(lf):
+        try:
+            fcntl.flock(lf, fcntl.LOCK_UN)
+        except Exception:
+            pass
+
+def _ae_is_process_alive(pid):
+    if pid is None or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)  # Windows/Unix 通用：仅检测进程存在性
+        return True
+    except (ProcessLookupError, OSError, PermissionError):
+        return False
+
+def _ae_remove_if_exists(path):
+    try:
+        if os.path.exists(path):
+            os.remove(path); return True
+    except (FileNotFoundError, OSError, PermissionError):
+        pass
+    return False
+
+def _ae_clear_stale_lock(lock_file, pid_file):
+    """若锁/PID 指向的进程已死或文件残留，则清理。"""
+    holder = None
+    try:
+        if os.path.exists(pid_file):
+            with open(pid_file, 'r') as _pf:
+                _c = _pf.read().strip()
+            if _c.isdigit():
+                holder = int(_c)
+    except Exception:
+        pass
+    if holder is not None and not _ae_is_process_alive(holder):
+        _ae_remove_if_exists(pid_file); _ae_remove_if_exists(lock_file); return True
+    if holder is None and os.path.exists(lock_file):
+        _ae_remove_if_exists(lock_file); return True
+    return False
+
+def acquire_single_instance(lock_file, pid_file, max_attempts=10):
+    """获取单实例锁；被占用(非stale)则重试，最终失败 exit(1)。返回锁文件句柄(常驻)。"""
+    attempt = 0
+    lf = None
+    while attempt < max_attempts:
+        attempt += 1
+        _ae_clear_stale_lock(lock_file, pid_file)
+        try:
+            lf = open(lock_file, 'w')
+        except Exception:
+            time.sleep(1); continue
+        try:
+            _ae_acquire_lock(lf); break
+        except (IOError, OSError):
+            try: lf.close()
+            except Exception: pass
+            time.sleep(1)
+    else:
+        print(f"[{time.strftime('%H:%M:%S')}] 告警引擎单实例锁获取失败({max_attempts}次)，已有实例运行，退出")
+        sys.exit(1)
+    lf.write(str(os.getpid())); lf.flush()
+    with open(pid_file, 'w') as pf:
+        pf.write(str(os.getpid()))
+    print(f"[{time.strftime('%H:%M:%S')}] 告警引擎单实例锁已获取 pid={os.getpid()}")
+    acquired = True
+    def _cleanup():
+        # 仅当本实例真正获取锁时才清理锁文件，避免失败实例误删存活实例的锁
+        if not acquired:
+            return
+        try: _ae_release_lock(lf)
+        except Exception: pass
+        try: lf.close()
+        except Exception: pass
+        _ae_remove_if_exists(lock_file); _ae_remove_if_exists(pid_file)
+    atexit.register(_cleanup)
+    return lf
 
 
 def _cfg_path():
@@ -43,12 +139,21 @@ def load_config(path):
     return cfg
 
 
-def read_metrics(path):
-    try:
-        with open(path, encoding='utf-8') as f:
-            return json.load(f)
-    except Exception:
-        return None
+def read_metrics(path, _max_retries=2):
+    """读取 metrics.json（monitor 心跳文件）。
+    2026-07-20 fix: 增加重试机制（最多 _max_retries 次，间隔 0.3s），
+    防止 monitor 正在原子替换 metrics.json 瞬间导致 PermissionError → 误报「未检测到心跳文件」。
+    """
+    import time as _time
+    for attempt in range(_max_retries):
+        try:
+            with open(path, encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            if attempt < _max_retries - 1:
+                _time.sleep(0.3)
+            continue
+    return None
 
 
 def _cmp(op, a, b):
@@ -219,6 +324,9 @@ def main():
     if args.once:
         run_once()
         return
+
+    # 常驻守护模式：获取单实例锁，防止重复运行导致飞书告警重发
+    acquire_single_instance(LOCK_FILE, PID_FILE)
 
     while True:
         try:

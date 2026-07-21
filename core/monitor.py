@@ -14,7 +14,8 @@ import requests
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone, timedelta
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed  # 保留导入(备用), 但数据拉取已改为串行见下
+import threading
 from datasource import MootdxDataSource as TickFlow
 from miji_alpha import compute_miji_indicators, check_b_trigger, check_s_trigger
 from indicators import stars, K1
@@ -63,10 +64,15 @@ SIGNAL_FILE = _cfg('signal_file', 'SIGNAL_FILE', os.path.join(BASE_DIR, 'data', 
 STATE_FILE  = _cfg('state_file',  'STATE_FILE',  os.path.join(BASE_DIR, 'data', 'state.json'))
 METRICS_FILE = _cfg('metrics_file', 'METRICS_FILE', os.path.join(BASE_DIR, 'data', 'metrics.json'))
 PROMPT_FILE = _cfg('prompt_file', 'TP_PROMPT_FILE', os.path.join(BASE_DIR, '..', 'stock-pool', 'prompt-common.md'))
+# 监控标的列表（优先于持仓文件，实现"监控标的"与"持仓"解耦）
+WATCHLIST_FILE = _cfg('watchlist_file', 'TP_WATCHLIST_FILE', os.path.join(BASE_DIR, 'data', 'watchlist.json'))
 WEBHOOK_URL = _cfg('webhook_url', 'TP_WEBHOOK_URL', "https://open.feishu.cn/open-apis/bot/v2/hook/1d241455-447b-4017-b9a3-4ecb61912369")
 # 锁文件放到项目 data/ 目录（跨会话共享，避免 SYSTEM 与用户会话 temp 不同导致锁失效）
 LOCK_FILE = os.path.join(BASE_DIR, 'data', '.monitor.lock')
 PID_FILE  = os.path.join(BASE_DIR, 'data', '.monitor.pid')
+# 风控 Agent（模式②）写入的顶层闸门文件；缺失/过期/坏→NONE（放行，永不误伤生产做T）
+RISK_OVERRIDE_FILE = _cfg('risk_override_file', 'TP_RISK_OVERRIDE',
+                          os.path.join(BASE_DIR, 'data', 'risk_override.json'))
 
 # ========== 出场管理配置（生产方向，已锁定） ==========
 # 仅移动止损：浮盈≥0.4% 激活，从浮动高点回撤 0.6% 触发平仓；关硬止损/时间止损；S信号作自然出场
@@ -102,6 +108,13 @@ MAX_S_DAILY = 12
 # 任务三/四：自由双向 + 动态仓位
 COLDOWN_BARS = 3      # 同方向信号最小间隔(bar)，替代原墙钟秒级冷却（replay 单次 detect_for 下 now 冻结会导致仅首信号触发）
 MAX_SIZE_PCT = 8       # 单标的累计仓位上限(成)
+SCAN_INTERVAL = int(_cfg('scan_interval', 'TP_SCAN_INTERVAL', 15))   # 每轮扫描间隔(秒)，默认15；盘外心跳亦用此值
+
+# ========== 静默零信号告警（2026-07-21 复盘新增：堵"数据中断静默吞信号"漏洞） ==========
+# 某标的连续 N 轮（交易时段、过开盘宽限期后）无分钟K bar → 推信号群告警，避免像今日这样静默吞掉整日。
+ALERT_MISS_ROUNDS = int(_cfg('alert_miss_rounds', 'TP_ALERT_MISS_ROUNDS', 6))   # 6×15s≈90s
+ALERT_GRACE_MIN = int(_cfg('alert_grace_min', 'TP_ALERT_GRACE_MIN', 5))          # 开盘前后宽限分钟数
+ALERT_WEBHOOK = _cfg('alert_webhook', 'TP_ALERT_WEBHOOK', WEBHOOK_URL)           # 默认信号群(已确认)
 def strength_size(g_dev_pct, m_present):
     """按信号强度推导仓位(成)：强(偏离≥2% 或 含MACD背离)→4成，否则2成。"""
     strong = (abs(g_dev_pct) >= 2.0) or bool(m_present)
@@ -129,7 +142,7 @@ def _limit_up_threshold(sym):
 def load_targets():
     prompt_file = PROMPT_FILE
     try:
-        with open(prompt_file) as f:
+        with open(prompt_file, encoding='utf-8') as f:
             lines = f.readlines()
     except:
         return {}
@@ -163,24 +176,44 @@ def load_targets():
             pass
     return targets
 
-TARGETS = load_targets()
+# 监控标的加载：唯一数据源 = data/watchlist.json
+# 2026-07-21 移除硬编码 5 持仓兜底：所有标的必须从此文件动态读取，
+# 避免启动时读失败→整日扫描错误标的(实证: 10:28 161129 未被监控)。
+def _load_watchlist():
+    """从 data/watchlist.json 读取监控标的 {sym: name}。文件不存在或为空则报错退出。"""
+    try:
+        if os.path.exists(WATCHLIST_FILE):
+            with open(WATCHLIST_FILE, encoding='utf-8') as f:
+                wl = json.load(f)
+            if wl and isinstance(wl, dict) and len(wl) > 0:
+                return wl
+    except Exception as e:
+        print(f"❌ 读取 watchlist.json 失败: {e}")
+    print("❌ watchlist.json 不存在、为空或格式错误。无法确定监控标的，monitor 无法启动。")
+    print(f"   请在 {WATCHLIST_FILE} 中配置至少一个标的（如 {json.dumps({'161129.SZ': '原油LOF易方达'}, ensure_ascii=False)}）")
+    return None
+
+TARGETS = _load_watchlist()
 if not TARGETS:
-    TARGETS = {
-        '300975.SZ': '商络电子',
-        '601869.SH': '长飞光纤',
-        '603938.SH': '三孚股份',
-        '300395.SZ': '菲利华',
-        '301526.SZ': '国际复材',
-    }
-    print("⚠️ 无法读取持仓文件，使用硬编码列表")
+    # 延迟到 run() 启动时再次尝试（可能用户还没来得及写好配置）
+    print("⚠️ 启动时未加载到标的，将在 run() 循环中周期重试 watchlist.json")
+else:
+    print(f"📋 监控标的来自 watchlist.json: {', '.join(TARGETS.values())}")
 
 _EXCLUDE = {'920222.BJ', '920222.SZ'}
 TARGETS = {k: v for k, v in TARGETS.items() if k not in _EXCLUDE}
 
 tf = None  # lazy init: instantiated on first trading day inside run()
 
+# ========== mootdx socket 串行锁 ==========
+# 2026-07-20 修复：mootdx TdxHq_API 共享单 TCP socket 且 lock=None（未传 multithread=True）。
+# ThreadPoolExecutor 并发 compute() 会导致 send/recv 交错 → 标的A收到标的B的响应数据
+# （实证：161129.SZ 卡片显示现价309=688347.SH价位, +16934%涨幅）。
+# 故对数据拉取加全局互斥锁，确保同一时刻只有一个线程在 socket 上做请求/响应往返。
+_data_lock = threading.Lock()
+
 # ========== 全局状态 ==========
-STATE = {sym: {'PC': 0, 'WARM': None} for sym in TARGETS}
+STATE = {sym: {'PC': 0, 'WARM': None} for sym in (TARGETS or {})}
 
 def refresh_daily(sym=None):
     syms = [sym] if sym else list(TARGETS.keys())
@@ -255,9 +288,21 @@ def push_batch(items, sim=False):
         print(f"  ⚠️ PUSH 异常: {e}")
     return False
 
+def _send_alert(text):
+    """静默零信号 / 数据源中断告警 → 信号群 webhook（交易时段用户即时可见）。
+    失败静默（不阻塞主循环）。"""
+    try:
+        r = requests.post(ALERT_WEBHOOK, json={"msg_type": "text", "content": {"text": text}}, timeout=5)
+        resp = r.json()
+        if not (r.status_code == 200 and resp.get('code') == 0):
+            print(f"  ⚠️ 告警推送失败: {r.text[:120]}")
+    except Exception as e:
+        print(f"  ⚠️ 告警推送异常: {e}")
+
 def compute(sym):
-    """v9: 调算法层计算全部指标"""
-    df = tf.klines.intraday(sym, as_dataframe=True)
+    """v9: 调算法层计算全部指标（数据拉取受 _data_lock 保护，防止 mootdx socket 串标）"""
+    with _data_lock:  # 2026-07-20 fix: 互斥访问共享 mootdx TCP socket
+        df = tf.klines.intraday(sym, as_dataframe=True)
     if df is None or len(df) < 5:
         return None
     df = df.sort_values('trade_time').reset_index(drop=True)
@@ -296,7 +341,7 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
         ]
         msg = '\n'.join(lines)
         print(msg)
-        with open(SIGNAL_FILE, 'a') as f:
+        with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
             f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n{msg}\n\n")
         return msg
     emoji = '🟢' if sig_type == 'B' else '🔴'
@@ -353,11 +398,10 @@ def emit_card(s, sym=None, sim=False):
             op, color = '卖出', 'red'
     title = f'{code} {op} {pos_pct}成'
     star = stars(sig_type, temp, vol_r)
-    op = '买入' if is_b else '卖出' if is_s else '出场'
     chg_sign = '+' if chg >= 0 else ''
     sample = _map_sample(sig_type, tag)
     bt = bar_tt[11:16] if bar_tt and len(bar_tt) >= 16 else ''
-    # 行1：标的·操作｜做T仓位 ★
+    # 行1：标的·操作｜做T仓位 ★（op 已在上方按 sig_type+exit_reason 智能判定，勿覆盖）
     line1 = f"{name}·{op}｜做T·{pos_pct}成 {star}"
     # 行2：操作点位（买卖用动态 level_type；出场双口径）
     if is_x:
@@ -404,12 +448,12 @@ def emit_signal(s, sym=None, sim=False):
 
 def load_state():
     try:
-        with open(STATE_FILE) as f:
+        with open(STATE_FILE, encoding='utf-8') as f:
             s = json.load(f)
         saved_date = s.get('_daily_refreshed_date', '')
         today = datetime.now(CST).strftime('%Y-%m-%d')
         if saved_date and saved_date != today:
-            keys_to_remove = [k for k in s.keys() if k.startswith('bar_') or k.startswith('_cooldown_') or k.startswith('pos_')]
+            keys_to_remove = [k for k in s.keys() if k.startswith('bar_') or k.startswith('_cooldown_') or k.startswith('pos_') or k.startswith('_miss_') or k.startswith('alerted_miss_')]
             for k in keys_to_remove:
                 del s[k]
             s['_daily_refreshed_date'] = None
@@ -418,25 +462,36 @@ def load_state():
         return {}
 
 def save_state(s):
-    with open(STATE_FILE, 'w') as f:
+    with open(STATE_FILE, 'w', encoding='utf-8') as f:
         json.dump(s, f)
 
 def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
     """每轮扫描末写入 metrics.json，供告警引擎(watchdog)采集。
-    包含：扫描耗时 / 本轮信号数 / 本轮错误数 / 最新行情棒时间 / 标的数。失败静默。"""
+    包含：扫描耗时 / 本轮信号数 / 本轮错误数 / 最新行情棒时间 / 标的数。
+    2026-07-20 fix: 改用原子写入（先写 .tmp 再 os.replace），消除 Windows 文件锁竞争导致
+    alert_engine 读不到 metrics.json 而误报「未检测到心跳文件」的问题。失败静默。"""
     try:
-        with open(METRICS_FILE, 'w') as f:
-            json.dump({
-                'ts': time.time(),
-                'scan_duration_s': round(duration_s, 3),
-                'signals': signals,
-                'errors': errors,
-                'symbols': symbols,
-                'last_bar_ts': last_bar_ts if last_bar_ts else None,
-                'status': 'running',
-            }, f)
+        import tempfile as _tf
+        _dir = os.path.dirname(METRICS_FILE) or '.'
+        _fd, _tmp = _tf.mkstemp(suffix='.tmp', dir=_dir, prefix='metrics_')
+        try:
+            with os.fdopen(_fd, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'ts': time.time(),
+                    'scan_duration_s': round(duration_s, 3),
+                    'signals': signals,
+                    'errors': errors,
+                    'symbols': symbols,
+                    'last_bar_ts': last_bar_ts if last_bar_ts else None,
+                    'status': 'running',
+                }, f)
+            os.replace(_tmp, METRICS_FILE)  # 原子替换（同目录）
+        except Exception:
+            # 写 tmp 失败时清理临时文件
+            try: os.unlink(_tmp)
+            except OSError: pass
     except Exception:
-        pass
+        pass  # 外层兜底：磁盘/权限等不可恢复异常静默吞掉，不阻塞主循环
 
 def _compute_stop_price(entry_price, atr, entry_idx, cfg):
     """硬止损价（仅 use_stop 时有意义）；关闭时返回 -inf，不影响移动止损比较。"""
@@ -480,6 +535,59 @@ def _mk_exit(reason, name, price, pos, vwap, atr, rsi14, temp, vol_ratio, i, pc,
     bt = str(trade_times[i]) if trade_times is not None and i < len(trade_times) else ''
     return ('X', price, chg, level_val, level_type,
             rsi14[i], temp[i], vol_ratio[i], name, tag, reason, day_chg, bt)
+
+
+def _load_risk_override():
+    """读取风控闸门文件；缺失/过期/坏 → 'NONE'（放行，永不误伤生产做T）。"""
+    try:
+        if not os.path.exists(RISK_OVERRIDE_FILE):
+            return 'NONE'
+        with open(RISK_OVERRIDE_FILE, encoding='utf-8') as f:
+            o = json.load(f)
+        exp = o.get('expires_at')
+        if exp:
+            try:
+                exp_dt = datetime.strptime(exp, '%Y-%m-%d %H:%M:%S').replace(tzinfo=CST)
+                if datetime.now(CST) > exp_dt:
+                    return 'NONE'
+            except Exception:
+                pass
+        act = o.get('action', 'NONE')
+        if act in ('HALT_BUY', 'FORCE_SELL', 'ALLOW_BUY', 'NONE'):
+            return act
+        return 'NONE'
+    except Exception:
+        return 'NONE'
+
+
+def _risk_gate(sym, name, data, st, sigs, action):
+    """模式② 顶层闸门：把风控 action 套在 miji_alpha 之上（不影响入场点算法）。
+    - HALT_BUY / FORCE_SELL：跳过所有 B（新开/加仓）信号；
+    - FORCE_SELL：对已持仓强制生成清仓 EXIT（信号形状与算法自然出场完全一致）；
+    - NONE / ALLOW_BUY：完全不变。
+    返回（可能过滤/追加后的）sigs。"""
+    if action in ('HALT_BUY', 'FORCE_SELL'):
+        sigs = [s for s in sigs if s and s[0] != 'B']
+    if action == 'FORCE_SELL':
+        # 已有自然出场则不再重复强制
+        if not any(s and s[0] in ('X', 'S') for s in sigs):
+            pos = st.get(f'pos_{sym}')
+            if pos is not None:
+                try:
+                    c = data['c']; vwap = data['vwap']; atr = data['atr']
+                    rsi14 = data['rsi']; temp = data['temp']; vol_ratio = data['vol_ratio']
+                    n = data['n']
+                    pc = STATE[sym]['PC']
+                    df = data.get('df')
+                    trade_times = df['trade_time'].values if df is not None else None
+                    i = max(2, n - 1)
+                    price = c[i]
+                    sz = pos['size_pct']
+                    sigs.append(_mk_exit('S', name, price, pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
+                    print(f"  🛑 [risk-gate] FORCE_SELL 已对 {name} 强制生成清仓信号")
+                except Exception as e:
+                    print(f"  [risk-gate] FORCE_SELL 构造失败 {name}: {e}")
+    return sigs
 
 
 def detect_for(sym, name, data, st):
@@ -734,7 +842,31 @@ def _clear_stale_lock(lock_file, pid_file):
     return False
 
 
+def _warmup_tf():
+    """启动预热并校验 tf 连通性（2026-07-21 复盘改进：封初始化窗口）。
+    强制触发连接 + 校验（对标 datasource._server_ok）；失败指数退避重试；
+    全失败返回 False，交由静默告警感知，不退出进程（避免与自启机制冲突）。"""
+    global tf
+    max_tries = 3
+    for attempt in range(max_tries):
+        try:
+            tf = TickFlow()
+            _ = tf.client  # 强制建立 mootdx 连接
+            ok = tf.klines.get('600519.SH', period='1d', count=1, as_dataframe=True)
+            if ok is not None and len(ok) > 0:
+                print(f"[{datetime.now(CST).strftime('%H:%M:%S')}] ✅ tf 预热成功（数据源连通）")
+                return True
+            print(f"  ⚠️ tf 预热: 连接建立但无数据(retry {attempt+1}/{max_tries})")
+        except Exception as e:
+            print(f"  ⚠️ tf 预热失败(retry {attempt+1}/{max_tries}): {e}")
+        if attempt < max_tries - 1:
+            time.sleep(min(1.0 * (2 ** attempt), 7.0))
+    _log_event('TF_WARMUP_FAILED all retries exhausted')
+    return False
+
+
 def run():
+    global tf, TARGETS, STATE
     lock_file = LOCK_FILE
     pid_file = PID_FILE
     # 获取锁；若被占用，先检查 stale 再尝试接管，避免无限循环
@@ -791,6 +923,9 @@ def run():
     atexit.register(_cleanup_lock)
 
     st = load_state()
+    # 2026-07-21 复盘改进：启动即预热并校验 tf 连通性（封初始化窗口）
+    tf_ok = _warmup_tf()
+    st['_tf_unhealthy'] = (not tf_ok)
     syms = list(TARGETS.keys())
     print(f"[{datetime.now(CST).strftime('%H:%M:%S')}] v9 VWAP+ATR+趋势+量价+温度 启动 | {', '.join(TARGETS.values())}")
 
@@ -825,31 +960,57 @@ def run():
                 write_metrics(0.0, 0, 0, 0, len(TARGETS))
             except Exception:
                 pass
-            time.sleep(30)
-            continue
-            try:
-                write_metrics(0.0, 0, 0, 0, len(TARGETS))
-            except Exception:
-                pass
-            time.sleep(30)
+            time.sleep(SCAN_INTERVAL)
             continue
 
         today_str = now.strftime('%Y-%m-%d')
+        # 2026-07-21 fix: 确保 tf 必被初始化。
+        # 旧逻辑仅在「当日首次刷新」时初始化 tf；若 monitor 在当日刷新之后才重启
+        # （如崩溃修复后重启），_daily_refreshed_date 已是今日，tf 会一直保持 None
+        # → 所有 compute 抛 'NoneType' object has no attribute 'klines'，全天零信号。
+        if tf is None:
+            try:
+                tf = TickFlow()
+                print(f"[{now.strftime('%H:%M:%S')}] 🔄 TickFlow连接初始化 (恢复 tf)")
+            except Exception as e:
+                print(f"  ⚠️ TickFlow初始化失败: {e}; 本轮跳过")
+                if not st.get('_alerted_tf_down'):
+                    st['_alerted_tf_down'] = True
+                    _send_alert(f"🚨 数据源初始化失败：TickFlow 无法创建（{e}）。"
+                                f"monitor 将持续跳过扫描直到恢复，请检查 mootdx 连接。")
+                time.sleep(SCAN_INTERVAL)
+                continue
+        else:
+            st.pop('_alerted_tf_down', None)
+
+        # 周期重载 watchlist.json（唯一标的来源）
+        # 启动时若文件不存在→空 TARGETS，每轮重试；正常后每轮检测变化
+        _wl = _load_watchlist()
+        if _wl and _wl != TARGETS:
+            old_syms = set(TARGETS or {})
+            new_syms = set(_wl)
+            TARGETS = _wl
+            for s in new_syms - old_syms:
+                STATE[s] = {'PC': 0, 'WARM': None}
+            added = new_syms - old_syms
+            removed = old_syms - new_syms
+            if added:
+                print(f"📋 watchlist 新增: {', '.join(f'{TARGETS[s]}({s})' for s in added)}")
+            if removed:
+                print(f"📋 watchlist 移除: {', '.join(s for s in removed)}")
+        elif not TARGETS and not _wl:
+            pass  # 文件仍不可用，下一轮继续尝试
         if st.get('_daily_refreshed_date') != today_str:
-            global tf
-            from datasource import MootdxDataSource as TickFlow
-            tf = TickFlow()
-            print(f"[{now.strftime('%H:%M:%S')}] 🔄 TickFlow连接已重建 (新交易日)")
             refresh_daily()
             st['_daily_refreshed_date'] = today_str
             if not os.path.exists(SIGNAL_FILE):
-                with open(SIGNAL_FILE, 'w') as f:
+                with open(SIGNAL_FILE, 'w', encoding='utf-8') as f:
                     f.write(f"[{today_str}]\n")
             else:
-                with open(SIGNAL_FILE, 'r') as f:
+                with open(SIGNAL_FILE, 'r', encoding='utf-8', errors='replace') as f:
                     existing = f.read()
                 if f'[{today_str}]' not in existing:
-                    with open(SIGNAL_FILE, 'a') as f:
+                    with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
                         f.write(f"\n[{today_str}]\n")
             print(f"[{datetime.now(CST).strftime('%H:%M:%S')}] 📅 日K已刷新 " +
                   ', '.join(f"{TARGETS[s]}={STATE[s]['PC']:.2f}" for s in syms))
@@ -858,6 +1019,10 @@ def run():
         loop_start = time.time(); err_count = 0; max_bar_ts = 0.0; outer_err = False
         try:
             # 1) 并发拉取数据：I/O 瓶颈（Mootdx intraday 请求）
+            #     ⚠️ 2026-07-20 fix: compute() 内部已加 _data_lock 互斥 mootdx socket，
+            #     所以 ThreadPoolExecutor 的并发度只影响"等待 I/O"的线程调度开销，
+            #     实际 socket 操作是串行的。若后续标的增多导致锁竞争明显，
+            #     可直接改 max_workers=1（纯串行）消除线程创建开销。
             sym_data = {}
             max_workers = min(5, len(TARGETS))
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -875,34 +1040,63 @@ def run():
                         err_count += 1
                         print(f"  [warning] {name} compute exception: {e}")
 
+            # 静默零信号检测：本轮未取到 bar 的标的计数（堵"数据中断静默吞信号"）
+            if sym_data:
+                st['_tf_unhealthy'] = False
+            for sym in TARGETS:
+                if sym in sym_data:
+                    st[f'_miss_{sym}'] = 0
+                    st.pop(f'alerted_miss_{sym}', None)  # 数据恢复 → 清除去抖锁
+                else:
+                    st[f'_miss_{sym}'] = st.get(f'_miss_{sym}', 0) + 1
+            # 告警（仅交易时段 + 过开盘宽限期，去抖避免刷屏）
+            def _in_grace(tt):
+                g = ALERT_GRACE_MIN
+                return (t.replace(hour=9, minute=30) <= tt < t.replace(hour=9, minute=30 + g)) or \
+                       (t.replace(hour=13, minute=0) <= tt < t.replace(hour=13, minute=5))
+            if not _in_grace(now.time()):
+                for sym in TARGETS:
+                    m = st.get(f'_miss_{sym}', 0)
+                    key_a = f'alerted_miss_{sym}'
+                    if m >= ALERT_MISS_ROUNDS and not st.get(key_a):
+                        st[key_a] = True
+                        nm = TARGETS[sym]
+                        _send_alert(
+                            f"⚠️ 数据源中断告警：{nm}({sym}) 已连续 {m} 轮"
+                            f"(约{m*SCAN_INTERVAL}秒) 无分钟K数据，疑似盘中数据源中断，"
+                            f"已静默跳过该标的信号。请检查 mootdx/腾讯行情连接。"
+                        )
+                        print(f"  🚨 已推送静默零信号告警 {nm}({sym}) miss={m}")
+
             # 2) 顺序处理信号：避免共享状态 st 竞争
+            override_action = _load_risk_override()  # 模式② 顶层风控闸门（每轮读一次）
             for sym, name in TARGETS.items():
-                data = sym_data.get(sym)
-                if not data:
-                    continue
-                try:
+                    data = sym_data.get(sym)
+                    if not data:
+                        continue
                     try:
-                        _bt = pd.to_datetime(data['df']['trade_time']).max().timestamp()
-                        if _bt > max_bar_ts:
-                            max_bar_ts = _bt
-                    except Exception:
-                        pass
-                    if not first_scan_done[sym]:
-                        first_scan_done[sym] = True
-                        target_t = '13:00' if now.hour >= 13 else '09:30'
-                        df = data['df']; n = data['n']
-                        for idx in range(n):
-                            if str(df['trade_time'].iloc[idx])[11:16] >= target_t:
-                                for j in range(1, idx):
-                                    st[f"bar_{sym}_{j}"] = now_ts()
-                                break
-                    sigs = detect_for(sym, name, data, st)
-                    for s in sigs:
-                        msg = emit_signal(s, sym=sym)
-                        batch.append(msg)
-                except Exception as e:
-                    err_count += 1
-                    print(f"  [warning] {name} process exception: {e}")
+                        try:
+                            _bt = pd.to_datetime(data['df']['trade_time']).max().timestamp()
+                            if _bt > max_bar_ts:
+                                max_bar_ts = _bt
+                        except Exception:
+                            pass
+                        if not first_scan_done[sym]:
+                            first_scan_done[sym] = True
+                            target_t = '13:00' if now.hour >= 13 else '09:30'
+                            df = data['df']; n = data['n']
+                            for idx in range(n):
+                                if str(df['trade_time'].iloc[idx])[11:16] >= target_t:
+                                    for j in range(1, idx):
+                                        st[f"bar_{sym}_{j}"] = now_ts()
+                                    break
+                        sigs = _risk_gate(sym, name, data, st, detect_for(sym, name, data, st), override_action)
+                        for s in sigs:
+                            msg = emit_signal(s, sym=sym)
+                            batch.append(msg)
+                    except Exception as e:
+                        err_count += 1
+                        print(f"  [warning] {name} process exception: {e}")
             if batch:
                 print(f"  🔔 [{now.strftime('%H:%M:%S')}] 本轮信号 {len(batch)}条 → 推送")
                 push_batch(batch)
@@ -912,14 +1106,23 @@ def run():
             if not batch:
                 print(f"  🔄 [{now.strftime('%H:%M:%S')}] 本轮无信号 ({len(TARGETS)}标的扫描完成)")
         except Exception as e:
+            outer_err = True
             print(f"💥 [{now.strftime('%H:%M:%S')}] v9扫描崩溃: {e}")
             import traceback; traceback.print_exc()
             try:
                 save_state(st)
             except:
                 pass
-            print(f"  🔄 10秒后恢复扫描...")
-        time.sleep(30)
+            # 2026-07-21 P1: 崩溃也写入 metrics，闭合 errors 计数（避免指标盲区）。
+            # 否则 write_metrics 在 try 内被跳过，errors 恒为 False，
+            # 自检/看门狗只能靠心跳停滞间接推断崩溃，无法感知"活着但每轮崩"。
+            try:
+                write_metrics(time.time() - loop_start, 0,
+                              err_count + 1, max_bar_ts, len(TARGETS))
+            except Exception:
+                pass
+            print(f"  🔄 {SCAN_INTERVAL}秒后恢复扫描...")
+        time.sleep(SCAN_INTERVAL)
 
 if __name__ == '__main__':
     _log_event('PROCESS_START argv=%s' % ' '.join(sys.argv[1:]))
