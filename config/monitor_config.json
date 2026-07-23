@@ -7,6 +7,7 @@
     "metrics_file": "metrics.json",
     "poll_interval_s": 15,
     "service_stale_s": 120,
+    "session": { "open_h": 9, "open_m": 25, "close_h": 15, "close_m": 5 },
     "max_buffer": 40,
     "enabled": true
   },

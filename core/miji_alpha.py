@@ -540,6 +540,13 @@ def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, macd_gate_mod
     buy_score = sum(1 for f in [g_factor, v_factor, m_factor] if f == 1)
     sell_score = sum(1 for f in [g_factor, v_factor, m_factor] if f == -1)
 
+    # day_chg: 当日涨跌幅(%), 供 floor 门控的涨停日天花板S抑制使用。
+    # 注意：check_miji_trigger 不接收 pc 参数，需从 data['pc'] 取昨收；
+    # 缺失时降级为 0.0（抑制不触发，等效于不限制天花板S）。
+    # 2026-07-22 修复：原代码引用未定义的 day_chg → 每个 S 判定 NameError 崩溃。
+    pc = data.get('pc')
+    day_chg = (c[i] / pc - 1) * 100 if (pc and pc > 0) else 0.0
+
     # ---- MACD 门控（分级，委托 _gate_floor 共享模块）----
     b_base = s_base = False
     b_floor = s_ceil = False

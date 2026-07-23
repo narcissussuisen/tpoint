@@ -73,6 +73,10 @@ PID_FILE  = os.path.join(BASE_DIR, 'data', '.monitor.pid')
 # 风控 Agent（模式②）写入的顶层闸门文件；缺失/过期/坏→NONE（放行，永不误伤生产做T）
 RISK_OVERRIDE_FILE = _cfg('risk_override_file', 'TP_RISK_OVERRIDE',
                           os.path.join(BASE_DIR, 'data', 'risk_override.json'))
+# 推送审计日志：每次推送落 {时间,标的,类型,价格,飞书code,ok}，消除"日志不记标的"盲区
+PUSH_AUDIT_FILE = os.path.join(BASE_DIR, 'data', 'push_audit.jsonl')
+# 推送失败补发队列：频限(11232)/网络失败时入队，下轮自动重投，根治"失败即丢推"
+PUSH_PENDING_FILE = os.path.join(BASE_DIR, 'data', 'push_pending.jsonl')
 
 # ========== 出场管理配置（生产方向，已锁定） ==========
 # 仅移动止损：浮盈≥0.4% 激活，从浮动高点回撤 0.6% 触发平仓；关硬止损/时间止损；S信号作自然出场
@@ -247,8 +251,114 @@ def now_ts():
 _last_push_ts = 0
 MIN_PUSH_INTERVAL = 5
 
-def push_batch(items, sim=False):
-    """发推送。CARD_MODE: items 是 card dict 列表，逐条发 interactive 卡片；否则 items 是 text 列表，join 发 text。"""
+def _audit_push(sym, typ, price, code, msg, ok):
+    """推送审计日志 data/push_audit.jsonl：{时间,标的,类型,价格,飞书code,ok}。
+    消除'日志不记标的'盲区，使未来可逐笔核对真实推送。"""
+    try:
+        row = {
+            'ts': datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S'),
+            'sym': sym, 'type': typ, 'price': price,
+            'feishu_code': code, 'feishu_msg': msg, 'ok': bool(ok),
+        }
+        with open(PUSH_AUDIT_FILE, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(row, ensure_ascii=False) + '\n')
+    except Exception:
+        pass
+
+def _push_once(url, payload):
+    """单次 POST，返回 (ok, code, msg)。"""
+    try:
+        r = requests.post(url, json=payload, timeout=5)
+        resp = r.json()
+        code = resp.get('code'); msg = resp.get('msg')
+        ok = (r.status_code == 200 and code == 0)
+        return ok, code, msg
+    except Exception as e:
+        return False, None, str(e)[:200]
+
+def _push_retry(url, payload, max_retries=3, base=2.0):
+    """失败(飞书 code!=0 / 异常)指数退避重试，避免频限静默丢推。
+    返回 (ok, code, msg, attempts)。"""
+    last = (False, None, '')
+    for attempt in range(1, max_retries + 1):
+        ok, code, msg = _push_once(url, payload)
+        last = (ok, code, msg)
+        if ok:
+            return ok, code, msg, attempt
+        if attempt < max_retries:
+            time.sleep(base * (2 ** (attempt - 1)))
+    return last[0], last[1], last[2], max_retries
+
+def _enqueue_pending(sym, typ, price, payload):
+    """推送失败时入队 data/push_pending.jsonl，下轮 _drain_pending 补发。"""
+    try:
+        row = {'ts': datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S'),
+               'sym': sym, 'type': typ, 'price': price, 'payload': payload}
+        with open(PUSH_PENDING_FILE, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(row, ensure_ascii=False) + '\n')
+        print(f"  📥 已入补发队列: {sym} {typ} (待下轮重投)")
+    except Exception as e:
+        print(f"  ⚠️ 入补发队列失败: {e}")
+
+
+def _drain_pending(max_drain=5):
+    """主循环每轮调用：补发 push_pending.jsonl 队首条目，成功则删除。
+    受 MIN_PUSH_INTERVAL 节流；失败留待下轮。返回本轮补发成功数。"""
+    global _last_push_ts
+    if not os.path.exists(PUSH_PENDING_FILE):
+        return 0
+    try:
+        with open(PUSH_PENDING_FILE, encoding='utf-8') as f:
+            lines = f.readlines()
+    except Exception:
+        return 0
+    if not lines:
+        return 0
+    now = time.time()
+    wait = MIN_PUSH_INTERVAL - (now - _last_push_ts)
+    if wait > 0:
+        time.sleep(wait)
+    drained = 0
+    remaining = []
+    for line in lines:
+        if drained >= max_drain:
+            remaining.append(line)
+            continue
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        payload = row.get('payload')
+        if payload is None:
+            continue
+        ok, code, msg, attempts = _push_retry(WEBHOOK_URL, payload)
+        _last_push_ts = time.time()
+        _audit_push(row.get('sym'), row.get('type'), row.get('price'), code, msg, ok)
+        if ok:
+            drained += 1
+            print(f"  📤 补发成功: {row.get('sym')} {row.get('type')} (排队于 {row.get('ts')})")
+        else:
+            # 失败留队，下轮再试；但避免单条卡死整队，放回队首
+            remaining.insert(0, line)
+            print(f"  ⚠️ 补发仍失败(code={code})，留待下轮: {row.get('sym')} {row.get('type')}")
+            break
+    # 原子写回剩余
+    try:
+        tmp = PUSH_PENDING_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(remaining)
+        os.replace(tmp, PUSH_PENDING_FILE)
+    except Exception as e:
+        print(f"  ⚠️ 补发队列写回失败: {e}")
+    return drained
+
+
+def push_batch(items, sim=False, audit_meta=None):
+    """发推送。CARD_MODE: items 是 card dict 列表，逐条发 interactive 卡片；否则 items 是 text 列表，join 发 text。
+    audit_meta: 与 items 一一对应的 {sym,type,price} 列表（用于审计日志）。"""
     global _last_push_ts
     if not items:
         return
@@ -256,48 +366,41 @@ def push_batch(items, sim=False):
     wait = MIN_PUSH_INTERVAL - (now - _last_push_ts)
     if wait > 0:
         time.sleep(wait)
+    audit_meta = audit_meta or [None] * len(items)
     if CARD_MODE:
         ok_all = True
-        for item in items:
+        for item, meta in zip(items, audit_meta):
+            sym = meta.get('sym') if meta else None
+            typ = meta.get('type') if meta else None
+            price = meta.get('price') if meta else None
             print(f"  📡 PUSH(card) 准备: {str(item)[:60]}")
-            try:
-                r = requests.post(WEBHOOK_URL, json=item, timeout=5)
-                _last_push_ts = time.time()
-                resp = r.json()
-                print(f"  📡 PUSH 响应: status={r.status_code} code={resp.get('code')} msg={resp.get('msg')}")
-                if not (r.status_code == 200 and resp.get('code') == 0):
-                    ok_all = False
-                    print(f"  ⚠️ PUSH 失败: {r.text[:200]}")
-            except Exception as e:
+            ok, code, msg, attempts = _push_retry(WEBHOOK_URL, item)
+            _last_push_ts = time.time()
+            _audit_push(sym, typ, price, code, msg, ok)
+            if not ok:
                 ok_all = False
-                print(f"  ⚠️ PUSH 异常: {e}")
+                _enqueue_pending(sym, typ, price, item)  # 失败入队，下轮补发，不丢推
+                print(f"  ⚠️ PUSH 失败(重试{attempts}次): code={code} msg={msg}")
         return ok_all
     text = '\n\n'.join(items)
     print(f"  📡 PUSH 准备: {len(items)}条, 内容前60字: {text[:60]}")
-    try:
-        r = requests.post(WEBHOOK_URL, json={
-            "msg_type": "text", "content": {"text": text}
-        }, timeout=5)
-        _last_push_ts = time.time()
-        resp = r.json()
-        print(f"  📡 PUSH 响应: status={r.status_code} code={resp.get('code')} msg={resp.get('msg')}")
-        if r.status_code == 200 and resp.get('code') == 0:
-            return True
-        print(f"  ⚠️ PUSH 失败: {r.text[:200]}")
-    except Exception as e:
-        print(f"  ⚠️ PUSH 异常: {e}")
-    return False
+    ok, code, msg, attempts = _push_retry(WEBHOOK_URL, {
+        "msg_type": "text", "content": {"text": text}
+    })
+    _last_push_ts = time.time()
+    _audit_push(None, None, None, code, msg, ok)
+    if not ok:
+        _enqueue_pending(None, None, None, {"msg_type": "text", "content": {"text": text}})  # 失败入队补发
+        print(f"  ⚠️ PUSH 失败(重试{attempts}次): code={code} msg={msg}")
+    return ok
 
 def _send_alert(text):
     """静默零信号 / 数据源中断告警 → 信号群 webhook（交易时段用户即时可见）。
-    失败静默（不阻塞主循环）。"""
-    try:
-        r = requests.post(ALERT_WEBHOOK, json={"msg_type": "text", "content": {"text": text}}, timeout=5)
-        resp = r.json()
-        if not (r.status_code == 200 and resp.get('code') == 0):
-            print(f"  ⚠️ 告警推送失败: {r.text[:120]}")
-    except Exception as e:
-        print(f"  ⚠️ 告警推送异常: {e}")
+    失败重试（含频限 11232 退避），不阻塞主循环。"""
+    ok, code, msg, attempts = _push_retry(ALERT_WEBHOOK,
+                                          {"msg_type": "text", "content": {"text": text}})
+    if not ok:
+        print(f"  ⚠️ 告警推送失败(重试{attempts}次): code={code} msg={msg}")
 
 def compute(sym):
     """v9: 调算法层计算全部指标（数据拉取受 _data_lock 保护，防止 mootdx socket 串标）"""
@@ -482,6 +585,9 @@ def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
                     'signals': signals,
                     'errors': errors,
                     'symbols': symbols,
+                    # [不变量-风险节点4守卫] last_bar_ts 必须为 null（非保留上次值）。
+                    # 午休/盘前 monitor 不扫描→last_bar_ts=0 被转 None；alert_engine 据此跳过
+                    # data_lag_s 规则，避免午休"行情延迟/数据源中断"误报。切勿改为保留旧值！
                     'last_bar_ts': last_bar_ts if last_bar_ts else None,
                     'status': 'running',
                 }, f)
@@ -538,7 +644,8 @@ def _mk_exit(reason, name, price, pos, vwap, atr, rsi14, temp, vol_ratio, i, pc,
 
 
 def _load_risk_override():
-    """读取风控闸门文件；缺失/过期/坏 → 'NONE'（放行，永不误伤生产做T）。"""
+    """读取风控闸门文件 risk_override.json（vr_risk_agent 写）；
+    缺失/过期/坏 → 'NONE'（放行，永不误伤生产做T，保持 fail-open）。"""
     try:
         if not os.path.exists(RISK_OVERRIDE_FILE):
             return 'NONE'
@@ -955,9 +1062,14 @@ def run():
             # 真实崩溃仍由心跳停滞(>service_stale_s)触发，语义不变。
             if t > t.replace(hour=15, minute=1):
                 _log_event('post-close keepalive (heartbeat only, no scan)')
+            # 收盘后保活：优先刷新心跳 ts（写 metrics.json）。
+            # 即使 save_state 失败也不阻塞心跳；write_metrics 失败显式记录，避免静默冻结。
+            try:
+                write_metrics(0.0, 0, 0, 0, len(TARGETS))
+            except Exception as e:
+                print(f"  ⚠️ 收盘保活 write_metrics 失败: {e}")
             try:
                 save_state(st)
-                write_metrics(0.0, 0, 0, 0, len(TARGETS))
             except Exception:
                 pass
             time.sleep(SCAN_INTERVAL)
@@ -1016,7 +1128,13 @@ def run():
                   ', '.join(f"{TARGETS[s]}={STATE[s]['PC']:.2f}" for s in syms))
 
         batch = []
+        audit_meta = []  # 与 batch 一一对应，用于推送审计日志
         loop_start = time.time(); err_count = 0; max_bar_ts = 0.0; outer_err = False
+        # 先补发上一轮失败的推送（频限11232等），再扫描新信号——根治"失败即丢推"
+        try:
+            _drain_pending()
+        except Exception as _e:
+            print(f"  [warning] drain_pending 异常: {_e}")
         try:
             # 1) 并发拉取数据：I/O 瓶颈（Mootdx intraday 请求）
             #     ⚠️ 2026-07-20 fix: compute() 内部已加 _data_lock 互斥 mootdx socket，
@@ -1094,12 +1212,13 @@ def run():
                         for s in sigs:
                             msg = emit_signal(s, sym=sym)
                             batch.append(msg)
+                            audit_meta.append({'sym': sym, 'type': s[0], 'price': s[1]})
                     except Exception as e:
                         err_count += 1
                         print(f"  [warning] {name} process exception: {e}")
             if batch:
                 print(f"  🔔 [{now.strftime('%H:%M:%S')}] 本轮信号 {len(batch)}条 → 推送")
-                push_batch(batch)
+                push_batch(batch, audit_meta=audit_meta)
             save_state(st)
             write_metrics(time.time() - loop_start, len(batch),
                           err_count + (1 if outer_err else 0), max_bar_ts, len(TARGETS))
@@ -1125,6 +1244,10 @@ def run():
         time.sleep(SCAN_INTERVAL)
 
 if __name__ == '__main__':
+    # 启动闸门：仅允许由 V9Launch.bat 拉起（防手动双击 run_monitor.bat 绕过单实例锁产生第二实例共用 webhook）
+    if os.environ.get('TP_LAUNCHED_BY_V9LAUNCH') != '1' and os.environ.get('TP_FORCE_RUN') != '1':
+        print("[guard] monitor 仅允许由 V9Launch.bat 启动；手动双击已拒绝。调试用 TP_FORCE_RUN=1 启动。")
+        sys.exit(2)
     _log_event('PROCESS_START argv=%s' % ' '.join(sys.argv[1:]))
     try:
         run()

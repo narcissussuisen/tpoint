@@ -3,6 +3,19 @@
 > 版本号规则：MAJOR.MINOR.PATCH；PATCH=同一算法框架内的修复/硬化（每个修复 +1）。
 > 说明仅标注各版本**核心算法与信号语义**的差异，便于回溯。
 
+## v9.2.1 — 收敛第一性 + 风险节点修复（固化 tag v9.2.1-converged）
+- **回归第一性（07-22 收敛）**：
+  - 盘后假告警副作用治理：删除残留 `data/risk_override_secondary.json` 的 HALT_BUY（避免次日禁买）；回退 Fix4b 兜底 + secondary 合并逻辑。
+  - 复盘口径根治：`daily_signal_review.py` 以 `state.json` 为权威源（实盘推送次数），复算仅作参考并明确标注，消除「复算幻影信号」。
+  - 送达可靠：monitor 加失败补发队列 `data/push_pending.jsonl`；复盘 webhook 从信号群 `1d241455` 分离到复盘群 `849577f5`，缓解飞书频限丢推。
+  - 风控 fail-open：`risk_override.json` 过期即 NONE 放行（vr_risk agent 未运行不阻断信号）。
+- **风险节点修复（07-23）**：
+  - 节点1：`config/monitor_config.json` 的 `monitor.session.open_m` 15→25，对齐 alert_engine 评估窗口与 monitor 实际扫描起始(9:25)，消除 9:15–9:25 误报空窗。
+  - 节点2：新增 `scripts/install_daily_review.ps1` + `run_daily_review.bat`，支持计划任务 `tpoint_daily_review`（周一至五 15:30）自动推送复盘。
+  - 节点4/5：`monitor.py` 加午休 `last_bar_ts=null` 不变量注释（防 data_lag_s 误报）；`tf is None` 兜底已就绪（L1080–1091）。
+- **单实例锁加固**：`alert_engine.py` 重写 `acquire_single_instance`（失败关句柄 + 活实例安静退出，防 crash-loop）；`run_engine.bat` 启动自清理。
+- 本版本为 07-22/07-23 两波未提交改动固化点；相对 v9.2.0 算法信号语义无变化（仍为 floor 门控）。
+
 ## v9.2.0 — floor 门控正式上线（替代 strict）
 - **架构解耦**：新建 `backtest/keyfactor/_gate_floor.py` 共享门控模块（`gate_buy`/`gate_sell` 纯函数），消除 `miji_engine.py` 与 `miji_alpha.py` 的重复门控逻辑。
 - **门控切换**：生产默认 `MACD_GATE_MODE` 从 `strict` → `floor`（通过 `run_monitor.bat`/`run_engine.bat` 环境变量设置，无需改动算法代码）。

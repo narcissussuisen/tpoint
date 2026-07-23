@@ -21,7 +21,7 @@ v9 监控告警引擎（watchdog sidecar）。
 数据来源：monitor 每轮扫描末写入 metrics.json（含 ts/scan_duration_s/
 signals/errors/last_bar_ts/status）。monitor 崩溃 → 心跳过期 → 触发"服务中断"。
 """
-import os, sys, json, time, argparse, atexit
+import os, sys, json, time, argparse, atexit, random
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -86,8 +86,30 @@ def _ae_clear_stale_lock(lock_file, pid_file):
         _ae_remove_if_exists(lock_file); return True
     return False
 
-def acquire_single_instance(lock_file, pid_file, max_attempts=10):
-    """获取单实例锁；被占用(非stale)则重试，最终失败 exit(1)。返回锁文件句柄(常驻)。"""
+def _ae_read_holder_pid(pid_file):
+    """读 pid 文件中的持有者 PID（不存在/损坏返回 None）。"""
+    try:
+        if os.path.exists(pid_file):
+            with open(pid_file, 'r') as _pf:
+                _c = _pf.read().strip()
+            if _c.isdigit():
+                return int(_c)
+    except Exception:
+        pass
+    return None
+
+
+def acquire_single_instance(lock_file, pid_file, max_attempts=20):
+    """获取单实例锁。
+
+    设计要点（2026-07-22 加固，解决多 run_engine 循环竞争导致的死锁/崩溃循环）：
+      - 每次尝试立即 open+lock，失败立即关闭句柄（不跨重试持锁，避免阻塞其它实例 open）。
+      - 失败且 pid 文件指向的持有者仍存活 → 视为已有实例在跑，安静退出(sys.exit(0))，
+        不再 crash-loop 刷 engine_crash.log。
+      - 失败但无存活持有者（pid 缺失/已死）→ 抖动后退避重试，乐观接管。
+      - 全部尝试后仍失败、且确有存活实例 → 安静退出；否则才告警退出。
+    返回锁文件句柄(常驻)；若确有其它活实例则直接 exit(0)。
+    """
     attempt = 0
     lf = None
     while attempt < max_attempts:
@@ -96,15 +118,27 @@ def acquire_single_instance(lock_file, pid_file, max_attempts=10):
         try:
             lf = open(lock_file, 'w')
         except Exception:
-            time.sleep(1); continue
+            time.sleep(random.uniform(0.3, 1.0)); continue
         try:
             _ae_acquire_lock(lf); break
         except (IOError, OSError):
+            # 关键：立即关闭句柄，释放给其他实例 open 的机会，避免持锁死锁
             try: lf.close()
             except Exception: pass
-            time.sleep(1)
+            lf = None
+            # 若 pid 文件指向一个仍存活的实例 → 已有实例在跑，安静退出
+            _holder = _ae_read_holder_pid(pid_file)
+            if _holder is not None and _ae_is_process_alive(_holder):
+                print(f"[{time.strftime('%H:%M:%S')}] 告警引擎已有活实例 pid={_holder}，本实例退出(不重复运行)")
+                sys.exit(0)
+            time.sleep(random.uniform(0.3, 1.0))
     else:
-        print(f"[{time.strftime('%H:%M:%S')}] 告警引擎单实例锁获取失败({max_attempts}次)，已有实例运行，退出")
+        # 重试耗尽：再看是否真有活实例
+        _holder = _ae_read_holder_pid(pid_file)
+        if _holder is not None and _ae_is_process_alive(_holder):
+            print(f"[{time.strftime('%H:%M:%S')}] 告警引擎已有活实例 pid={_holder}，本实例退出(不重复运行)")
+            sys.exit(0)
+        print(f"[{time.strftime('%H:%M:%S')}] 告警引擎单实例锁获取失败({max_attempts}次)，退出")
         sys.exit(1)
     lf.write(str(os.getpid())); lf.flush()
     with open(pid_file, 'w') as pf:
@@ -193,6 +227,27 @@ def is_trading_today():
         '2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07',
     }
     return today_str not in holidays_2026
+
+
+def _session_window(cfg):
+    """从配置中读取盘中评估窗口，返回 (open_h, open_m, close_h, close_m)。"""
+    s = (cfg.get('monitor') or {}).get('session') or {}
+    return (int(s.get('open_h', 9)), int(s.get('open_m', 15)),
+            int(s.get('close_h', 15)), int(s.get('close_m', 5)))
+
+
+def in_trading_session(now_epoch, cfg):
+    """是否处于 A 股盘中评估窗口（默认 09:15–15:05，可配置）。
+    仅该窗口内评估 service_up，避免收盘后 monitor 仅保活（ts 陈旧）导致误报『服务中断』。
+    self_test 场景不受影响——它直接调用 evaluate()，不走本门控。"""
+    if not is_trading_today():
+        return False
+    now = datetime.fromtimestamp(now_epoch)
+    oh, om, ch, cm = _session_window(cfg)
+    t = now.time()
+    open_t = t.replace(hour=oh, minute=om, second=0, microsecond=0)
+    close_t = t.replace(hour=ch, minute=cm, second=0, microsecond=0)
+    return open_t <= t <= close_t
 
 
 def evaluate(sample, buffer, now, cfg):
@@ -301,6 +356,9 @@ def main():
     def run_once():
         nonlocal buffer
         now = time.time()
+        if not in_trading_session(now, cfg):
+            print("  · 非盘中时段，跳过评估（收盘后 monitor 仅保活，不报 service_down）")
+            return []
         sample = read_metrics(metrics_path)
         if sample:
             buffer.append(sample)
