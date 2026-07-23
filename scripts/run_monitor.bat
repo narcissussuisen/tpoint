@@ -7,6 +7,7 @@ set PYTHONIOENCODING=utf-8
 set PYTHONUNBUFFERED=1
 set PYTHONPATH=C:\Users\YZP\WorkBuddy\Claw\tpoint\venv\Lib\site-packages;C:\Users\YZP\WorkBuddy\Claw\tpoint\venv\Lib;C:\Users\YZP\WorkBuddy\Claw\tpoint
 set MACD_GATE_MODE=floor
+set TP_LAUNCHED_BY_V9LAUNCH=1
 set PY_EXE=C:\Users\YZP\WorkBuddy\Claw\tpoint\venv\Scripts\python.exe
 
 if not exist logs mkdir logs

@@ -36,6 +36,13 @@ import pandas as pd
 
 from datasource import MootdxDataSource
 from miji_alpha import compute_miji_indicators
+
+# 修复 Windows 计划任务重定向到日志文件时默认 GBK 编码，
+# 导致 monitor.py 模块级 emoji print 触发 UnicodeEncodeError 崩溃。
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ('utf-8', 'utf_8'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', line_buffering=True)
+
 import monitor as M
 
 # ---- 复刻生产常量（monitor 模块级，保持一致即可）----
@@ -312,6 +319,10 @@ def load_push_audit(audit_path, date=None):
 def build_html(target, sym_results, baseline, comparison, live_counts=None, audit_rows=None):
     # ---- Fix3: 实盘权威源（state.json）vs 复算对照 + Δ ----
     live_counts = live_counts or {}
+
+    def esc(x):
+        return (str(x).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
+
     all_syms = sorted(set(list(sym_results.keys()) + list(live_counts.keys())))
     cmp_rows_live = ''
     for sym in all_syms:
@@ -359,8 +370,6 @@ def build_html(target, sym_results, baseline, comparison, live_counts=None, audi
    <tbody>{cmp_rows_live}</tbody></table>
 </div>{audit_html}"""
 
-    def esc(x):
-        return (str(x).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
     # 信号明细：按标的分类展示
     def _row_html(r):
         if r['valid'] is True:

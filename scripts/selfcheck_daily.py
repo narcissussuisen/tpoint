@@ -29,6 +29,7 @@ import time
 import socket
 import shutil
 import argparse
+import atexit
 import subprocess
 import urllib.request
 from datetime import datetime, timezone, timedelta
@@ -48,6 +49,9 @@ STATE_FILE = os.path.join(DATA_DIR, 'state.json')
 SIGNAL_FILE = os.path.join(DATA_DIR, 'signal.txt')
 LOCK_FILE = os.path.join(DATA_DIR, '.monitor.lock')
 PID_FILE = os.path.join(DATA_DIR, '.monitor.pid')
+ENGINE_PID_FILE = os.path.join(DATA_DIR, '.alert_engine.pid')
+SELFCHECK_LOCK = os.path.join(DATA_DIR, '.selfcheck.lock')
+SELFCHECK_PID = os.path.join(DATA_DIR, '.selfcheck.pid')
 PROMPT_FILE = os.path.join(BASE_DIR, '..', 'stock-pool', 'prompt-common.md')
 CONFIG_FILE = os.path.join(BASE_DIR, 'config', 'monitor_config.json')
 WATCHLIST_FILE = os.path.join(DATA_DIR, 'watchlist.json')
@@ -225,6 +229,155 @@ def _proc_alive(pid):
         return False
 
 
+def _proc_cmdline(pid):
+    """获取进程命令行（PowerShell 优先，wmic 兜底）。返回 str 或 None。
+    用于 PID 复用校验：仅当命令行确实包含目标脚本，才认为该 PID 是目标服务。"""
+    try:
+        out = subprocess.check_output(
+            ['powershell', '-NoProfile', '-Command',
+             f"$p = Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\"; "
+             f"if ($p) {{ Write-Output $p.CommandLine }}"],
+            timeout=10, stderr=subprocess.DEVNULL, text=True, errors='replace')
+        s = out.strip()
+        return s if s else None
+    except Exception:
+        pass
+    try:
+        out = subprocess.check_output(
+            ['wmic', 'process', 'where', f'processid={pid}', 'get', 'commandline'],
+            timeout=10, stderr=subprocess.DEVNULL, text=True, errors='replace')
+        for line in out.strip().splitlines()[1:]:
+            line = line.strip()
+            if line:
+                return line
+    except Exception:
+        pass
+    return None
+
+
+def _proc_alive_and_matches(pid, script_substr):
+    """PID 存活且其命令行包含 script_substr（防 PID 复用导致 stale 误判）。"""
+    if not _proc_alive(pid):
+        return False
+    cmd = _proc_cmdline(pid)
+    if cmd is None:
+        # 拿不到命令行，保守认为不匹配（避免误报存活）
+        return False
+    return script_substr in cmd
+
+
+def _find_pid_by_tasklist_and_cmdline(script_substr):
+    """tasklist 兜底：用 tasklist 列 python PID，再逐个核对命令行。
+    仅在 PowerShell/wmic 主扫描漏报时使用。"""
+    for pid in _tasklist_python_pids():
+        cmd = _proc_cmdline(pid)
+        if cmd and script_substr in cmd:
+            return pid
+    return None
+
+
+def _find_service_pid(script_substr, pid_file, min_mem_mb=20):
+    """四层校验定位服务进程，避免误报/漏报：
+       1) PID 文件 + 命令行一致性（防 stale/PID 复用）
+       2) 扫描所有 python 进程命令行含 script_substr
+       3) tasklist 兜底（PowerShell/wmic 漏报时）
+       4) 内存阈值过滤僵尸/子进程（默认 >= min_mem_mb MB）
+    返回 {'pid': int, 'mem_mb': float|None} 或 None。"""
+    candidates = []
+
+    # 1) PID 文件 + 命令行一致性
+    pid_in_file = None
+    if pid_file and os.path.exists(pid_file):
+        try:
+            with open(pid_file) as f:
+                c = f.read().strip()
+            if c.isdigit():
+                pid_in_file = int(c)
+        except Exception:
+            pass
+    if pid_in_file and _proc_alive(pid_in_file):
+        # 命令行不可读（Windows 部分进程 wmic/Get-CimInstance 返回空）时信任 PID 文件
+        # （PID 文件由服务自身启动写入，权威）；仅当命令行可读且不匹配时才排除。
+        cmd = _proc_cmdline(pid_in_file)
+        if cmd is None or script_substr in cmd:
+            candidates.append((pid_in_file, _proc_mem_mb(pid_in_file)))
+
+    # 2) 扫描命令行
+    procs = _get_python_procs()
+    for pid, cmd in procs:
+        if script_substr in cmd:
+            mem = _proc_mem_mb(pid)
+            if mem is None or mem >= min_mem_mb:
+                candidates.append((pid, mem))
+
+    # 3) tasklist 兜底
+    if not any(p != pid_in_file for p, _ in candidates):
+        tpid = _find_pid_by_tasklist_and_cmdline(script_substr)
+        if tpid and tpid != pid_in_file:
+            candidates.append((tpid, _proc_mem_mb(tpid)))
+
+    if not candidates:
+        return None
+    # 4) 取内存最大者（过滤僵尸/轻量子进程）
+    candidates.sort(key=lambda x: (x[1] or 0), reverse=True)
+    best_pid, best_mem = candidates[0]
+    return {'pid': best_pid, 'mem_mb': best_mem}
+
+
+def acquire_single_instance():
+    """selfcheck 单实例互斥：避免多个自检同时运行导致重复飞书卡片 / 报告覆盖。
+    采用 msvcrt 文件锁（进程退出时 OS 自动释放，无 stale 风险）。
+    获取失败说明已有实例运行 → 静默退出（不告警、不推送）。"""
+    if os.name != 'nt':
+        return
+    try:
+        import msvcrt
+    except Exception:
+        return
+    try:
+        fd = os.open(SELFCHECK_LOCK, os.O_CREAT | os.O_RDWR, 0o644)
+    except Exception:
+        print('[selfcheck] 无法打开锁文件，跳过互斥检查')
+        return
+    try:
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    except (OSError, IOError):
+        print('[selfcheck] 已有其他自检实例运行中，退出')
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        sys.exit(0)
+    except Exception:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        return
+    # 成功获取锁
+    try:
+        with open(SELFCHECK_PID, 'w') as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass
+
+    def _release():
+        try:
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        except Exception:
+            pass
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        try:
+            if os.path.exists(SELFCHECK_PID):
+                os.remove(SELFCHECK_PID)
+        except Exception:
+            pass
+    atexit.register(_release)
+
+
 def _query_scheduled_tasks():
     """精确查询 tpoint 计划任务。返回 {name: {state, lastrun, lastresult, cmd}}。
     用精确任务名查询，避免模糊匹配 'monitor' 误命中系统任务(FamilySafetyMonitor 等)
@@ -232,16 +385,24 @@ def _query_scheduled_tasks():
     result = {}
     names = ['tpoint_monitor', 'tpoint_alert_engine', 'tpoint_selfcheck']
     ps_names = ','.join([f'"{n}"' for n in names])
+    # 守卫 $i 为 null（任务从未运行/被禁用时 Get-ScheduledTaskInfo 返回 null，
+    # 原脚本直接访问 $i.LastRunTime 会抛错导致整行跳过 → 误报"未注册"）。
+    ps_script = (
+        "foreach ($n in @(%s)) { "
+        "$t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue; "
+        "if ($t) { "
+        "$i = Get-ScheduledTaskInfo -TaskName $n -ErrorAction SilentlyContinue; "
+        "$a = $t.Actions[0]; "
+        "$lr = if ($i) { $i.LastRunTime } else { 'N/A' }; "
+        "$lres = if ($i) { $i.LastTaskResult } else { 'N/A' }; "
+        "$nx = if ($i) { $i.NextRunTime } else { 'N/A' }; "
+        "$act = if ($a) { ($a.Execute + ' ' + $a.Arguments) } else { 'N/A' }; "
+        "Write-Output ($n + '||' + $t.State + '||' + $lr + '||' + $lres + '||' + $t.Principal.UserId + '||' + $act + '||' + $nx) "
+        "} else { Write-Output ($n + '||NOTFOUND') } }" % ps_names
+    )
     try:
         out = subprocess.check_output(
-            ['powershell', '-NoProfile', '-Command',
-             "foreach ($n in @(%s)) { "
-             "$t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue; "
-             "if ($t) { "
-             "$i = Get-ScheduledTaskInfo -TaskName $n -ErrorAction SilentlyContinue; "
-             "$a = $t.Actions[0]; "
-             "Write-Output ($n + '||' + $t.State + '||' + $i.LastRunTime + '||' + $i.LastTaskResult + '||' + $t.Principal.UserId + '||' + $a.Execute + ' ' + $a.Arguments) "
-             "} else { Write-Output ($n + '||NOTFOUND') } }" % ps_names],
+            ['powershell', '-NoProfile', '-Command', ps_script],
             timeout=20, stderr=subprocess.DEVNULL, text=True, errors='replace')
         for line in out.strip().splitlines():
             line = line.strip()
@@ -257,9 +418,25 @@ def _query_scheduled_tasks():
                     'lastresult': parts[3],
                     'principal': parts[4],
                     'cmd': parts[5],
+                    'nextrun': parts[6] if len(parts) > 6 else 'N/A',
                 }
     except Exception as e:
         result['_error'] = str(e)
+    # schtasks 兜底（仅当 PowerShell 未报错且某预期任务缺失时，确认是否真未注册）
+    if not result.get('_error'):
+        for name in names:
+            if name in result:
+                continue
+            try:
+                out = subprocess.check_output(
+                    ['schtasks', '/query', '/tn', name],
+                    timeout=10, stderr=subprocess.DEVNULL, text=True, errors='replace')
+                if name in out:
+                    result[name] = {'state': 'Found(schtasks)', 'lastrun': 'N/A',
+                                    'lastresult': 'N/A', 'principal': 'N/A',
+                                    'cmd': 'N/A', 'nextrun': 'N/A'}
+            except Exception:
+                pass
     return result
 
 
@@ -449,46 +626,35 @@ def check_services(trading_day):
     """2. 服务运行状态检查。"""
     results = []
 
-    # 2.1 monitor 进程存活
-    procs = _get_python_procs()
-    monitor_pids = [pid for pid, cmd in procs if 'monitor.py' in cmd]
-    if not monitor_pids and procs:
-        # 命令行没抓到，用 PID 文件兜底
-        try:
-            with open(PID_FILE) as f:
-                pid_in_file = int(f.read().strip())
-            if _proc_alive(pid_in_file):
-                monitor_pids = [pid_in_file]
-        except Exception:
-            pass
-
-    if monitor_pids:
-        pid = monitor_pids[0]
-        mem = _proc_mem_mb(pid)
+    # 2.1 monitor 进程存活（四层校验：PID文件+命令行一致性+扫描+内存阈值）
+    m = _find_service_pid('monitor.py', PID_FILE)
+    if m:
+        pid = m['pid']
+        mem = m['mem_mb']
         mem_str = f'，内存 {mem:.0f}MB' if mem else ''
         results.append(CheckResult('服务运行', 'monitor 进程', 'PASS',
                                    f'PID {pid}{mem_str}', value=pid))
     else:
         # 非交易日 monitor 按设计退出，降级为 WARN
         status = 'WARN' if not trading_day else 'FAIL'
-        msg = 'monitor 进程未检测到'
+        msg = 'monitor 进程未检测到（命令行/PID 文件均未命中，或进程已退出）'
         if not trading_day:
             msg += '（非交易日，monitor 按设计退出）'
         results.append(CheckResult('服务运行', 'monitor 进程', status, msg))
 
-    # 2.2 alert_engine 进程存活
-    engine_pids = [pid for pid, cmd in procs if 'alert_engine' in cmd]
-    if engine_pids:
+    # 2.2 alert_engine 进程存活（与 monitor 共用四层校验，含 tasklist 兜底）
+    e = _find_service_pid('alert_engine', ENGINE_PID_FILE)
+    if e:
         results.append(CheckResult('服务运行', 'alert_engine 进程', 'PASS',
-                                   f'PID {engine_pids[0]}', value=engine_pids[0]))
+                                   f'PID {e["pid"]}', value=e['pid']))
     else:
         status = 'WARN' if not trading_day else 'FAIL'
-        msg = 'alert_engine 进程未检测到'
+        msg = 'alert_engine 进程未检测到（命令行/PID 文件均未命中）'
         if not trading_day:
             msg += '（非交易日按设计退出）'
         results.append(CheckResult('服务运行', 'alert_engine 进程', status, msg))
 
-    # 2.3 单实例锁一致性
+    # 2.3 单实例锁一致性（PID 文件指向进程必须命令行匹配 monitor.py，防 PID 复用）
     pid_in_file = None
     try:
         if os.path.exists(PID_FILE):
@@ -500,10 +666,15 @@ def check_services(trading_day):
         pass
 
     if pid_in_file is not None:
-        alive = _proc_alive(pid_in_file)
-        if alive:
-            results.append(CheckResult('服务运行', '单实例锁一致性', 'PASS',
-                                       f'PID 文件指向 {pid_in_file}，进程存活'))
+        if _proc_alive(pid_in_file):
+            # 命令行不可读时同样信任 PID 文件（避免把正常 monitor 误报为 PID 复用）
+            cmd = _proc_cmdline(pid_in_file)
+            if cmd is None or 'monitor.py' in cmd:
+                results.append(CheckResult('服务运行', '单实例锁一致性', 'PASS',
+                                           f'PID 文件指向 {pid_in_file}，进程存活且命令行匹配 monitor.py'))
+            else:
+                results.append(CheckResult('服务运行', '单实例锁一致性', 'WARN',
+                                           f'PID 文件指向 {pid_in_file}，进程存活但命令行不匹配（疑似 PID 复用 / stale），建议删除 PID 文件'))
         else:
             results.append(CheckResult('服务运行', '单实例锁一致性', 'WARN',
                                        f'PID 文件指向 {pid_in_file}，但进程已退出（stale lock，下次启动会自动清理）'))
@@ -515,13 +686,7 @@ def check_services(trading_day):
             results.append(CheckResult('服务运行', '单实例锁一致性', 'PASS',
                                        '非交易日无 PID 文件（正常）'))
 
-    # 2.4 自检脚本进程去重检查（避免多个自检实例）
-    self_pids = [pid for pid, cmd in procs if 'selfcheck_daily' in cmd and pid != os.getpid()]
-    if self_pids:
-        results.append(CheckResult('服务运行', '自检脚本实例', 'WARN',
-                                   f'检测到其他自检进程运行中: {self_pids}'))
-    else:
-        results.append(CheckResult('服务运行', '自检脚本实例', 'PASS', '当前为唯一实例'))
+    # 2.4 自检实例唯一性由 acquire_single_instance() 入口单实例锁保证，无需再检查
 
     return results
 
@@ -564,9 +729,12 @@ def check_monitoring(trading_day):
     dur = metrics.get('scan_duration_s')
     session = in_trading_session()
     if dur is not None and session:
-        if dur <= 0 or dur <= 0.5:
+        # 仅当 dur==0（完全未扫描/空转/tf=None 早退）才判 FAIL；
+        # 正常快速扫描可能 <0.5s（行情缓存命中、低波动），不应误报。
+        # tf=None/未真正扫描另有 last_bar_ts 为 null 的强校验兜底。
+        if dur <= 0:
             results.append(CheckResult('监控状态', '扫描耗时合理性', 'FAIL',
-                f'{dur}s（≤0.5s 或=0，疑似空转/未真正扫描/tf=None），正常应为 1-3s',
+                f'{dur}s（=0，疑似空转/未真正扫描/tf=None），正常应为 1-3s',
                 value=dur, threshold=0.5))
         elif dur <= 3:
             results.append(CheckResult('监控状态', '扫描耗时合理性', 'PASS',
@@ -721,21 +889,18 @@ def check_resources():
     else:
         results.append(CheckResult('资源使用', '磁盘 C: 使用率', 'SKIP', '无法获取'))
 
-    # 5.4 monitor 进程内存
-    try:
-        with open(PID_FILE) as f:
-            pid = int(f.read().strip())
-        mem_mb = _proc_mem_mb(pid)
-        if mem_mb is not None:
-            status = 'PASS' if mem_mb < MONITOR_MEM_WARN_MB else 'WARN'
-            results.append(CheckResult('资源使用', 'monitor 进程内存', status,
-                                       f'{mem_mb:.0f}MB（PID {pid}）',
-                                       value=round(mem_mb, 1), threshold=MONITOR_MEM_WARN_MB))
-        else:
-            results.append(CheckResult('资源使用', 'monitor 进程内存', 'SKIP',
-                                       '无法获取（进程可能未运行）'))
-    except Exception:
-        results.append(CheckResult('资源使用', 'monitor 进程内存', 'SKIP', 'PID 文件缺失'))
+    # 5.4 monitor 进程内存（复用四层校验，避免 stale PID 文件得到错误内存）
+    m = _find_service_pid('monitor.py', PID_FILE)
+    if m and m['mem_mb'] is not None:
+        mem_mb = m['mem_mb']
+        pid = m['pid']
+        status = 'PASS' if mem_mb < MONITOR_MEM_WARN_MB else 'WARN'
+        results.append(CheckResult('资源使用', 'monitor 进程内存', status,
+                                   f'{mem_mb:.0f}MB（PID {pid}）',
+                                   value=round(mem_mb, 1), threshold=MONITOR_MEM_WARN_MB))
+    else:
+        results.append(CheckResult('资源使用', 'monitor 进程内存', 'SKIP',
+                                   '无法获取（进程可能未运行或内存未知）'))
 
     return results
 
@@ -756,10 +921,11 @@ def check_scheduled_tasks():
         return results
 
     expected = {'tpoint_monitor', 'tpoint_alert_engine'}
-    procs = _get_python_procs()
+    # 进程存活判断同样走四层校验（PID 文件权威 + 命令行一致性），
+    # 避免引擎命令行不可读时被误判为"未检测到"。
     running = {
-        'tpoint_monitor': any('monitor.py' in c for _, c in procs),
-        'tpoint_alert_engine': any('alert_engine' in c for _, c in procs),
+        'tpoint_monitor': _find_service_pid('monitor.py', PID_FILE) is not None,
+        'tpoint_alert_engine': _find_service_pid('alert_engine', ENGINE_PID_FILE) is not None,
     }
     found = set(tasks.keys())
     for name in expected:
@@ -767,11 +933,17 @@ def check_scheduled_tasks():
             t = tasks[name]
             state = t.get('state', 'Unknown')
             cmd = t.get('cmd', '')
-            status = 'PASS' if state == 'Ready' else ('WARN' if state in ('Running',) else 'FAIL')
             principal = t.get('principal', 'N/A')
+            nextrun = t.get('nextrun', 'N/A')
+            if state in ('Ready', 'Running'):
+                status = 'PASS'
+            elif state in ('Disabled',):
+                status = 'WARN'
+            else:
+                status = 'WARN'
             results.append(CheckResult('计划任务', name, status,
                                        f'状态={state}，账户={principal}，最后运行={t.get("lastrun","N/A")}，'
-                                       f'结果={t.get("lastresult","N/A")}，命令={cmd[:60]}'))
+                                       f'结果={t.get("lastresult","N/A")}，下次运行={nextrun}，命令={cmd[:50]}'))
         else:
             # 服务可能经由 Startup V9Launch.bat 自启（非计划任务），以进程存活为准，避免误报 FAIL
             if running.get(name):
@@ -1043,6 +1215,9 @@ def _build_status_text(all_results, overall, stats, trading_day):
 # ========== 主流程 ==========
 
 def main():
+    # 单实例互斥：已有自检在跑则静默退出（避免重复飞书卡片/报告覆盖）
+    acquire_single_instance()
+
     ap = argparse.ArgumentParser(description='tpoint 系统每日自检')
     ap.add_argument('--no-push', action='store_true', help='不推送飞书告警')
     ap.add_argument('--quick', action='store_true', help='快速模式（跳过端口探测）')

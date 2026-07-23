@@ -941,11 +941,10 @@ def _clear_stale_lock(lock_file, pid_file):
         _remove_if_exists(pid_file)
         _remove_if_exists(lock_file)
         return True
-    if holder is None and os.path.exists(lock_file):
-        # 没有 PID 文件但锁文件残留，也清理
-        _log_event('STALE_LOCK no pid file, cleaning lock_file')
-        _remove_if_exists(lock_file)
-        return True
+    # 注意：holder is None 时绝不盲目删除 lock_file。
+    # Windows msvcrt 锁是可靠的互斥仲裁者——若原持有者活着，open+acquire 会失败；
+    # 若原持有者已死，OS 自动释放锁 → open+acquire 直接成功。
+    # 删除此分支避免了 '先获锁再写 pid' 竞态导致的双实例 (2026-07-23 实证)。
     return False
 
 
