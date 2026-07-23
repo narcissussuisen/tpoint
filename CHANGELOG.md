@@ -3,6 +3,16 @@
 > 版本号规则：MAJOR.MINOR.PATCH；PATCH=同一算法框架内的修复/硬化（每个修复 +1）。
 > 说明仅标注各版本**核心算法与信号语义**的差异，便于回溯。
 
+## v9.3.0 — 三因子共振模式（研究分支，不影响生产 floor）
+- **目标**：在不改动生产 `floor` 算法的前提下，单独评估「三因子共振」（gravity + vol_div + macd_div，>=2 同向才放行）的信号数量与质量。
+- **新增 `MACD_GATE_MODE=resonance`**：
+  - 买点/卖点放行条件改为 `buy_score >= RESONANCE_THRESHOLD` / `sell_score >= RESONANCE_THRESHOLD`。
+  - 早盘 `i < LOCAL_W` 仍降级为 gravity-only，与 strict/floor 保持一致。
+  - `resonance` 模式下自动启用 `vol_div`（量价背离），以构成真正的三因子；strict/floor/off 模式保持 `vol_div` 关闭，生产语义不变。
+- **改动范围**：仅 `core/miji_alpha.py`、`backtest/keyfactor/miji_engine.py`、`backtest/keyfactor/_gate_floor.py` 增加 resonance 分支；`floor/strict/off` 既有逻辑未改动。
+- **评估脚本**：新增 `backtest/keyfactor/test_resonance_v930.py`，可对比 strict/floor/resonance 三种模式在同一批 1m CSV 上的信号数、共振分数分布、因子组合、前向收益 skill。
+- **状态**：研究分支 `feat/v9.3.0-resonance`，不合并到生产主线的 `floor` 运行态。
+
 ## v9.2.2 — 跌日 B 通道抑制（floor 对称护栏，拟上线 / 待 OOS 验证）
 - **改进 — 跌日 B 通道抑制**：新增 `floor_suppress_buy_day_chg`（默认 -1.0%），对称于已有的涨日 `floor_suppress_day_chg`（v9.2.0 改进2）。当日内跌幅≥阈值时关闭**价格地板 B 通道**（防接飞刀），但 MACD 背离 B（`buy_base`）不受影响——与卖侧仅抑制 `sell_ceil` 完全对称。
 - **不动信号核心**：gravity / macd_div 基础门控、strict / off 模式、震荡日与正常交易日覆盖均不变；仅 floor 模式在强跌日补一道护栏。满足"不修改信号核心 / 不影响震荡日覆盖 / 仅补趋势日漏洞"三约束。

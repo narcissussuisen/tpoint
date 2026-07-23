@@ -42,9 +42,11 @@ MAX_B_DAILY = 12
 MAX_S_DAILY = 12
 
 # --- MACD 门控（分级，可切换，与 live miji_alpha 同构）---
-# strict : B需MACD底背离/S需顶背离（生产默认）
-# off    : 纯共振，不强制MACD
-# floor  : strict基础 + 价格地板B(创session新低+偏离VWAP超阈)/天花板S
+# strict    : B需MACD底背离/S需顶背离（生产默认）
+# off       : 纯共振，不强制MACD
+# floor     : strict基础 + 价格地板B(创session新低+偏离VWAP超阈)/天花板S
+# resonance : v9.3.0 三因子共振，>=RESONANCE_THRESHOLD 个同向因子同时满足才放行；
+#             早盘 i<LOCAL_W 降级 gravity-only
 MACD_GATE_MODE = os.environ.get('MACD_GATE_MODE', 'strict').lower()
 FLOOR_DEV_PCT = 1.5
 
@@ -110,7 +112,8 @@ def gravity_signal(c, vwap, atr, i):
 # ========== 技巧二: 量价背离"动能衰竭" ==========
 
 def volume_divergence_signal(h, lo, c, v, i,
-                              w=DIVERGENCE_W, vol_w=VOL_COMPARE_W):
+                              w=DIVERGENCE_W, vol_w=VOL_COMPARE_W,
+                              enabled=None):
     """技巧二: 量价背离检测
 
     顶背离(卖): 价格创局部新高 + 成交量一波比一波小(缩量)
@@ -122,9 +125,15 @@ def volume_divergence_signal(h, lo, c, v, i,
       3. 顶背离: price新高 + 近段均量 < 前段均量 * VOL_SHRINK_RATIO
       4. 底背离: price新低 + 近段均量 > 前段均量 * VOL_EXPAND_RATIO
 
+    参数:
+      enabled: 是否启用量价背离。None 则使用模块常量 VOL_DIV_ENABLED；
+               resonance 模式可强制 enabled=True 以构成三因子。
+
     返回: (factor: +1 buy / -1 sell / 0 neutral, detail: str)
     """
-    if not VOL_DIV_ENABLED:
+    if enabled is None:
+        enabled = VOL_DIV_ENABLED
+    if not enabled:
         return 0, ''   # [P2优化] 量价背离已禁用
     if v is None or i < w + vol_w:
         return 0, ''
@@ -361,8 +370,12 @@ def detect_miji_signals(data, pc, start_idx=2,
         day_chg = (c[i] / pc - 1) * 100 if pc > 0 else 0
 
         # ---- 三因子独立打分 ----
+        # resonance 模式下强制启用 vol_div 以构成真正的三因子；
+        # strict/floor/off 保持模块常量 VOL_DIV_ENABLED 不变。
+        vol_div_on = (macd_gate_mode == 'resonance')
         g_factor, g_dev = gravity_signal(c, vwap, atr, i)
-        v_factor, v_detail = volume_divergence_signal(h, lo, c, v, i) if v is not None else (0, '')
+        v_factor, v_detail = (volume_divergence_signal(h, lo, c, v, i, enabled=vol_div_on)
+                              if v is not None else (0, ''))
         m_factor, m_detail = macd_divergence_signal(h, lo, c, dif, dea, hist, i)
 
         # ---- 消融开关: enable=(gravity, vol_div, macd_div) ----
@@ -391,7 +404,8 @@ def detect_miji_signals(data, pc, start_idx=2,
                 buy_pass, buy_base, buy_floor = gate_buy(
                     g_factor, m_factor, g_dev, i,
                     macd_gate_mode=macd_gate_mode, c=c, lo=lo,
-                    last_buy_floor_bar=last_buy_floor_bar, day_chg=day_chg, **buy_kw,
+                    last_buy_floor_bar=last_buy_floor_bar, day_chg=day_chg,
+                    resonance_score=buy_score, min_resonance=min_resonance, **buy_kw,
                 )
                 if buy_floor:
                     last_buy_floor_bar = i
@@ -426,8 +440,9 @@ def detect_miji_signals(data, pc, start_idx=2,
                                 'floor_trend_threshold', 'floor_suppress_day_chg')}
             sell_pass, sell_base, sell_ceil = gate_sell(
                 g_factor, m_factor, g_dev, i,
-                macd_gate_mode=macd_gate_mode, c=c, h=h, 
-                day_chg=day_chg, last_sell_ceil_bar=last_sell_ceil_bar, **sell_kw,
+                macd_gate_mode=macd_gate_mode, c=c, h=h,
+                day_chg=day_chg, last_sell_ceil_bar=last_sell_ceil_bar,
+                resonance_score=sell_score, min_resonance=min_resonance, **sell_kw,
             )
             if sell_ceil:
                 last_sell_ceil_bar = i
@@ -473,8 +488,11 @@ def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, macd_gate_mod
     if atr[i] <= 0:
         return False, False, '', '', {}
 
+    # resonance 模式下强制启用 vol_div 以构成真正的三因子
+    vol_div_on = (macd_gate_mode == 'resonance')
     g_factor, g_dev = gravity_signal(c, vwap, atr, i)
-    v_factor, v_detail = volume_divergence_signal(h, lo, c, v, i) if v is not None else (0, '')
+    v_factor, v_detail = (volume_divergence_signal(h, lo, c, v, i, enabled=vol_div_on)
+                          if v is not None else (0, ''))
     m_factor, m_detail = macd_divergence_signal(h, lo, c, dif, dea, hist, i)
 
     buy_score = sum(1 for f in [g_factor, v_factor, m_factor] if f == 1)
@@ -484,6 +502,14 @@ def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, macd_gate_mod
     if macd_gate_mode == 'off':
         b_base = (g_factor == 1)
         s_base = (g_factor == -1)
+    elif macd_gate_mode == 'resonance':
+        # v9.3.0 三因子共振：>=min_resonance 个同向因子才放行；早盘降级 gravity-only
+        if i < LOCAL_W:
+            b_base = (g_factor == 1)
+            s_base = (g_factor == -1)
+        else:
+            b_base = (buy_score >= min_resonance)
+            s_base = (sell_score >= min_resonance)
     elif macd_gate_mode in ('strict', 'floor'):
         if i < LOCAL_W:
             b_base = (g_factor == 1)

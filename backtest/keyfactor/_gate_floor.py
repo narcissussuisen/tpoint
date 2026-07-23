@@ -57,7 +57,9 @@ def gate_buy(g_factor, m_factor, g_dev, i, *,
              trend_state=0,
              floor_trend_threshold=2.0,
              floor_suppress_buy_day_chg=DEFAULT_FLOOR_SUPPRESS_BUY_DAY_CHG,
-             day_chg=0.0):
+             day_chg=0.0,
+             resonance_score=None,
+             min_resonance=None):
     """买点门控：判断当前 bar 是否触发买信号。
 
     返回: (buy_pass, buy_base, buy_floor)
@@ -68,6 +70,13 @@ def gate_buy(g_factor, m_factor, g_dev, i, *,
     # ---- 基础门控 ----
     if macd_gate_mode == 'off':
         buy_base = (g_factor == 1)
+    elif macd_gate_mode == 'resonance':
+        # v9.3.0 三因子共振：>=min_resonance 个同向因子同时满足才放行
+        if i < local_w:
+            buy_base = (g_factor == 1)   # 早盘数据不足，降级 gravity-only
+        else:
+            buy_base = (resonance_score is not None and min_resonance is not None
+                        and resonance_score >= min_resonance)
     elif macd_gate_mode in ('strict', 'floor'):
         if i < local_w:
             buy_base = (g_factor == 1)   # 早盘降级 gravity-only
@@ -115,7 +124,9 @@ def gate_sell(g_factor, m_factor, g_dev, i, *,
               trend_state=0,
               floor_trend_threshold=2.0,
               floor_suppress_day_chg=20.0,
-              day_chg=0.0):
+              day_chg=0.0,
+              resonance_score=None,
+              min_resonance=None):
     """卖点门控：判断当前 bar 是否触发卖信号。
 
     返回: (sell_pass, sell_base, sell_ceil)
@@ -126,6 +137,13 @@ def gate_sell(g_factor, m_factor, g_dev, i, *,
     # ---- 基础门控 ----
     if macd_gate_mode == 'off':
         sell_base = (g_factor == -1)
+    elif macd_gate_mode == 'resonance':
+        # v9.3.0 三因子共振：>=min_resonance 个同向因子同时满足才放行
+        if i < local_w:
+            sell_base = (g_factor == -1)   # 早盘数据不足，降级 gravity-only
+        else:
+            sell_base = (resonance_score is not None and min_resonance is not None
+                         and resonance_score >= min_resonance)
     elif macd_gate_mode in ('strict', 'floor'):
         if i < local_w:
             sell_base = (g_factor == -1)
