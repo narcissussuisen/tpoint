@@ -18,5 +18,7 @@ del /Q "C:\Users\YZP\WorkBuddy\Claw\tpoint\data\.alert_engine.pid" 2>nul
 :loop
 "%PY_EXE%" core\alert_engine.py
 echo [%date% %time%] tpoint_alert_engine exited, restart in 5s >> "C:\Users\YZP\WorkBuddy\Claw\tpoint\logs\engine_crash.log"
+:: 崩溃即通知（对齐全局规则：任务异常须推送飞书）。后台执行，不阻塞重启循环。
+start "" /B "%PY_EXE%" "C:\Users\YZP\.workbuddy\notify.py" "[tpoint] alert_engine 进程崩溃退出，5s 后自动重启" >nul 2>&1
 timeout /t 5 /nobreak >nul
 goto loop

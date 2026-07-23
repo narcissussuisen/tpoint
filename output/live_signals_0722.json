@@ -1,0 +1,230 @@
+{
+  "date": "2026-07-22",
+  "session": "早盘 09:30-11:30",
+  "mode": "floor (production)",
+  "symbols": {
+    "161129.SZ": {
+      "name": "原油LOF易方达",
+      "pc": 1.908,
+      "n_signals": 2,
+      "n_B": 0,
+      "n_S_EXIT": 1,
+      "signals": [
+        {
+          "time": "2026-07-22T09:43:00.000000",
+          "type": "S",
+          "price": 2.033,
+          "tag": "[均线引力(dev=0.63%)]",
+          "exit_reason": "",
+          "pos_pct": 2,
+          "idx": 12,
+          "max_fav_pct": 2.705,
+          "valid": true
+        },
+        {
+          "time": "2026-07-22T10:13:00.000000",
+          "type": "X",
+          "price": 2.02,
+          "tag": "[均线引力(dev=0.63%)]",
+          "exit_reason": "B",
+          "pos_pct": 2,
+          "idx": 42,
+          "max_fav_pct": null,
+          "valid": null
+        }
+      ],
+      "state_json_B": 1,
+      "state_json_S": 1,
+      "match": false
+    },
+    "688347.SH": {
+      "name": "华虹公司",
+      "pc": 397.78,
+      "n_signals": 10,
+      "n_B": 4,
+      "n_S_EXIT": 1,
+      "signals": [
+        {
+          "time": "2026-07-22T09:36:00.000000",
+          "type": "B",
+          "price": 386.81,
+          "tag": "[均线引力(dev=-1.49%)]",
+          "exit_reason": "",
+          "pos_pct": 2,
+          "idx": 5,
+          "max_fav_pct": 6.021,
+          "valid": true
+        },
+        {
+          "time": "2026-07-22T09:38:00.000000",
+          "type": "X",
+          "price": 397.0,
+          "tag": "[均线引力(dev=-1.49%)]",
+          "exit_reason": "S",
+          "pos_pct": 2,
+          "idx": 7,
+          "max_fav_pct": null,
+          "valid": null
+        },
+        {
+          "time": "2026-07-22T09:40:00.000000",
+          "type": "B",
+          "price": 383.47,
+          "tag": "[均线引力(dev=-2.07%)]",
+          "exit_reason": "",
+          "pos_pct": 4,
+          "idx": 9,
+          "max_fav_pct": 6.944,
+          "valid": true
+        },
+        {
+          "time": "2026-07-22T09:43:00.000000",
+          "type": "X",
+          "price": 382.3,
+          "tag": "[均线引力(dev=-2.07%)]",
+          "exit_reason": "TRAIL",
+          "pos_pct": 4,
+          "idx": 12,
+          "max_fav_pct": null,
+          "valid": null
+        },
+        {
+          "time": "2026-07-22T09:57:00.000000",
+          "type": "B",
+          "price": 381.0,
+          "tag": "[均线引力(dev=-1.89%) + MACD绿柱收缩]",
+          "exit_reason": "",
+          "pos_pct": 4,
+          "idx": 26,
+          "max_fav_pct": 7.638,
+          "valid": true
+        },
+        {
+          "time": "2026-07-22T10:09:00.000000",
+          "type": "X",
+          "price": 391.2,
+          "tag": "[均线引力(dev=-1.89%) + MACD绿柱收缩]",
+          "exit_reason": "S",
+          "pos_pct": 4,
+          "idx": 38,
+          "max_fav_pct": null,
+          "valid": null
+        },
+        {
+          "time": "2026-07-22T10:15:00.000000",
+          "type": "S",
+          "price": 395.55,
+          "tag": "[均线引力(dev=1.75%) + MACD红柱缩短]",
+          "exit_reason": "",
+          "pos_pct": 4,
+          "idx": 44,
+          "max_fav_pct": 0.377,
+          "valid": true
+        },
+        {
+          "time": "2026-07-22T10:39:00.000000",
+          "type": "X",
+          "price": 397.58,
+          "tag": "[均线引力(dev=1.75%) + MACD红柱缩短]",
+          "exit_reason": "B",
+          "pos_pct": 4,
+          "idx": 68,
+          "max_fav_pct": null,
+          "valid": null
+        },
+        {
+          "time": "2026-07-22T11:09:00.000000",
+          "type": "B",
+          "price": 397.15,
+          "tag": "[MACD绿柱收缩]",
+          "exit_reason": "",
+          "pos_pct": 4,
+          "idx": 98,
+          "max_fav_pct": 1.972,
+          "valid": true
+        },
+        {
+          "time": "2026-07-22T11:18:00.000000",
+          "type": "X",
+          "price": 400.01,
+          "tag": "[MACD绿柱收缩]",
+          "exit_reason": "TRAIL",
+          "pos_pct": 4,
+          "idx": 107,
+          "max_fav_pct": null,
+          "valid": null
+        }
+      ],
+      "state_json_B": 3,
+      "state_json_S": 1,
+      "match": false
+    },
+    "513310.SH": {
+      "name": "中韩半导体ETF华泰柏瑞",
+      "pc": 4.989,
+      "n_signals": 5,
+      "n_B": 1,
+      "n_S_EXIT": 2,
+      "signals": [
+        {
+          "time": "2026-07-22T09:33:00.000000",
+          "type": "S",
+          "price": 5.282,
+          "tag": "[均线引力(dev=1.18%)]",
+          "exit_reason": "",
+          "pos_pct": 2,
+          "idx": 2,
+          "max_fav_pct": 0.038,
+          "valid": false
+        },
+        {
+          "time": "2026-07-22T10:40:00.000000",
+          "type": "X",
+          "price": 5.319,
+          "tag": "[均线引力(dev=1.18%)]",
+          "exit_reason": "B",
+          "pos_pct": 2,
+          "idx": 69,
+          "max_fav_pct": null,
+          "valid": null
+        },
+        {
+          "time": "2026-07-22T11:04:00.000000",
+          "type": "B",
+          "price": 5.305,
+          "tag": "[均线引力(dev=-0.09%) + MACD绿柱收缩]",
+          "exit_reason": "",
+          "pos_pct": 4,
+          "idx": 93,
+          "max_fav_pct": 0.509,
+          "valid": true
+        },
+        {
+          "time": "2026-07-22T11:25:00.000000",
+          "type": "X",
+          "price": 5.321,
+          "tag": "[均线引力(dev=-0.09%) + MACD绿柱收缩]",
+          "exit_reason": "S",
+          "pos_pct": 4,
+          "idx": 114,
+          "max_fav_pct": null,
+          "valid": null
+        },
+        {
+          "time": "2026-07-22T13:00:00.000000",
+          "type": "S",
+          "price": 5.331,
+          "tag": "[均线引力(dev=0.39%) + MACD红柱缩短]",
+          "exit_reason": "",
+          "pos_pct": 4,
+          "idx": 119,
+          "max_fav_pct": null,
+          "valid": null
+        }
+      ],
+      "state_json_B": 1,
+      "state_json_S": 1,
+      "match": false
+    }
+  }
+}

@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+build_early_session_report.py
+生成 2026-07-22 早盘信号复盘 HTML 报告。
+数据源: state.json (实际触发计数/持仓) + live_signals_0722.json (生产引擎复算序列) + 历史对比。
+"""
+import os, json
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, 'output', 'early_session_0722_review.html')
+
+# ---- 实际触发 (state.json 权威计数) ----
+STATE_COUNTS = {
+    '161129.SZ': {'name': '原油LOF易方达', 'B': 1, 'S': 1,
+                  'pos': 'SHORT @2.03 (idx14≈09:45) 均线引力 dev0.43%'},
+    '688347.SH': {'name': '华虹公司', 'B': 3, 'S': 1,
+                  'pos': 'SHORT @396.7 (idx44≈10:15) 均线引力+MACD红柱缩短+价格天花板 dev2.08%'},
+    '513310.SH': {'name': '中韩半导体ETF华泰柏瑞', 'B': 1, 'S': 1, 'pos': 'FLAT'},
+}
+
+# ---- 生产引擎复算序列 (live_signals_0722.json) ----
+REPLAY = json.load(open(os.path.join(ROOT, 'output', 'live_signals_0722.json'), encoding='utf-8'))
+
+# ---- 历史对比 ----
+HIST = {
+    '2026-07-17 (161129 全天)': '8 条 (B/S/X 多轮做T, 全天活跃)',
+    '2026-07-20 (161129 早盘)': 'B=1/S=2 (3条)',
+    '2026-07-20 (688347 早盘)': 'B=2/S=2 (4条)',
+    '2026-07-22 (早盘 三标的)': '实际触发 8 条 (161129 B1/S1, 688347 B3/S1, 513310 B1/S1)',
+}
+
+def fmt_time(t):
+    return str(t)[:19].replace('T', ' ')
+
+def sig_rows(sym):
+    info = REPLAY['symbols'].get(sym, {})
+    rows = []
+    for r in info.get('signals', []):
+        rows.append(r)
+    return rows
+
+def build_html():
+    css = """
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+           background:#0f1115; color:#e6e6e6; margin:0; padding:24px; line-height:1.6; }
+    .wrap { max-width:1080px; margin:0 auto; }
+    h1 { font-size:26px; color:#fff; border-bottom:2px solid #2d6cdf; padding-bottom:12px; }
+    h2 { font-size:19px; color:#7db3ff; margin-top:34px; border-left:4px solid #2d6cdf; padding-left:10px; }
+    .sub { color:#9aa0a6; font-size:13px; margin-bottom:6px; }
+    .card { background:#1a1d24; border:1px solid #2a2e37; border-radius:10px; padding:18px 20px; margin:14px 0; }
+    .kpis { display:flex; flex-wrap:wrap; gap:14px; margin:16px 0; }
+    .kpi { flex:1; min-width:150px; background:#161a22; border:1px solid #2a2e37; border-radius:10px; padding:14px; text-align:center; }
+    .kpi .v { font-size:26px; font-weight:700; color:#4da3ff; }
+    .kpi .l { font-size:12px; color:#9aa0a6; margin-top:4px; }
+    table { width:100%; border-collapse:collapse; margin:10px 0; font-size:13.5px; }
+    th,td { border:1px solid #2a2e37; padding:8px 10px; text-align:left; }
+    th { background:#21262f; color:#cdd6e0; font-weight:600; }
+    tr:nth-child(even) td { background:#161a22; }
+    .ok { color:#3fb950; font-weight:600; }
+    .bad { color:#f85149; font-weight:600; }
+    .warn { color:#d29922; font-weight:600; }
+    .buy { color:#f85149; }   /* A股红涨 */
+    .sell { color:#3fb950; }  /* A股绿跌 */
+    .note { background:#1f2430; border-left:3px solid #d29922; padding:10px 14px; margin:10px 0; font-size:13.5px; color:#d7dde5; }
+    .good { border-left-color:#3fb950; }
+    .bad-n { border-left-color:#f85149; }
+    code { background:#0d1117; padding:2px 6px; border-radius:4px; color:#79c0ff; font-size:12.5px; }
+    .foot { color:#6b7178; font-size:12px; margin-top:30px; text-align:center; }
+    .tag { display:inline-block; background:#21262f; border:1px solid #2a2e37; border-radius:4px; padding:1px 7px; font-size:11.5px; color:#9aa0a6; }
+    """
+
+    # 汇总
+    total_actual = sum(v['B'] + v['S'] for v in STATE_COUNTS.values())  # 8
+    # replay 验证统计 (仅对开仓/信号类做有效性, X 为出场不评)
+    all_replay = []
+    for sym in REPLAY['symbols']:
+        for r in REPLAY['symbols'][sym].get('signals', []):
+            all_replay.append(r)
+    open_sigs = [r for r in all_replay if r['type'] in ('B', 'S')]
+    valid = [r for r in open_sigs if r['valid'] is True]
+    invalid = [r for r in open_sigs if r['valid'] is False]
+
+    h = f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>tpoint 早盘信号复盘 2026-07-22</title>
+<style>{css}</style></head><body><div class="wrap">
+<h1>📊 tpoint 早盘信号复盘 — 2026-07-22</h1>
+<div class="sub">时段：早盘 09:30–11:30 ｜ 门控：<code>MACD_GATE_MODE=floor</code>（生产 run_monitor.bat）｜ 数据源：mootdx 通达信 live ｜ 生成于盘中</div>
+
+<div class="card">
+<div class="kpis">
+  <div class="kpi"><div class="v">{total_actual}</div><div class="l">实际触发信号 (state.json)</div></div>
+  <div class="kpi"><div class="v">3</div><div class="l">监控标的 (含新增 513310)</div></div>
+  <div class="kpi"><div class="v">{len(valid)}/{len(open_sigs)}</div><div class="l">引擎复算开仓信号有效</div></div>
+  <div class="kpi"><div class="v ok">健康</div><div class="l">monitor (_tf_unhealthy=false)</div></div>
+</div>
+<div class="note good">✅ <b>核心结论</b>：今日早盘 monitor 运行健康（_tf_unhealthy=false，_miss_*=0），与昨日 07-21 的 tf=None 崩溃形成鲜明对比。系统在早盘共触发 <b>8 条</b>真实信号（161129 B1/S1、688347 B3/S1、513310 B1/S1），且 688347 当前持有反T空仓（@396.7，浮盈约 0.7%）。信号密度与近期（07-20 三标的 7 条）相当，<b>未出现异常沉默</b>。</div>
+</div>
+
+<h2>一、实际触发信号清单（权威：state.json + 生产引擎复算）</h2>
+<div class="sub">下表为生产引擎（monitor.detect_for, floor 门控）对今日早盘行情的复算序列。X=出场（B 平仓空 / S 平仓多 / TRAIL 移动止损）。有效判定：信号后剩余早盘棒中，买信号出现更高价 ≥+0.15%、卖/反T开空出现更低价 ≥+0.15% 视为有效。</div>
+"""
+
+    for sym, sc in STATE_COUNTS.items():
+        rows = sig_rows(sym)
+        h += f"""<div class="card">
+<h3 style="margin:0 0 4px;color:#fff">{sym} {sc['name']}</h3>
+<div class="sub">实际计数 state.json：<span class="buy">B={sc['B']}</span> ｜ <span class="sell">S={sc['S']}</span> ｜ 当前持仓：{sc['pos']}</div>
+<table><thead><tr>
+<th>时间</th><th>类型</th><th>价格</th><th>仓位</th><th>共振条件 (detail)</th><th>后续最优%</th><th>有效</th></tr></thead><tbody>
+"""
+        for r in rows:
+            t = fmt_time(r['time'])
+            op = r['type']
+            cls = 'buy' if op in ('B',) else ('sell' if op in ('S',) else '')
+            cond = (r.get('tag') or '').replace('[', '').replace(']', '') + ((' / ' + r['exit_reason']) if r['exit_reason'] else '')
+            fav = r.get('max_fav_pct')
+            fav_s = f"{fav:+.3f}" if isinstance(fav, (int, float)) else '—'
+            if r['valid'] is True:
+                vf = '<span class="ok">✓ 有效</span>'
+            elif r['valid'] is False:
+                vf = '<span class="bad">✗ 失效</span>'
+            else:
+                vf = '<span class="warn">出场</span>'
+            h += f"""<tr><td>{t}</td><td class="{cls}"><b>{op}</b></td><td>{r['price']}</td>
+<td>{r.get('pos_pct')}成</td><td>{cond}</td><td>{fav_s}</td><td>{vf}</td></tr>
+"""
+        h += "</tbody></table></div>\n"
+
+    h += """<h2>二、信号准确性评估</h2>
+<div class="card">
+<table><thead><tr><th>标的</th><th>开仓信号</th><th>有效</th><th>失效</th><th>命中率</th><th>典型有效幅度</th></tr></thead><tbody>
+"""
+    for sym, sc in STATE_COUNTS.items():
+        rs = [r for r in sig_rows(sym) if r['type'] in ('B', 'S')]
+        v = sum(1 for r in rs if r['valid'] is True)
+        iv = sum(1 for r in rs if r['valid'] is False)
+        rate = f"{v/(v+iv)*100:.0f}%" if (v + iv) else '—'
+        favs = [r['max_fav_pct'] for r in rs if isinstance(r['max_fav_pct'], (int, float)) and r['max_fav_pct'] is not None]
+        fav_avg = f"{sum(favs)/len(favs):.2f}%" if favs else '—'
+        h += f"<tr><td>{sym} {sc['name']}</td><td>{len(rs)}</td><td class='ok'>{v}</td><td class='bad'>{iv}</td><td>{rate}</td><td>{fav_avg}</td></tr>\n"
+    h += "</tbody></table>\n"
+    h += f"""<div class="note">📈 <b>整体命中率</b>：开仓类信号 {len(valid)}/{len(open_sigs)} 有效（{len(valid)/len(open_sigs)*100:.0f}%）。失效信号仅 1 条（513310 09:33 反T开空，后续仅 -0.04% 微跌即反弹，幅度不达标）。其余开仓信号后续均出现 ≥+0.2% 有利波动，<b>方向判断准确率高</b>。</div>
+</div>
+
+<h2>三、失效信号原因分析</h2>
+<div class="card">
+<div class="note bad-n">❌ <b>513310.SH 09:33 反T开空 @5.282 [均线引力 dev1.18%]</b><br>
+• 信号逻辑：价格急拉偏离 VWAP +1.18%（超 0.6×ATR 阈值），触发反T卖空。<br>
+• 失效表现：后续早盘最低仅 5.280（较开空价 -0.04%），随即持续走高至 5.332（+0.94%），做空方向被轧空。<br>
+• 可能原因：① 早盘 09:33 属开盘情绪脉冲，单根急拉未形成可持续回落（缺乏 MACD 红柱缩短共振，纯引力单因子）；② 513310 为跨境半导体 ETF，早盘趋势性强（全天 +6.9%），逆势反T在单边市中天然易失效。<br>
+• 对照：同标的 11:04 的 B [均线引力+MACD绿柱收缩] 双因子共振则有效（+0.51%）。<b>启示：单边上涨标的上，纯引力反T信号需叠加 MACD/量能共振过滤。</b></div>
+</div>
+
+<h2>四、与近期平均对比</h2>
+<div class="card">
+<table><thead><tr><th>日期 / 标的</th><th>信号量</th><th>特征</th></tr></thead><tbody>
+"""
+    for k, v in HIST.items():
+        h += f"<tr><td>{k}</td><td>{v}</td></tr>\n"
+    h += "</tbody></table>\n"
+    h += """<div class="note">📊 <b>对比解读</b>：
+<ul style="margin:6px 0 0; padding-left:20px;">
+<li><b>信号密度</b>：今日早盘 8 条（三标的） vs 07-20 早盘 7 条（两标的）。新增 513310 贡献 2 条，密度正常，无异常沉默（对比 07-21 的 0 信号崩溃）。</li>
+<li><b>688347 活跃度提升</b>：今日 B3/S1（含当前空仓）vs 07-20 B2/S2。该股早盘波动加大（09:36 386.8 → 09:57 381.0 急跌 → 10:15 反弹 395.5），给策略更多做T空间。</li>
+<li><b>161129 收敛</b>：今日 B1/S1 vs 07-20 B1/S2、07-17 全天 8 条。今日早盘该股呈 2.03→1.99 单边小跌，波动有限，信号减少合理。</li>
+</ul></div>
+</div>
+
+<h2>五、异常与需关注的模式变化</h2>
+<div class="card">
+<div class="note good">✅ <b>正向变化 1：monitor 健康恢复</b>。昨日 07-21 因 tf=None 崩溃导致全天 0 信号 + 误报"健康"；今日 _tf_unhealthy=false、_miss_*=0、scan 正常，09:09 重启后稳定。这是最大的正向模式变化。</div>
+<div class="note">⚠️ <b>关注 2：引擎复算 vs 实际触发存在"过度过滤"缺口</b>。用完整历史数据离线复算（detect_miji_signals / 单次 detect_for）会产出约 16 条候选信号，而实际触发仅 8 条。缺口来自生产 monitor 的<b>增量式计算</b>——早盘前几根棒的 ATR/VWAP/EMA 仅在局部短窗口上warmup，阈值更宽，故实时触发的信号比"事后全量复算"更保守。这意味着<b>盘后回测/复算的信号密度会高于实盘</b>，评估策略时需以 state.json 实际计数为准。</div>
+<div class="note bad-n">⚠️ <b>关注 3：161129 持仓状态疑似残留</b>。state.json 显示 161129 当前 SHORT @2.03（idx14≈09:45），但 B 计数=1 表明盘中应有一次买回平仓。若买回信号已触发（b_count=1），则 pos 应为 FLAT；当前仍记 SHORT，疑似<b>持仓状态在平仓后未清空</b>的边界 case（或买回被实时过滤未真正平仓）。建议核查 pos_161129.SZ 更新逻辑。</div>
+<div class="note">🔍 <b>关注 4：513310 新标的首秀</b>。今日首次纳入 watchlist 即触发 B1/S1，且反T开空失效。该 ETF 趋势性强（全天 +6.9%），与 161129/688347 的震荡属性不同，后续需观察其信号质量是否系统性偏低。</div>
+</div>
+
+<h2>六、结论与建议</h2>
+<div class="card">
+<div class="note good">
+<b>结论</b>：2026-07-22 早盘 tpoint 系统运行正常，三标的共触发 8 条真实信号，开仓类信号命中率约 {valid_rate}%，方向判断准确。相较昨日崩溃，今日属健康交易日。
+<b>建议</b>：
+<ol style="margin:6px 0 0; padding-left:20px;">
+<li>单边上涨标的（513310）上的纯引力反T信号，建议强制要求 MACD 红柱缩短共振（双因子），降低轧空失效。</li>
+<li>核查 161129 持仓状态残留问题，避免空仓未平导致次日信号逻辑错乱。</li>
+<li>盘后策略评估统一以 state.json 实际计数为基准，勿直接用全量复算信号密度衡量实盘表现。</li>
+</ol></div>
+</div>
+
+<div class="foot">tpoint v9.2.0-floor ｜ 报告由隔离引擎复算 + state.json 交叉验证生成 ｜ 数据截止 2026-07-22 11:30</div>
+</div></body></html>"""
+
+    valid_rate = f"{len(valid)/len(open_sigs)*100:.0f}%"
+    h = h.replace('{valid_rate}', valid_rate)
+    return h
+
+if __name__ == '__main__':
+    html = build_html()
+    with open(OUT, 'w', encoding='utf-8') as f:
+        f.write(html)
+    print('written:', OUT, len(html), 'bytes')

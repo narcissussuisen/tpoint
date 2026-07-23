@@ -3,6 +3,13 @@
 > 版本号规则：MAJOR.MINOR.PATCH；PATCH=同一算法框架内的修复/硬化（每个修复 +1）。
 > 说明仅标注各版本**核心算法与信号语义**的差异，便于回溯。
 
+## v9.2.2 — 跌日 B 通道抑制（floor 对称护栏，拟上线 / 待 OOS 验证）
+- **改进 — 跌日 B 通道抑制**：新增 `floor_suppress_buy_day_chg`（默认 -1.0%），对称于已有的涨日 `floor_suppress_day_chg`（v9.2.0 改进2）。当日内跌幅≥阈值时关闭**价格地板 B 通道**（防接飞刀），但 MACD 背离 B（`buy_base`）不受影响——与卖侧仅抑制 `sell_ceil` 完全对称。
+- **不动信号核心**：gravity / macd_div 基础门控、strict / off 模式、震荡日与正常交易日覆盖均不变；仅 floor 模式在强跌日补一道护栏。满足"不修改信号核心 / 不影响震荡日覆盖 / 仅补趋势日漏洞"三约束。
+- **溯源**：v9.2.0 上线 floor 时只做了涨日 S 抑制，缺对称的跌日 B 抑制；07-23 诊断发现 floor 在暴跌日价格地板 B 接飞刀（华虹当日 -11.2%，`B@[down]` 亏损）是趋势日真漏洞，非数据延迟。
+- **接线**：`core/miji_alpha.py`（生产 live）+ `backtest/keyfactor/miji_engine.py`（OOS）两处 `gate_buy` 调用均透传 `day_chg` + 新参数。
+- **状态**：代码已落地（`py_compile` + 单元验证通过）。待多日 OOS（F: 盘 `keyfactor_data/1m` 4071 标的历史 1m）确认阈值与跨行情稳健性后上线；当前生产仍为 v9.2.1（floor 无跌日抑制）。
+
 ## v9.2.1 — 收敛第一性 + 风险节点修复（固化 tag v9.2.1-converged）
 - **回归第一性（07-22 收敛）**：
   - 盘后假告警副作用治理：删除残留 `data/risk_override_secondary.json` 的 HALT_BUY（避免次日禁买）；回退 Fix4b 兜底 + secondary 合并逻辑。
@@ -12,8 +19,10 @@
 - **风险节点修复（07-23）**：
   - 节点1：`config/monitor_config.json` 的 `monitor.session.open_m` 15→25，对齐 alert_engine 评估窗口与 monitor 实际扫描起始(9:25)，消除 9:15–9:25 误报空窗。
   - 节点2：新增 `scripts/install_daily_review.ps1` + `run_daily_review.bat`，支持计划任务 `tpoint_daily_review`（周一至五 15:30）自动推送复盘。
+  - 节点3（根因修复·07-23 陈旧源静默吞信号）：`datasource._server_ok`/`tdx_client` 加交易时段新鲜度门控（探针最新 1min bar 滞后>300s→判陈旧并跳过该服务器）；`monitor.compute` 附 `_fresh_s`；新增 `_handle_staleness` 在取数链路检测"已收到分钟K但最新bar滞后超阈值"的陈旧源→剔除本轮信号计算 + 连续2轮强制 `tf.reconnect()` 轮换服务器(限频60s) + 推信号群告警(区分临时/持续冻结)。纯增量，未触碰信号算法（detect_for/compute_miji_indicators/出场管理）。离线验证 `scripts/verify_freshness_20260723.py`（34 断言全过）。
   - 节点4/5：`monitor.py` 加午休 `last_bar_ts=null` 不变量注释（防 data_lag_s 误报）；`tf is None` 兜底已就绪（L1080–1091）。
 - **单实例锁加固**：`alert_engine.py` 重写 `acquire_single_instance`（失败关句柄 + 活实例安静退出，防 crash-loop）；`run_engine.bat` 启动自清理。
+- **复盘对账方法学修正（07-23 收口）**：`scripts/reconcile_20260723.py` 由「收盘全量重放」改为「评估窗口感知」（增量快照回溯等价）——从 `state.json` 派生冻结点 `bar#118≈11:28`、从 `push_audit.jsonl` 派生推送截止 `10:42`，仅把监控实际评估过且未推送的理论信号计为真实缺失（**9 条**），冻结后理论信号归为「未评估·扫描冻结」（**7 条，不计入缺失率**）。旧版 16-miss 结论收回；正确命中率按评估窗口计 = 35.7%（5/14）。真·盘中快照发射器（monitor 加快照落盘）留作后续。
 - 本版本为 07-22/07-23 两波未提交改动固化点；相对 v9.2.0 算法信号语义无变化（仍为 floor 门控）。
 
 ## v9.2.0 — floor 门控正式上线（替代 strict）

@@ -32,5 +32,7 @@ if "%MON_ALIVE%"=="1" (
 
 "%PY_EXE%" core\monitor.py >> "C:\Users\YZP\WorkBuddy\Claw\tpoint\logs\monitor_console.log" 2>&1
 echo [%date% %time%] tpoint_monitor exited, restart in 30s >> "C:\Users\YZP\WorkBuddy\Claw\tpoint\logs\monitor_crash.log"
+:: 崩溃即通知（对齐全局规则：任务异常须推送飞书）。后台执行，不阻塞重启循环。
+start "" /B "%PY_EXE%" "C:\Users\YZP\.workbuddy\notify.py" "[tpoint] monitor 进程崩溃退出，30s 后自动重启 (pid=%MON_PID%)" >nul 2>&1
 timeout /t 30 /nobreak >nul
 goto loop

@@ -18,7 +18,7 @@ import numpy as np
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
-from backtest.keyfactor._gate_floor import gate_buy, gate_sell  # noqa: E402
+from backtest.keyfactor._gate_floor import gate_buy, gate_sell, DEFAULT_FLOOR_SUPPRESS_BUY_DAY_CHG  # noqa: E402
 
 # ========== 可调参数 ==========
 
@@ -520,7 +520,8 @@ def detect_miji_signals(data, pc, start_idx=2,
 
 # ========== 便捷函数: 单bar三因子快照 (monitor实时用) ==========
 
-def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, macd_gate_mode=MACD_GATE_MODE):
+def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, macd_gate_mode=MACD_GATE_MODE,
+                       floor_suppress_buy_day_chg=DEFAULT_FLOOR_SUPPRESS_BUY_DAY_CHG):
     """单bar三因子共振判定, 供monitor实时调用.
 
     返回: (b_triggered, s_triggered, b_detail, s_detail, snapshot)
@@ -554,6 +555,7 @@ def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, macd_gate_mod
     b_trig, b_base, b_floor = gate_buy(
         g_factor, m_factor, g_dev, i, macd_gate_mode=macd_gate_mode,
         c=c, lo=lo, last_buy_floor_bar=-999,
+        day_chg=day_chg, floor_suppress_buy_day_chg=floor_suppress_buy_day_chg,
     )
     # gate_buy 返回 (buy_pass, buy_base, buy_floor)
     
@@ -798,9 +800,12 @@ def check_miji_trigger_5m_index(data, idx_c, idx_prev_close, min_resonance=RESON
 # ========== monitor 适配器 (T2.3): 沿用 indicators 函数名, monitor 最小改动 ==========
 # monitor 调 check_b_trigger(data,i)->(bool,reason) / check_s_trigger(data,i)->(bool,reason);
 # 这里把 check_miji_trigger(合一返回) 拆为分立 B/S, 默认走生产 require_macd=REQUIRE_MACD(macd-required 门控)。
-def check_b_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, macd_gate_mode=MACD_GATE_MODE):
-    """B 信号触发判定 (monitor 兼容). 返回 (triggered: bool, reason: str)."""
-    b, _, bd, _, _ = check_miji_trigger(data, i, min_resonance, macd_gate_mode=macd_gate_mode)
+def check_b_trigger(data, i, min_resonance=RESONANCE_THRESHOLD, macd_gate_mode=MACD_GATE_MODE,
+                    floor_suppress_buy_day_chg=DEFAULT_FLOOR_SUPPRESS_BUY_DAY_CHG):
+    """B 信号触发判定 (monitor 兼容). 返回 (triggered: bool, reason: str)。
+    新增 floor_suppress_buy_day_chg 透传（默认=模块常量-1.0；回放OOS可覆盖为0.0作基线）。"""
+    b, _, bd, _, _ = check_miji_trigger(data, i, min_resonance, macd_gate_mode=macd_gate_mode,
+                                        floor_suppress_buy_day_chg=floor_suppress_buy_day_chg)
     return (b, bd)
 
 

@@ -117,8 +117,18 @@ SCAN_INTERVAL = int(_cfg('scan_interval', 'TP_SCAN_INTERVAL', 15))   # 每轮扫
 # ========== 静默零信号告警（2026-07-21 复盘新增：堵"数据中断静默吞信号"漏洞） ==========
 # 某标的连续 N 轮（交易时段、过开盘宽限期后）无分钟K bar → 推信号群告警，避免像今日这样静默吞掉整日。
 ALERT_MISS_ROUNDS = int(_cfg('alert_miss_rounds', 'TP_ALERT_MISS_ROUNDS', 6))   # 6×15s≈90s
+ALERT_MISS_REPEAT_ROUNDS = int(_cfg('alert_miss_repeat_rounds', 'TP_ALERT_MISS_REPEAT_ROUNDS', 120))  # 120×15s≈30min 缺数告警重报间隔
 ALERT_GRACE_MIN = int(_cfg('alert_grace_min', 'TP_ALERT_GRACE_MIN', 5))          # 开盘前后宽限分钟数
 ALERT_WEBHOOK = _cfg('alert_webhook', 'TP_ALERT_WEBHOOK', WEBHOOK_URL)           # 默认信号群(已确认)
+
+# ========== 行情新鲜度校验（2026-07-23 根因修复：堵"陈旧源静默吞信号"漏洞） ==========
+# 交易时段内，最新分钟K bar 距当前墙钟滞后超此阈值(秒)→判为陈旧源（如 07-23 午后 mootdx 冻结在 11:28）。
+# 仅交易时段判定：午休/盘前/收盘后 bar 天然滞后，不算陈旧，避免误杀。
+STALE_THRESHOLD_S = int(_cfg('stale_threshold_s', 'TP_STALE_THRESHOLD_S', 300))        # 5min
+STALE_RECONNECT_ROUNDS = int(_cfg('stale_reconnect_rounds', 'TP_STALE_RECONNECT_ROUNDS', 2))    # 连续2轮→强制轮换
+STALE_RECONNECT_COOLDOWN_S = int(_cfg('stale_reconnect_cooldown_s', 'TP_STALE_RECONNECT_COOLDOWN_S', 60))  # 轮换限频(防每轮狂重连)
+STALE_ALERT_ROUNDS = int(_cfg('stale_alert_rounds', 'TP_STALE_ALERT_ROUNDS', 2))        # 连续2轮→告警
+STALE_ALERT_REPEAT_ROUNDS = int(_cfg('stale_alert_repeat_rounds', 'TP_STALE_ALERT_REPEAT_ROUNDS', 120))  # 约30min 重报
 def strength_size(g_dev_pct, m_present):
     """按信号强度推导仓位(成)：强(偏离≥2% 或 含MACD背离)→4成，否则2成。"""
     strong = (abs(g_dev_pct) >= 2.0) or bool(m_present)
@@ -426,7 +436,86 @@ def compute(sym):
 
     data = compute_miji_indicators(o, h, lo, c, v, pc, has_vol=has_vol)
     data['df'] = df
+    # 2026-07-23 新鲜度：记录最新 bar 距当前的滞后秒数，供取数链路陈旧检测
+    data['_fresh_s'] = _bar_freshness_seconds(df) or 0.0
+    try:
+        data['_latest_bar_t'] = str(pd.to_datetime(df['trade_time']).max())
+    except Exception:
+        data['_latest_bar_t'] = ''
     return data
+
+def _bar_freshness_seconds(df, now=None):
+    """计算最新一根 1min bar 距 now 的滞后秒数(行情新鲜度)。无 bar→None。
+    使用 naive 本地时间(datetime.now())，与 mootdx trade_time 同口径，避免 tz 混算报错。"""
+    try:
+        lt = pd.to_datetime(df['trade_time']).max()
+        if now is None:
+            now = datetime.now()
+        return (now - lt).total_seconds()
+    except Exception:
+        return None
+
+
+def _handle_staleness(sym_data, TARGETS, st, now, in_session, tf):
+    """新鲜度校验 + 强制轮换 + 告警（纯取数链路，不触碰信号算法）。
+    检测 sym_data 中"已收到分钟K但最新 bar 滞后超阈值"的陈旧源：
+      - 从 sym_data 剔除（本轮不据冻结价产生信号，根因修复核心）
+      - 连续达阈值→强制 tf.reconnect() 轮换服务器（限频，避免每轮狂重连）
+      - 连续达阈值→推信号群告警（限频重报，区分"临时陈旧/持续冻结"）
+    返回 (cleaned_sym_data, stale_syms)。"""
+    stale_syms = set()
+    for sym in TARGETS:
+        data = sym_data.get(sym)
+        if not data:
+            continue
+        fresh_s = data.get('_fresh_s', 0.0)
+        # 仅交易时段判定陈旧；午休/盘后 bar 天然滞后，不算陈旧
+        if in_session and fresh_s > STALE_THRESHOLD_S:
+            stale_syms.add(sym)
+            st[f'_stale_{sym}'] = st.get(f'_stale_{sym}', 0) + 1
+            # 数据已收到(只是陈旧)→_miss_ 不计入缺数，避免与缺数告警重复
+            st[f'_miss_{sym}'] = 0
+            st.pop(f'alerted_miss_{sym}', None)
+            nm = TARGETS[sym]
+            m = st[f'_stale_{sym}']
+            # 强制轮换：连续达阈值且过冷却→重连换服务器
+            rc_key = f'_stale_rc_at_{sym}'
+            last_rc = st.get(rc_key, 0)
+            if m >= STALE_RECONNECT_ROUNDS and (now.timestamp() - last_rc) >= STALE_RECONNECT_COOLDOWN_S:
+                try:
+                    tf.reconnect()
+                    st[rc_key] = now.timestamp()
+                    print(f"  🔄 [{now.strftime('%H:%M:%S')}] 陈旧源轮换: {nm}({sym}) "
+                          f"最新bar滞后{fresh_s:.0f}s, 已强制重连 mootdx 服务器")
+                except Exception as _e:
+                    print(f"  ⚠️ 陈旧源轮换失败 {nm}({sym}): {_e}")
+            # 告警：连续达阈值且过重报间隔
+            a_key = f'alerted_stale_{sym}'
+            if m >= STALE_ALERT_ROUNDS:
+                last_a = st.get(a_key)
+                if last_a is None or (m - last_a) >= STALE_ALERT_REPEAT_ROUNDS:
+                    st[a_key] = m
+                    persistent = m >= STALE_RECONNECT_ROUNDS * 20   # ≈5min 死标→判为持续冻结
+                    if persistent:
+                        _send_alert(
+                            f"🚨 持续陈旧告警：{nm}({sym}) 分钟K最新 bar 已滞后约 {fresh_s:.0f}s "
+                            f"且连续 {m} 轮未更新(疑似行情源冻结)，已多次强制轮换仍无效。"
+                            f"请检查 mootdx/网络或手动重启 monitor。"
+                        )
+                    else:
+                        _send_alert(
+                            f"⚠️ 行情陈旧告警：{nm}({sym}) 分钟K最新 bar 滞后约 {fresh_s:.0f}s "
+                            f"(连续 {m} 轮)，已强制轮换 mootdx 服务器并重试。本轮不据冻结价产生信号。"
+                        )
+                    print(f"  🚨 已推送陈旧告警 {nm}({sym}) fresh={fresh_s:.0f}s stale_rounds={m}")
+        else:
+            # 数据新鲜或盘外→清空陈旧计数
+            st[f'_stale_{sym}'] = 0
+            st.pop(f'alerted_stale_{sym}', None)
+    # 剔除陈旧源(不据冻结价产生信号)
+    for sym in stale_syms:
+        sym_data.pop(sym, None)
+    return sym_data, stale_syms
 
 def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name, tag='', exit_reason='', day_chg=None, bar_trade_time='', pos_pct=None):
     """构造推送文本并写 signal.txt。v9.1.2: 加 [K:HH:MM] 信号K时刻 + EXIT 双口径(当日涨跌/持仓盈亏)。"""
@@ -1152,21 +1241,27 @@ def run():
                         if data:
                             sym_data[sym] = data
                         else:
+                            err_count += 1   # 无数据也计入错误，避免被指标/自检忽略(161129盲区)
                             print(f"  [warning] {name} no intraday data")
                     except Exception as e:
                         err_count += 1
                         print(f"  [warning] {name} compute exception: {e}")
 
+            # ===== 新鲜度校验 + 强制轮换 + 告警（2026-07-23 根因修复：堵"陈旧源静默吞信号"）=====
+            # 陈旧源(已收到分钟K但最新bar滞后超阈值)从 sym_data 剔除→本轮不据冻结价产生信号；
+            # 连续达阈值触发强制重连轮换 + 推信号群告警。纯取数链路，不触碰信号算法。
+            sym_data, stale_syms = _handle_staleness(sym_data, TARGETS, st, now, in_session, tf)
+
             # 静默零信号检测：本轮未取到 bar 的标的计数（堵"数据中断静默吞信号"）
             if sym_data:
                 st['_tf_unhealthy'] = False
             for sym in TARGETS:
-                if sym in sym_data:
+                if sym in sym_data or sym in stale_syms:
                     st[f'_miss_{sym}'] = 0
-                    st.pop(f'alerted_miss_{sym}', None)  # 数据恢复 → 清除去抖锁
+                    st.pop(f'alerted_miss_{sym}', None)  # 数据恢复(或陈旧但已收到) → 清除去抖锁
                 else:
                     st[f'_miss_{sym}'] = st.get(f'_miss_{sym}', 0) + 1
-            # 告警（仅交易时段 + 过开盘宽限期，去抖避免刷屏）
+            # 告警（仅交易时段 + 过开盘宽限期）：持续无数据→周期重报，避免一次性闩锁后永久静默
             def _in_grace(tt):
                 g = ALERT_GRACE_MIN
                 return (t.replace(hour=9, minute=30) <= tt < t.replace(hour=9, minute=30 + g)) or \
@@ -1174,16 +1269,27 @@ def run():
             if not _in_grace(now.time()):
                 for sym in TARGETS:
                     m = st.get(f'_miss_{sym}', 0)
-                    key_a = f'alerted_miss_{sym}'
-                    if m >= ALERT_MISS_ROUNDS and not st.get(key_a):
-                        st[key_a] = True
-                        nm = TARGETS[sym]
-                        _send_alert(
-                            f"⚠️ 数据源中断告警：{nm}({sym}) 已连续 {m} 轮"
-                            f"(约{m*SCAN_INTERVAL}秒) 无分钟K数据，疑似盘中数据源中断，"
-                            f"已静默跳过该标的信号。请检查 mootdx/腾讯行情连接。"
-                        )
-                        print(f"  🚨 已推送静默零信号告警 {nm}({sym}) miss={m}")
+                    key_a = f'alerted_miss_{sym}'   # 存“上次告警时的 miss 轮数”，用于周期重报
+                    if m >= ALERT_MISS_ROUNDS:
+                        last = st.get(key_a)
+                        if last is None or (m - last) >= ALERT_MISS_REPEAT_ROUNDS:
+                            st[key_a] = m
+                            nm = TARGETS[sym]
+                            persistent = m >= ALERT_MISS_ROUNDS * 20   # ≈5min 死标→判为持续缺数
+                            if persistent:
+                                _send_alert(
+                                    f"⚠️ 持续缺数告警：{nm}({sym}) 已连续 {m} 轮"
+                                    f"(约{m*SCAN_INTERVAL}秒) 无分钟K数据，"
+                                    f"疑似该标的根本无法获取行情(非临时中断)，已长期静默跳过信号。"
+                                    f"建议检查标的行情源或将其移出监控列表。"
+                                )
+                            else:
+                                _send_alert(
+                                    f"⚠️ 数据源中断告警：{nm}({sym}) 已连续 {m} 轮"
+                                    f"(约{m*SCAN_INTERVAL}秒) 无分钟K数据，疑似盘中数据源中断，"
+                                    f"已静默跳过该标的信号。请检查 mootdx/腾讯行情连接。"
+                                )
+                            print(f"  🚨 已推送缺数告警 {nm}({sym}) miss={m} (persistent={persistent})")
 
             # 2) 顺序处理信号：避免共享状态 st 竞争
             override_action = _load_risk_override()  # 模式② 顶层风控闸门（每轮读一次）

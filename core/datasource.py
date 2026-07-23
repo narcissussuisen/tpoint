@@ -3,7 +3,7 @@ datasource.py — mootdx 数据源，替代 tickflow
 接口对齐 tickflow 的 TickFlow，让 monitor/backtest 改动最小。
 数据源：mootdx（通达信 TCP 7709，免费无 Key，秒级实时）
 关键差异 vs tickflow：
-  1. symbol 格式：mootdx 用 6 位纯数字（'300975'），tickflow 用 '300975.SZ'
+  1. symbol 格式：mootdx 用 6 位纯数字（'161129'），tickflow 用 '161129.SZ'
   2. 字段名：mootdx datetime→trade_date/trade_time，vol→volume
   3. mootdx 返回不复权价（日内监控无影响，回测跨除权需处理）
   4. mootdx 有 volume 字段（tickflow intraday 不确定），利好 v9 的 VWAP
@@ -41,14 +41,45 @@ def _probe(ip, port, timeout=2.0):
         return False
 
 
-def _server_ok(client, market=0):
-    """数据校验：服务器不仅要 TCP 连通，还要真能返回 K 线。
-    规避'连得通但返回空数据'的僵服务器（某些网络环境下硬编码列表会如此）。"""
-    try:
-        df = client.bars(symbol='600519', frequency=9, offset=1, market=market)
-        return df is not None and len(df) > 0
-    except Exception:
+def _naive_in_session(dt):
+    """判断 naive datetime/Timestamp 是否处于 A股交易时段(09:30-11:30 / 13:00-15:00)。
+    用于新鲜度校验的会话门控：盘外(午休/盘前/收盘后)不判陈旧，避免误杀服务器。"""
+    if dt.weekday() >= 5:
         return False
+    h, m = dt.hour, dt.minute
+    mins = h * 60 + m
+    return (570 <= mins < 690) or (780 <= mins < 900)  # 09:30 / 11:30 / 13:00 / 15:00
+
+
+def _server_ok(client, now=None, max_stale_s=300):
+    """数据校验：服务器不仅要 TCP 连通，还要真能返回近期分钟K。
+    规避两类僵服务器：①'连得通但返回空数据'；②'连得通但返回陈旧(冻结)分钟K'。
+    存在性用日K探针(任何时段都有历史数据)；新鲜度仅交易时段用 1min 探针，
+    最新 1min bar 滞后 > max_stale_s 即判陈旧并跳过。返回 (ok: bool, reason: str)。"""
+    try:
+        # 存在性：日K最后一根非空(任何时段都有昨日及以前数据)
+        ddf = client.bars(symbol='600519', frequency=9, offset=1, market=0)
+    except Exception as e:
+        return False, 'err:%s' % e
+    if ddf is None or len(ddf) == 0:
+        return False, 'empty'
+    # 新鲜度：仅交易时段用 1min 探针(600519 贵州茅台，流动性充足，交易时段必更新)
+    if now is not None and _naive_in_session(now):
+        try:
+            mdf = client.bars(symbol='600519', frequency=8, offset=5, market=0)
+        except Exception:
+            mdf = None
+        if mdf is not None and len(mdf):
+            dt = pd.to_datetime(mdf['datetime'], errors='coerce').dropna()
+            if len(dt):
+                lag = (now - dt.iloc[-1]).total_seconds()
+                if lag > max_stale_s:
+                    return False, 'stale:%.0fs' % lag
+    return True, 'ok'
+
+
+# 服务器选择阶段的新鲜度阈值(秒)：探针最新 1min bar 滞后超此值即判陈旧并跳过
+STALE_SELECT_S = 300
 
 
 def _retry_with_backoff(fn, max_retries=3, base=1.0, cap=7.0, label='', on_retry=None):
@@ -77,7 +108,7 @@ def _retry_with_backoff(fn, max_retries=3, base=1.0, cap=7.0, label='', on_retry
     raise last_exc
 
 
-def tdx_client(market='std'):
+def tdx_client(market='std', now=None, max_stale_s=STALE_SELECT_S):
     """创建 mootdx 客户端，规避 0.11.x BESTIP 空串 bug。
     四级兜底：① 显式 _TDX_SERVERS 探测+数据校验 → ② pytdx hosts 列表兜底(104个) →
     ③ bestip 测速+校验 → ④ 裸 factory。
@@ -90,7 +121,10 @@ def tdx_client(market='std'):
                 cli = Quotes.factory(market=market, server=(ip, port))
             except Exception:
                 continue
-            if _server_ok(cli):
+            ok, _r = _server_ok(cli, now=now, max_stale_s=max_stale_s)
+            if not ok and _r.startswith('stale'):
+                print(f"  ⚠️ 服务器 {ip}:{port} 分钟K陈旧({_r}), 跳过")
+            if ok:
                 return cli
     # ② pytdx hosts 兜底（104 个服务器，限制前 30 个避免太久）
     try:
@@ -104,14 +138,15 @@ def tdx_client(market='std'):
                     cli = Quotes.factory(market=market, server=(ip, 7709))
                 except Exception:
                     continue
-                if _server_ok(cli):
+                ok, _r = _server_ok(cli, now=now, max_stale_s=max_stale_s)
+                if ok:
                     return cli
     except Exception:
         pass
     # ③ bestip 测速
     try:
         cli = Quotes.factory(market=market, bestip=True)
-        if _server_ok(cli):
+        if _server_ok(cli, now=now, max_stale_s=max_stale_s)[0]:
             return cli
     except Exception:
         pass
@@ -128,8 +163,8 @@ def tdx_client(market='std'):
 
 def _to_mootdx_sym(sym):
     """tickflow 符号 → mootdx 符号 + 市场代码
-    '300975.SZ' → ('300975', 0)  # 0=深圳
-    '601869.SH' → ('601869', 1)  # 1=上海"""
+    '161129.SZ' → ('161129', 0)  # 0=深圳
+    '688347.SH' → ('688347', 1)  # 1=上海"""
     code = sym.split('.')[0]
     market = 0 if sym.endswith('.SZ') else 1
     return code, market
@@ -152,12 +187,12 @@ class MootdxDataSource:
     def client(self):
         """懒加载 + 断线重连"""
         if self._client is None:
-            self._client = tdx_client()
+            self._client = tdx_client(now=pd.Timestamp.now(), max_stale_s=STALE_SELECT_S)
         return self._client
 
     def reconnect(self):
-        """强制重连（跨天/异常时调用）"""
-        self._client = tdx_client()
+        """强制重连（跨天/异常/陈旧源轮换时调用）；传入 now 做新鲜度门控，跳过冻结服务器"""
+        self._client = tdx_client(now=pd.Timestamp.now(), max_stale_s=STALE_SELECT_S)
 
     @property
     def klines(self):
@@ -327,6 +362,7 @@ class MootdxDataSource:
             lines = inner.get('data', [])
             date_str = inner.get('date', '')
             if not lines or not date_str:
+                print(f"  ⚠️ 腾讯分时兜底返回空 {sym}: lines={len(lines)} date={date_str!r}（静默无数据）")
                 return None
             rows = []
             prev_price = None

@@ -387,11 +387,11 @@ def detect_miji_signals(data, pc, start_idx=2,
                 # ---- MACD 门控（分级, 委托 _gate_floor）----
                 buy_kw = {k: v for k, v in floor_kwargs.items()
                           if k in ('floor_dev_pct', 'floor_buy_cooldown_bars',
-                                   'floor_trend_threshold')}
+                                   'floor_trend_threshold', 'floor_suppress_buy_day_chg')}
                 buy_pass, buy_base, buy_floor = gate_buy(
                     g_factor, m_factor, g_dev, i,
                     macd_gate_mode=macd_gate_mode, c=c, lo=lo,
-                    last_buy_floor_bar=last_buy_floor_bar, **buy_kw,
+                    last_buy_floor_bar=last_buy_floor_bar, day_chg=day_chg, **buy_kw,
                 )
                 if buy_floor:
                     last_buy_floor_bar = i

@@ -12,6 +12,7 @@ _gate_floor.py — floor 门控共享纯函数模块
   - floor_sell_cooldown_bars : 价格天花板 S 冷却期
   - floor_buy_cooldown_bars  : 价格地板 B 冷却期
   - floor_suppress_day_chg   : 涨停/近涨停日关闭天花板 S 通道
+  - floor_suppress_buy_day_chg: 跌日关闭地板 B 通道（对称于上一行，防接飞刀）
   - floor_trend_threshold    : 趋势感知缩放（预留）
 """
 
@@ -20,6 +21,10 @@ import numpy as np
 # ---- 默认值（与 miji_engine 硬编码一致） ----
 _DEFAULT_FLOOR_DEV_PCT = 1.5
 _DEFAULT_LOCAL_W = 15
+# 跌日 B 通道抑制阈值(%, 日内涨跌幅): day_chg <= 此值 → 关闭价格地板 B 通道(防接飞刀)。
+# 对称于 floor_suppress_day_chg(涨日关天花板S); 默认 -1.0 = 当日跌幅≥1%即视为跌日抑制。
+# 0.0 = 关闭此抑制(等效原行为)。启发式值, 待多日OOS(F:盘4071标的1m)调参确认。
+DEFAULT_FLOOR_SUPPRESS_BUY_DAY_CHG = -1.0
 
 
 def _is_new_low(c, lo, i, w=_DEFAULT_LOCAL_W):
@@ -50,7 +55,9 @@ def gate_buy(g_factor, m_factor, g_dev, i, *,
              floor_buy_cooldown_bars=0,
              last_buy_floor_bar=-999,
              trend_state=0,
-             floor_trend_threshold=2.0):
+             floor_trend_threshold=2.0,
+             floor_suppress_buy_day_chg=DEFAULT_FLOOR_SUPPRESS_BUY_DAY_CHG,
+             day_chg=0.0):
     """买点门控：判断当前 bar 是否触发买信号。
 
     返回: (buy_pass, buy_base, buy_floor)
@@ -83,6 +90,12 @@ def gate_buy(g_factor, m_factor, g_dev, i, *,
 
             buy_floor = (_is_new_low(c, lo, i, w=local_w)
                          and (g_dev <= -effective_dev_pct))
+
+            # 跌日 B 通道抑制（对称于 floor_suppress_day_chg 的涨日 S 抑制）：
+            # 日内跌幅≥阈值时关闭价格地板 B 通道（防接飞刀），但 MACD 背离 B(buy_base) 不受影响。
+            # 仅 floor 模式生效；strict/off 模式 buy_floor 恒为 False，无副作用。
+            if floor_suppress_buy_day_chg != 0.0 and day_chg <= floor_suppress_buy_day_chg:
+                buy_floor = False
 
     buy_pass = bool(buy_base or buy_floor)
     return buy_pass, buy_base, buy_floor

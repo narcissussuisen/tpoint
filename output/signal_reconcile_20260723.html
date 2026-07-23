@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tpoint 信号推送对账 2026-07-23 [修正版]</title>
+<style>
+* { box-sizing: border-box; }
+body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background:#0f1115; color:#e6e8eb; margin:0; padding:24px; line-height:1.55; }
+h1 { font-size:20px; margin:0 0 4px; }
+.sub { color:#8b929c; font-size:13px; margin-bottom:18px; }
+.cards { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+.card { background:#1a1d24; border:1px solid #2a2f3a; border-radius:10px;
+  padding:14px 18px; min-width:120px; }
+.card .k { font-size:26px; font-weight:700; }
+.card .l { font-size:12px; color:#8b929c; margin-top:2px; }
+.card.red .k { color:#ff6b6b; }
+.card.green .k { color:#51cf66; }
+.card.blue .k { color:#4dabf7; }
+.card.gray .k { color:#8b929c; }
+section { margin-bottom:22px; }
+h2 { font-size:15px; border-left:3px solid #4dabf7; padding-left:8px; margin:0 0 10px; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th, td { text-align:left; padding:7px 9px; border-bottom:1px solid #23272f; }
+th { color:#8b929c; font-weight:600; background:#16191f; }
+td.cause { color:#ffa94d; max-width:520px; }
+td.muted { color:#8b929c; }
+.ev { background:#16191f; border:1px solid #2a2f3a; border-radius:10px;
+  padding:14px 16px; font-size:13px; }
+.ev li { margin:4px 0; }
+.note { font-size:12px; color:#8b929c; margin-top:8px; }
+.banner { background:#3a2a1a; border:1px solid #6b4a1a; border-radius:10px;
+  padding:12px 16px; font-size:13px; color:#ffd8a8; margin-bottom:18px; }
+.disclaimer { margin-top:24px; font-size:12px; color:#ff8787;
+  border-top:1px dashed #3a3f4a; padding-top:12px; }
+</style></head><body>
+<h1>tpoint 信号推送对账 · 2026-07-23 <span style="font-size:13px;color:#4dabf7;">[修正版 v9.2.1]</span></h1>
+<div class="sub">生成时刻 2026-07-23 17:49:54 ｜ 理论信号 = live 引擎 fresh-state 全量重放今日真实 1m（不推送）｜
+实际推送 = data/push_audit.jsonl ｜ 匹配容差 ±3min</div>
+
+<div class="banner">⚠️ <b>方法学修正与旧结论收回</b>：本版采用「评估窗口感知」对账（"盘中增量快照"的回溯等价实现）。
+旧版 16-miss 结论已被推翻——16 = <b>9 真实缺失</b>(688347 10:43–11:19×7 + 513310 09:42/09:50×2)
++ <b>7 冻结后误判</b>(下午 13:00–15:00 监控从未评估的理论信号)。以本版输出为准。</div>
+
+<div class="cards">
+  <div class="card blue"><div class="k">21</div><div class="l">理论信号(全量)</div></div>
+  <div class="card green"><div class="k">5</div><div class="l">实际已推送</div></div>
+  <div class="card red"><div class="k">9</div><div class="l">真实缺失(评估窗口内)</div></div>
+  <div class="card gray"><div class="k">7</div><div class="l">未评估(冻结后·不计)</div></div>
+  <div class="card"><div class="k">35.7%</div><div class="l">命中率(评估窗口)</div></div>
+</div>
+
+<section>
+  <h2>一、已推送（理论⊆实际匹配，5 条）</h2>
+  <table><thead><tr><th>标的名称</th><th>类型</th><th>理论触发</th>
+  <th>实推时间</th><th>时间差(min)</th><th>价</th><th>仓位(成)</th></tr></thead>
+  <tbody><tr><td>华虹宏力</td><td>B</td><td>09:33:00</td><td>09:34:11</td><td>1.2</td><td>370.070</td><td>2</td></tr><tr><td>华虹宏力</td><td>X</td><td>09:36:00</td><td>09:36:15</td><td>0.2</td><td>367.390</td><td>2</td></tr><tr><td>华虹宏力</td><td>B</td><td>09:39:00</td><td>09:38:04</td><td>0.9</td><td>367.120</td><td>2</td></tr><tr><td>华虹宏力</td><td>X</td><td>10:41:00</td><td>10:42:09</td><td>1.1</td><td>349.010</td><td>2</td></tr><tr><td>中韩半导体ETF华泰柏瑞</td><td>S</td><td>09:35:00</td><td>09:35:13</td><td>0.2</td><td>5.277</td><td>2</td></tr></tbody></table>
+</section>
+
+<section>
+  <h2>二、真实缺失（评估窗口内应推未推，9 条）</h2>
+  <table><thead><tr><th>标的名称</th><th>缺失信号类型</th><th>理论触发时间</th>
+  <th>理论触发价</th><th>仓位(成)</th><th>未推送原因</th></tr></thead>
+  <tbody><tr><td>华虹宏力</td><td>S</td><td>2026-07-23 10:43:00</td><td>346.980</td><td>4</td><td class="cause">推送中断(10:42 后扫描续行至 11:28 但未再推送)：理论信号在评估窗口内产生，但因推送通道中断未送达飞书。</td></tr><tr><td>华虹宏力</td><td>X:B</td><td>2026-07-23 10:51:00</td><td>343.980</td><td>4</td><td class="cause">推送中断(10:42 后扫描续行至 11:28 但未再推送)：理论信号在评估窗口内产生，但因推送通道中断未送达飞书。</td></tr><tr><td>华虹宏力</td><td>B</td><td>2026-07-23 10:58:00</td><td>339.000</td><td>4</td><td class="cause">推送中断(10:42 后扫描续行至 11:28 但未再推送)：理论信号在评估窗口内产生，但因推送通道中断未送达飞书。</td></tr><tr><td>华虹宏力</td><td>X:TRAIL</td><td>2026-07-23 11:02:00</td><td>337.000</td><td>4</td><td class="cause">推送中断(10:42 后扫描续行至 11:28 但未再推送)：理论信号在评估窗口内产生，但因推送通道中断未送达飞书。</td></tr><tr><td>华虹宏力</td><td>B</td><td>2026-07-23 11:06:00</td><td>335.000</td><td>4</td><td class="cause">推送中断(10:42 后扫描续行至 11:28 但未再推送)：理论信号在评估窗口内产生，但因推送通道中断未送达飞书。</td></tr><tr><td>华虹宏力</td><td>X:TRAIL</td><td>2026-07-23 11:16:00</td><td>342.500</td><td>4</td><td class="cause">推送中断(10:42 后扫描续行至 11:28 但未再推送)：理论信号在评估窗口内产生，但因推送通道中断未送达飞书。</td></tr><tr><td>华虹宏力</td><td>S</td><td>2026-07-23 11:19:00</td><td>344.400</td><td>4</td><td class="cause">推送中断(10:42 后扫描续行至 11:28 但未再推送)：理论信号在评估窗口内产生，但因推送通道中断未送达飞书。</td></tr><tr><td>中韩半导体ETF华泰柏瑞</td><td>X:B</td><td>2026-07-23 09:42:00</td><td>5.212</td><td>2</td><td class="cause">状态失同步(盘间重启丢失持仓态)：513310 于 09:35 开空后，持仓状态因盘前/早盘重启丢失同步，平仓(09:42)与回补(09:50)信号未复现；state.json 显示该空仓至收盘仍未平。</td></tr><tr><td>中韩半导体ETF华泰柏瑞</td><td>B</td><td>2026-07-23 09:50:00</td><td>5.225</td><td>4</td><td class="cause">状态失同步(盘间重启丢失持仓态)：513310 于 09:35 开空后，持仓状态因盘前/早盘重启丢失同步，平仓(09:42)与回补(09:50)信号未复现；state.json 显示该空仓至收盘仍未平。</td></tr></tbody></table>
+  <div class="note">仅含监控实际评估过(bar≤118≈11:28:00)且未推送的理论信号；
+  归因维度：① 10:42 后推送中断；② 盘间重启致持仓状态失同步。</div>
+</section>
+
+<section>
+  <h2>三、未评估（扫描冻结后，7 条，<span style="color:#ff8787;">不计入缺失率</span>）</h2>
+  <table><thead><tr><th>标的名称</th><th>类型</th><th>理论触发时间</th>
+  <th>理论触发价</th><th>仓位(成)</th><th>说明</th></tr></thead>
+  <tbody><tr><td>原油LOF易方达</td><td>S</td><td>2026-07-23 13:56:00</td><td>2.137</td><td>4</td><td class="cause">扫描冻结(&gt;bar118≈11:28:00 后未评估)，非真实缺失，不计入缺失率</td></tr><tr><td>原油LOF易方达</td><td>X:B</td><td>2026-07-23 14:17:00</td><td>2.116</td><td>4</td><td class="cause">扫描冻结(&gt;bar118≈11:28:00 后未评估)，非真实缺失，不计入缺失率</td></tr><tr><td>原油LOF易方达</td><td>B</td><td>2026-07-23 14:32:00</td><td>2.117</td><td>4</td><td class="cause">扫描冻结(&gt;bar118≈11:28:00 后未评估)，非真实缺失，不计入缺失率</td></tr><tr><td>华虹宏力</td><td>X:B</td><td>2026-07-23 14:00:00</td><td>352.800</td><td>4</td><td class="cause">扫描冻结(&gt;bar118≈11:28:00 后未评估)，非真实缺失，不计入缺失率</td></tr><tr><td>华虹宏力</td><td>B</td><td>2026-07-23 14:02:00</td><td>349.160</td><td>4</td><td class="cause">扫描冻结(&gt;bar118≈11:28:00 后未评估)，非真实缺失，不计入缺失率</td></tr><tr><td>华虹宏力</td><td>X:TRAIL</td><td>2026-07-23 14:11:00</td><td>352.020</td><td>4</td><td class="cause">扫描冻结(&gt;bar118≈11:28:00 后未评估)，非真实缺失，不计入缺失率</td></tr><tr><td>中韩半导体ETF华泰柏瑞</td><td>X:TRAIL</td><td>2026-07-23 13:41:00</td><td>5.228</td><td>4</td><td class="cause">扫描冻结(&gt;bar118≈11:28:00 后未评估)，非真实缺失，不计入缺失率</td></tr></tbody></table>
+  <div class="note">这些理论信号由收盘后全量重放生成，但其对应 bar(&gt;118)在事发当日
+  从未被监控评估（扫描 11:28 后冻结，下午全程未处理），故非真实缺失，仅为"若当时在线本应产生"。
+  旧版误将其计入缺失，导致 16-miss 虚高。</div>
+</section>
+
+<section>
+  <h2>四、实际推送但理论未触发（0 条，需关注）</h2>
+  <table><thead><tr><th>标的名称</th><th>类型</th><th>实推时间</th><th>价</th></tr></thead>
+  <tbody><tr><td colspan="4" class="muted">无</td></tr></tbody></table>
+</section>
+
+<section>
+  <h2>五、评估窗口与根因证据</h2>
+  <div class="ev"><ul>
+    <li><b>冻结点（评估窗口上界）</b>：state.json 三标的 bar_<sym>_<idx> 最大索引均为
+      <b>118</b>（≈11:28:00，上午收盘前）。此后新 bar 未再处理；
+      下午 13:00–15:00 全程未评估 → 122 根/标（三标同一窗口，合计 366 bar-实例）未评估。</li>
+    <li><b>推送截止</b>：push_audit.jsonl 最后成功推送 = <b>10:42:09</b>。
+      此后扫描续行至 11:28:00 但未再推送。</li>
+    <li><b>进程未崩溃退出</b>：monitor_crash.log 当日白天无退出记录，
+      系 mootdx 单 TCP socket 挂死阻塞扫描循环（已通过 v9.2.1 新鲜度门控 + 强制轮换修复）。</li>
+    <li><b>状态失同步</b>：state.json 终态 688347 B:2/S:0（从未开空）、513310 空仓至收盘未平、
+      161129 B:0/S:0，与理论路径背离，指向盘间重启丢失持仓态（513310 09:42/09:50 缺失之因）。</li>
+    <li><b>数据延迟排除</b>：state.json _miss_161129/_miss_688347/_miss_513310 均为 0，
+      当日无行情缺口，缺失非数据延迟所致。</li>
+    <li><b>结论修正</b>：真实缺失 = 9 条（评估窗口内）；冻结后误判 = 7 条（不计）。
+      命中率按评估窗口计 = <b>35.7%</b>（5/14）。</li>
+  </ul></div>
+</section>
+
+<section>
+  <h2>六、数据覆盖度</h2>
+  <table><thead><tr><th>标的</th><th>状态</th><th>理论信号数</th></tr></thead>
+  <tbody><tr><td>原油LOF易方达 (161129.SZ)</td><td>OK bars=240</td><td>3</td></tr><tr><td>华虹宏力 (688347.SH)</td><td>OK bars=240</td><td>14</td></tr><tr><td>中韩半导体ETF华泰柏瑞 (513310.SH)</td><td>OK bars=240</td><td>4</td></tr></tbody></table>
+  <div class="note">1m 行情经 mootdx 实时拉取；收盘后重放可得当日真实 bar（若数据源返回完整全天）。
+  评估窗口由 state.json bar 索引派生，非硬编码。</div>
+</section>
+
+<div class="disclaimer">⚠️ 以上内容由 AI 基于公开信息整理生成，仅供参考，不构成任何投资建议或个股推荐。投资有风险，决策需谨慎。</div>
+</body></html>

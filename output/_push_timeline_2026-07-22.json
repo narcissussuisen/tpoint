@@ -1,0 +1,398 @@
+[
+  {
+    "ts": "09:34:12",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "09:34:15",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "09:36:04",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "09:38:08",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "09:39:12",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "09:40:15",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "09:43:06",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "09:43:06",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "09:44:09",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "09:55:10",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "10:00:44",
+    "sym": "??",
+    "type": "?",
+    "code": 11232,
+    "msg": "frequency",
+    "ok": false,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "10:00:44",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "10:00:44",
+    "sym": "??",
+    "type": "?",
+    "code": 11232,
+    "msg": "frequency",
+    "ok": false,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "10:00:44",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "10:00:44",
+    "sym": "??",
+    "type": "?",
+    "code": 11232,
+    "msg": "frequency",
+    "ok": false,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "10:00:44",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "10:10:13",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "10:14:07",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "10:16:55",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "10:38:07",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "10:39:09",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "11:04:41",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "11:05:21",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "11:29:08",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "13:04:25",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "13:09:42",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "13:23:11",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "13:27:12",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "13:30:04",
+    "sym": "??",
+    "type": "?",
+    "code": 11232,
+    "msg": "frequency",
+    "ok": false,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "13:32:09",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "13:33:12",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "13:37:06",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "13:38:09",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "13:39:32",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "13:43:05",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "13:47:13",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console_new.log"
+  },
+  {
+    "ts": "13:51:07",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "13:56:06",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "14:04:09",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "14:05:11",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "14:06:14",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "14:26:07",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "14:27:10",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  },
+  {
+    "ts": "14:45:06",
+    "sym": "??",
+    "type": "?",
+    "code": 0,
+    "msg": "success",
+    "ok": true,
+    "log": "monitor_console.log"
+  }
+]
