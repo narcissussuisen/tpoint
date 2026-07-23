@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>v9.3.0 三因子共振评估报告</title>
+<style>
+  :root {
+    --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --muted: #94a3b8;
+    --accent: #38bdf8; --border: #334155;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 2rem; }
+  h1, h2, h3 { color: var(--accent); margin-top: 0; }
+  h1 { font-size: 1.8rem; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+  .meta { color: var(--muted); margin-bottom: 1.5rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.2rem; margin: 1.5rem 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: .75rem; padding: 1rem; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+  th, td { padding: .6rem .8rem; border-bottom: 1px solid var(--border); text-align: right; }
+  th { text-align: left; color: var(--muted); font-weight: 600; }
+  td:first-child, th:first-child { text-align: left; }
+  .bar-row { display: flex; align-items: center; gap: .6rem; margin: .35rem 0; font-size: .9rem; }
+  .bar-label { width: 130px; color: var(--muted); flex-shrink: 0; }
+  .bar-wrap { flex: 1; background: #334155; border-radius: 4px; height: 14px; overflow: hidden; }
+  .bar { height: 100%; border-radius: 4px; }
+  .bar-val { width: 100px; text-align: right; color: var(--text); }
+  .note { color: var(--muted); font-size: .9rem; margin-top: 2rem; line-height: 1.6; }
+</style>
+</head>
+<body>
+  <h1>v9.3.0 三因子共振评估报告</h1>
+  <div class="meta">
+    数据目录: F:\keyfactor_data\1m &nbsp;|&nbsp; 标的数: 200 &nbsp;|&nbsp;
+    RESONANCE_THRESHOLD=2 &nbsp;|&nbsp;
+    VWAP_DEV=0.6/0.6 &nbsp;|&nbsp;
+    VOL_EXPAND/SHRINK=1.2/0.8
+  </div>
+
+  <h2>1. 三种模式聚合对比</h2>
+  <table>
+    <thead>
+      <tr><th>模式</th><th>总信号</th><th>B</th><th>S</th><th>skill6</th><th>skill12</th><th>skill24</th></tr>
+    </thead>
+    <tbody>
+      
+        <tr>
+          <td><strong>strict</strong></td>
+          <td>117,553</td>
+          <td>68,134</td>
+          <td>49,419</td>
+          <td>-0.0122%</td>
+          <td>-0.0133%</td>
+          <td>-0.0240%</td>
+        </tr>
+        
+        <tr>
+          <td><strong>floor</strong></td>
+          <td>133,655</td>
+          <td>71,204</td>
+          <td>62,451</td>
+          <td>-0.0047%</td>
+          <td>-0.0038%</td>
+          <td>-0.0142%</td>
+        </tr>
+        
+        <tr>
+          <td><strong>resonance</strong></td>
+          <td>159,613</td>
+          <td>104,325</td>
+          <td>55,288</td>
+          <td>+0.0085%</td>
+          <td>+0.0053%</td>
+          <td>-0.0068%</td>
+        </tr>
+        
+    </tbody>
+  </table>
+
+  <h2>2. 共振分数分布</h2>
+  <div class="grid">
+    
+        <div class="card">
+          <h3>strict — 共振分数分布</h3>
+          <div class="bar-row"><span class="bar-label">B score=1</span><div class="bar-wrap"><div class="bar" style="width:33.0%;background:#60a5fa"></div></div><span class="bar-val">38,827 (33.0%)</span></div><div class="bar-row"><span class="bar-label">B score=2</span><div class="bar-wrap"><div class="bar" style="width:24.9%;background:#60a5fa"></div></div><span class="bar-val">29,307 (24.9%)</span></div><div class="bar-row"><span class="bar-label">S score=1</span><div class="bar-wrap"><div class="bar" style="width:28.7%;background:#60a5fa"></div></div><span class="bar-val">33,713 (28.7%)</span></div><div class="bar-row"><span class="bar-label">S score=2</span><div class="bar-wrap"><div class="bar" style="width:13.4%;background:#60a5fa"></div></div><span class="bar-val">15,706 (13.4%)</span></div>
+        </div>
+        
+        <div class="card">
+          <h3>floor — 共振分数分布</h3>
+          <div class="bar-row"><span class="bar-label">B score=1</span><div class="bar-wrap"><div class="bar" style="width:32.0%;background:#34d399"></div></div><span class="bar-val">42,752 (32.0%)</span></div><div class="bar-row"><span class="bar-label">B score=2</span><div class="bar-wrap"><div class="bar" style="width:21.3%;background:#34d399"></div></div><span class="bar-val">28,452 (21.3%)</span></div><div class="bar-row"><span class="bar-label">S score=1</span><div class="bar-wrap"><div class="bar" style="width:36.9%;background:#34d399"></div></div><span class="bar-val">49,330 (36.9%)</span></div><div class="bar-row"><span class="bar-label">S score=2</span><div class="bar-wrap"><div class="bar" style="width:9.8%;background:#34d399"></div></div><span class="bar-val">13,121 (9.8%)</span></div>
+        </div>
+        
+        <div class="card">
+          <h3>resonance — 共振分数分布</h3>
+          <div class="bar-row"><span class="bar-label">B score=1</span><div class="bar-wrap"><div class="bar" style="width:15.9%;background:#f87171"></div></div><span class="bar-val">25,381 (15.9%)</span></div><div class="bar-row"><span class="bar-label">B score=2</span><div class="bar-wrap"><div class="bar" style="width:44.7%;background:#f87171"></div></div><span class="bar-val">71,326 (44.7%)</span></div><div class="bar-row"><span class="bar-label">B score=3</span><div class="bar-wrap"><div class="bar" style="width:4.8%;background:#f87171"></div></div><span class="bar-val">7,618 (4.8%)</span></div><div class="bar-row"><span class="bar-label">S score=1</span><div class="bar-wrap"><div class="bar" style="width:14.0%;background:#f87171"></div></div><span class="bar-val">22,326 (14.0%)</span></div><div class="bar-row"><span class="bar-label">S score=2</span><div class="bar-wrap"><div class="bar" style="width:19.8%;background:#f87171"></div></div><span class="bar-val">31,551 (19.8%)</span></div><div class="bar-row"><span class="bar-label">S score=3</span><div class="bar-wrap"><div class="bar" style="width:0.9%;background:#f87171"></div></div><span class="bar-val">1,411 (0.9%)</span></div>
+        </div>
+        
+  </div>
+
+  <h2>3. 因子组合构成</h2>
+  <div class="grid">
+    
+        <div class="card">
+          <h3>strict — 因子组合 TOP8</h3>
+          <div class="bar-row"><span class="bar-label">g (B=25381, S=22326)</span><div class="bar-wrap"><div class="bar" style="width:40.6%;background:#60a5fa"></div></div><span class="bar-val">47,707 (40.6%)</span></div><div class="bar-row"><span class="bar-label">g+md (B=29307, S=15706)</span><div class="bar-wrap"><div class="bar" style="width:38.3%;background:#60a5fa"></div></div><span class="bar-val">45,013 (38.3%)</span></div><div class="bar-row"><span class="bar-label">md (B=13446, S=11387)</span><div class="bar-wrap"><div class="bar" style="width:21.1%;background:#60a5fa"></div></div><span class="bar-val">24,833 (21.1%)</span></div>
+        </div>
+        
+        <div class="card">
+          <h3>floor — 因子组合 TOP8</h3>
+          <div class="bar-row"><span class="bar-label">g (B=29316, S=37951)</span><div class="bar-wrap"><div class="bar" style="width:50.3%;background:#34d399"></div></div><span class="bar-val">67,267 (50.3%)</span></div><div class="bar-row"><span class="bar-label">g+md (B=28452, S=13121)</span><div class="bar-wrap"><div class="bar" style="width:31.1%;background:#34d399"></div></div><span class="bar-val">41,573 (31.1%)</span></div><div class="bar-row"><span class="bar-label">md (B=13436, S=11379)</span><div class="bar-wrap"><div class="bar" style="width:18.6%;background:#34d399"></div></div><span class="bar-val">24,815 (18.6%)</span></div>
+        </div>
+        
+        <div class="card">
+          <h3>resonance — 因子组合 TOP8</h3>
+          <div class="bar-row"><span class="bar-label">g+vd (B=52565, S=15651)</span><div class="bar-wrap"><div class="bar" style="width:42.7%;background:#f87171"></div></div><span class="bar-val">68,216 (42.7%)</span></div><div class="bar-row"><span class="bar-label">g (B=25381, S=22326)</span><div class="bar-wrap"><div class="bar" style="width:29.9%;background:#f87171"></div></div><span class="bar-val">47,707 (29.9%)</span></div><div class="bar-row"><span class="bar-label">g+md (B=14923, S=12723)</span><div class="bar-wrap"><div class="bar" style="width:17.3%;background:#f87171"></div></div><span class="bar-val">27,646 (17.3%)</span></div><div class="bar-row"><span class="bar-label">g+vd+md (B=7618, S=1411)</span><div class="bar-wrap"><div class="bar" style="width:5.7%;background:#f87171"></div></div><span class="bar-val">9,029 (5.7%)</span></div><div class="bar-row"><span class="bar-label">vd+md (B=3838, S=3177)</span><div class="bar-wrap"><div class="bar" style="width:4.4%;background:#f87171"></div></div><span class="bar-val">7,015 (4.4%)</span></div>
+        </div>
+        
+  </div>
+
+  <div class="note">
+    <strong>说明</strong><br>
+    • strict/floor 保持 vol_div 关闭；resonance 模式下强制启用 vol_div 以构成三因子。<br>
+    • skill 定义：B 信号 fwd>0 为好，S 信号 fwd&lt;0 为好；数值为符号调整后的前向收益均值(%)。<br>
+    • 早盘 i&lt;LOCAL_W(15) 均降级为 gravity-only，与生产行为一致。<br>
+    • 本报告为研究分支输出，不用于生产决策。
+  </div>
+</body>
+</html>
