@@ -136,6 +136,26 @@ ALERT_MISS_REPEAT_ROUNDS = int(_cfg('alert_miss_repeat_rounds', 'TP_ALERT_MISS_R
 ALERT_GRACE_MIN = int(_cfg('alert_grace_min', 'TP_ALERT_GRACE_MIN', 5))          # 开盘前后宽限分钟数
 ALERT_WEBHOOK = _cfg('alert_webhook', 'TP_ALERT_WEBHOOK', WEBHOOK_URL)           # 默认信号群(已确认)
 
+# ========== 异常自愈与兜底告警（2026-07-24 增强：自动检测 + 通知 + 自修复） ==========
+# 覆盖：飞书推送超时/中断(网络超时)、静默零信号、信号计算异常、数据源静默失活。
+# 设计原则：检测与修复均不触碰信号算法(复盘忠实)，修复仅做数据层重连/重建(送达可靠)。
+GLOBAL_ALERT_WEBHOOK = _cfg('global_alert_webhook', 'TP_GLOBAL_ALERT_WEBHOOK',
+                            'https://open.feishu.cn/open-apis/bot/v2/hook/b4eba7a9-0504-4bd6-8aa3-a60fc8154103')  # 全局任务状态 webhook(与信号群互备，推送通道坏时仍能通知)
+PUSH_FAIL_ALERT_ROUNDS = int(_cfg('push_fail_alert_rounds', 'TP_PUSH_FAIL_ALERT_ROUNDS', 3))        # 连续N次推送失败→双通道告警
+PUSH_FAIL_ALERT_INTERVAL = int(_cfg('push_fail_alert_interval', 'TP_PUSH_FAIL_ALERT_INTERVAL', 600))  # 推送失败告警重报间隔(s)
+SILENT_ZERO_ROUNDS = int(_cfg('silent_zero_rounds', 'TP_SILENT_ZERO_ROUNDS', 12))       # 盘中连续N轮零信号(且数据正常)→告警≈3min
+SILENT_ZERO_FRESH_S = int(_cfg('silent_zero_fresh_s', 'TP_SILENT_ZERO_FRESH_S', 90))    # 静默零信号判定所需的"数据新鲜"窗口(s)
+
+# 异常连续计数/告警闩锁（模块级，跨轮保持；保证不刷屏、可周期重报）
+_push_consec_fail = 0
+_push_fail_alert_ts = 0.0
+_silent_zero_streak = 0
+_silent_zero_alerted = False
+_silent_zero_reconnect_done = False
+_compute_err_alerted = False
+_tf_reconnect_alerted = False
+_rec_guard = False
+
 # ========== 行情新鲜度校验（2026-07-23 根因修复：堵"陈旧源静默吞信号"漏洞） ==========
 # 交易时段内，最新分钟K bar 距当前墙钟滞后超此阈值(秒)→判为陈旧源（如 07-23 午后 mootdx 冻结在 11:28）。
 # 仅交易时段判定：午休/盘前/收盘后 bar 天然滞后，不算陈旧，避免误杀。
@@ -423,6 +443,7 @@ def push_batch(items, sim=False, audit_meta=None):
             ok, code, msg, attempts = _push_retry(WEBHOOK_URL, item)
             _last_push_ts = time.time()
             _audit_push(sym, typ, price, code, msg, ok)
+            _record_push_result(ok)
             if not ok:
                 ok_all = False
                 _enqueue_pending(sym, typ, price, item)  # 失败入队，下轮补发，不丢推
@@ -435,6 +456,7 @@ def push_batch(items, sim=False, audit_meta=None):
     })
     _last_push_ts = time.time()
     _audit_push(None, None, None, code, msg, ok)
+    _record_push_result(ok)
     if not ok:
         _enqueue_pending(None, None, None, {"msg_type": "text", "content": {"text": text}})  # 失败入队补发
         print(f"  ⚠️ PUSH 失败(重试{attempts}次): code={code} msg={msg}")
@@ -442,11 +464,58 @@ def push_batch(items, sim=False, audit_meta=None):
 
 def _send_alert(text):
     """静默零信号 / 数据源中断告警 → 信号群 webhook（交易时段用户即时可见）。
-    失败重试（含频限 11232 退避），不阻塞主循环。"""
+    失败重试（含频限 11232 退避），不阻塞主循环。成败计入推送失败计数(供兜底告警)。"""
     ok, code, msg, attempts = _push_retry(ALERT_WEBHOOK,
                                           {"msg_type": "text", "content": {"text": text}})
+    _record_push_result(ok)
     if not ok:
         print(f"  ⚠️ 告警推送失败(重试{attempts}次): code={code} msg={msg}")
+
+
+def _alert_global(text):
+    """关键异常兜底通道：经全局任务状态 webhook 推送(与信号群互备)。
+    不走重试计数、不调用 _record_push_result，避免与 _send_alert 互相递归；失败仅记日志。"""
+    try:
+        requests.post(GLOBAL_ALERT_WEBHOOK,
+                      json={"msg_type": "text", "content": {"text": text}},
+                      timeout=5)
+    except Exception as _e:
+        print(f"  ⚠️ 全局告警兜底推送失败: {_e}")
+
+
+def _record_push_result(ok):
+    """记录单次推送(信号/告警)成败，实现"飞书推送超时/中断"的自动检测+通知。
+    连续失败达阈值→双通道告警(信号群+全局)；恢复后复位并通告。
+    用 _rec_guard 防递归(_send_alert 失败→本函数→_send_alert 死循环)。"""
+    global _push_consec_fail, _push_fail_alert_ts, _rec_guard
+    if _rec_guard:
+        return
+    now = time.time()
+    if ok:
+        if _push_consec_fail >= PUSH_FAIL_ALERT_ROUNDS:
+            # 恢复通告：此前连续失败已结束
+            _rec_guard = True
+            try:
+                _send_alert("✅ 飞书推送已恢复：此前连续失败已结束，信号送达恢复正常。")
+                _alert_global("✅ [tpoint] 飞书推送已恢复，信号送达正常。")
+            finally:
+                _rec_guard = False
+        _push_consec_fail = 0
+        return
+    _push_consec_fail += 1
+    if _push_consec_fail >= PUSH_FAIL_ALERT_ROUNDS and (now - _push_fail_alert_ts) >= PUSH_FAIL_ALERT_INTERVAL:
+        _push_fail_alert_ts = now
+        msg = (f"🚨 飞书推送连续失败告警：最近 {_push_consec_fail} 次信号/告警推送未送达"
+               f"(疑似飞书 webhook 超时/网络中断)。未送达信号已转入补发队列待重投。"
+               f"请检查网络与 webhook 可用性。")
+        _rec_guard = True
+        try:
+            _send_alert(msg)
+            _alert_global("[tpoint] " + msg)
+        finally:
+            _rec_guard = False
+        print(f"  🚨 已推送推送失败告警 (连续{_push_consec_fail}次)")
+
 
 def compute(sym):
     """v9: 调算法层计算全部指标（数据拉取受 _data_lock 保护，防止 mootdx socket 串标）"""
@@ -553,7 +622,7 @@ def _handle_staleness(sym_data, TARGETS, st, now, in_session, tf):
         sym_data.pop(sym, None)
     return sym_data, stale_syms
 
-def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name, tag='', exit_reason='', day_chg=None, bar_trade_time='', pos_pct=None):
+def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name, tag='', exit_reason='', day_chg=None, bar_trade_time='', pos_pct=None, sym=None):
     """构造推送文本并写 signal.txt。v9.1.2: 加 [K:HH:MM] 信号K时刻 + EXIT 双口径(当日涨跌/持仓盈亏)。"""
     k_tag = f' [K:{bar_trade_time[11:16]}]' if bar_trade_time and len(bar_trade_time) >= 16 else ''
     # 出场管理推送（接 exit_manager）：B开仓后跟踪，TRAIL/S触发平仓提醒
@@ -564,8 +633,8 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
         day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
         lines = [
             f"🔵 {name} EXIT{reason} {pos_pct if pos_pct is not None else POS_PCT}成{(' ' + tag) if tag else ''}{k_tag}",
-            f"现价 {price:.2f}（当日 {day_str} / 持仓 {chg_sign}{chg_pct:.1f}%）",
-            f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}"
+            f"现价 {_fmt_price(price, sym)}（当日 {day_str} / 持仓 {chg_sign}{chg_pct:.1f}%）",
+            f"{level_type}{_fmt_price(level_val, sym)} RSI={rsi:.1f} 温度={temp:.0f}"
         ]
         msg = '\n'.join(lines)
         print(msg)
@@ -578,8 +647,8 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
     star = stars(sig_type, temp, vol_r)
     lines = [
         f"{emoji} {name} {op_type} {pos_pct if pos_pct is not None else POS_PCT}成 {star}{(' ' + tag) if tag else ''}{k_tag}",
-        f"现价 {price:.2f}（{chg_sign}{chg_pct:.1f}%）",
-        f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}"
+        f"现价 {_fmt_price(price, sym)}（{chg_sign}{chg_pct:.1f}%）",
+        f"{level_type}{_fmt_price(level_val, sym)} RSI={rsi:.1f} 温度={temp:.0f}"
     ]
     msg = '\n'.join(lines)
     print(msg)
@@ -602,6 +671,21 @@ def _map_sample(sig_type, tag):
         if 'MACD' in t or '红柱' in t: return '背离见顶'
     return t if t else '—'
 
+def _price_prec(sym):
+    """价格小数位：LOF/ETF 最小价位 0.001 → 3 位；A股股票最小价位 0.01 → 2 位。
+    161129.SZ(LOF)/513310.SH(ETF) → 3；688347.SH(科创板) → 2。"""
+    if not sym:
+        return 2
+    code, _, exch = sym.partition('.')
+    if exch == 'SZ' and (code[:2] in ('15', '16') or code[:3] == '159'):
+        return 3                       # 深市 LOF / 深市 ETF
+    if exch == 'SH' and code[:2] in ('51', '56', '58'):
+        return 3                       # 沪市 ETF
+    return 2
+
+def _fmt_price(price, sym):
+    return f"{price:.{_price_prec(sym)}f}"
+
 def emit_card(s, sym=None, sim=False):
     """构造飞书 interactive 卡片（v9.1.3 精简版）。
     正文仅留 4 项：①标的·操作·仓位 ②操作点位 ③操作依据 ④信号时间戳；
@@ -618,8 +702,14 @@ def emit_card(s, sym=None, sim=False):
     elif is_s:
         op, color = '卖出', 'red'
     else:
-        if exit_reason in ('STOP', 'TRAIL', 'TIME'):
+        # 标签语义修正（2026-07-24）：TRAIL=移动止盈/跟踪止盈——仅浮盈≥0.4%激活后自高点回撤
+        # 0.6%触发，本质是锁利出场，不是亏损止损；STOP(硬止损)/TIME(时间止损)保持原语义。
+        if exit_reason == 'TRAIL':
+            op, color = '跟踪止盈', 'blue'
+        elif exit_reason == 'STOP':
             op, color = '止损', 'blue'
+        elif exit_reason == 'TIME':
+            op, color = '时间止损', 'blue'
         elif exit_reason == 'B':   # 空仓回补 = 买回
             op, color = '买入', 'green'
         else:                     # exit_reason == 'S' 平多 = 卖平
@@ -636,9 +726,9 @@ def emit_card(s, sym=None, sim=False):
         day_sign = '+' if (day_chg or 0) >= 0 else ''
         day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
         reason = f" [{exit_reason}]" if exit_reason else ''
-        line2 = f"现价 {price:.2f}（当日 {day_str} / 持仓 {chg_sign}{chg:.1f}%）{reason}"
+        line2 = f"现价 {_fmt_price(price, sym)}（当日 {day_str} / 持仓 {chg_sign}{chg:.1f}%）{reason}"
     else:
-        line2 = f"现价 {price:.2f}（{chg_sign}{chg:.1f}%）｜{level_type} {level_val:.2f}"
+        line2 = f"现价 {_fmt_price(price, sym)}（{chg_sign}{chg:.1f}%）｜{level_type} {_fmt_price(level_val, sym)}"
     # 行3：操作依据
     line3 = f"依据：{sample}"
     # 行4：信号K时间戳
@@ -672,7 +762,7 @@ def emit_signal(s, sym=None, sim=False):
     """dispatch：CARD_MODE→卡片，否则纯文本 fallback。返回 msg_or_card。sym 用于卡片标题(标的代码)。"""
     if CARD_MODE:
         return emit_card(s, sim=sim)
-    return emit(*s)
+    return emit(*s, sym=sym)
 
 def load_state():
     try:
@@ -1230,10 +1320,21 @@ def run():
             old_syms = set(TARGETS or {})
             new_syms = set(_wl)
             TARGETS = _wl
-            for s in new_syms - old_syms:
-                STATE[s] = {'PC': 0, 'WARM': None}
             added = new_syms - old_syms
             removed = old_syms - new_syms
+            # 2026-07-24 fix: 新加入标的不再清零 PC；立即回填昨收。
+            # 旧逻辑 STATE[s] = {'PC': 0} 会让 re-added 标的 PC 恒为 0，
+            # 而当日 refresh_daily 已跑过不会重跑 → detect_for 在 pc<=0 提前返回空 → 零信号。
+            # （此 bug 正是 10:30 热重载恢复 161129/513310 后全天静默的根因）
+            for s in added:
+                if tf is not None:
+                    try:
+                        refresh_daily(s)
+                    except Exception as _e:
+                        print(f"  [warning] 新增标的 {s} 日K刷新失败(PC 保持 0): {_e}")
+                        STATE[s] = {'PC': 0, 'WARM': None}
+                else:
+                    STATE[s] = {'PC': 0, 'WARM': None}
             if added:
                 print(f"📋 watchlist 新增: {', '.join(f'{TARGETS[s]}({s})' for s in added)}")
             if removed:
@@ -1254,6 +1355,17 @@ def run():
                         f.write(f"\n[{today_str}]\n")
             print(f"[{datetime.now(CST).strftime('%H:%M:%S')}] 📅 日K已刷新 " +
                   ', '.join(f"{TARGETS[s]}={STATE[s]['PC']:.2f}" for s in syms))
+
+        # 2026-07-24 根治：确保当前每个标的 PC>0，否则强制补刷昨收。
+        # 整日刷新守卫(_daily_refreshed_date==today)在「同日重启」时会被跳过，
+        # 且 TARGETS 导入时即预填 → 热重载分支不触发 → PC 恒为 0 → detect_for 静默零信号。
+        # 此处每轮廉价检查（PC>0 即 no-op），覆盖同日重启 / 任何 PC 丢失场景。
+        for sym in TARGETS:
+            if STATE.get(sym, {}).get('PC', 0) <= 0:
+                try:
+                    refresh_daily(sym)
+                except Exception as _e:
+                    print(f"  [warning] 补刷 {sym} 昨收失败(PC=0): {_e}")
 
         # 停牌标的过滤：扫描前剔除 status=suspended 且期限未到的标的
         # （不拉数据→不计 err_count、不累加 miss、不推数据源中断告警）。suspended_until 过期自动复牌。
@@ -1341,6 +1453,33 @@ def run():
                                 )
                             print(f"  🚨 已推送缺数告警 {nm}({sym}) miss={m} (persistent={persistent})")
 
+            # ===== 信号计算异常 + 数据源自修复（2026-07-24 增强：自动检测+通知+自修复）=====
+            # 本轮全部活跃标的 compute 抛错/无数据→系统性故障，必须告警并强制重连。
+            if active and err_count >= len(active) and not _in_grace(now.time()):
+                if not _compute_err_alerted:
+                    _compute_err_alerted = True
+                    msg = (f"🚨 信号计算异常告警：本轮全部 {len(active)} 个活跃标的 compute 均失败"
+                           f"(err_count={err_count})，已无法产出任何信号。疑似算法层/行情解析或数据源故障。"
+                           f"已触发数据源重连自修复。")
+                    _send_alert(msg)
+                    _alert_global("[tpoint] " + msg)
+                    print(f"  🚨 信号计算异常看门狗触发 (err_count={err_count})")
+                if tf is not None:
+                    tf = None  # 自修复：下轮强制重连数据源
+                    print("  🔧 触发 tf 重连自修复(全部标的计算失败)")
+            else:
+                _compute_err_alerted = False
+
+            # 数据源自修复：_tf_unhealthy 持续为真(数据源已死但进程活着)→强制下轮重连，
+            # 纠"活着但数据源静默失活"盲区(此前仅缺数计数告警，未实际修复取数链路)。
+            if st.get('_tf_unhealthy') and tf is not None and not _tf_reconnect_alerted:
+                tf = None
+                _tf_reconnect_alerted = True
+                _send_alert("🔧 数据源健康检查失败(_tf_unhealthy 持续为真)，已强制下轮重连 mootdx 尝试自修复。")
+                print("  🔧 触发 tf 重连自修复(_tf_unhealthy)")
+            elif not st.get('_tf_unhealthy'):
+                _tf_reconnect_alerted = False
+
             # 2) 顺序处理信号：避免共享状态 st 竞争
             override_action = _load_risk_override()  # 模式② 顶层风控闸门（每轮读一次）
             for sym, name in TARGETS.items():
@@ -1349,7 +1488,10 @@ def run():
                         continue
                     try:
                         try:
-                            _bt = pd.to_datetime(data['df']['trade_time']).max().timestamp()
+                            # pandas>=2.0 对 naive Timestamp.timestamp() 按 UTC 解释，而 trade_time 字符串是 CST(UTC+8)，
+                            # 直接 .timestamp() 会 +8h 偏移(导致 metrics.last_bar_ts / data_lag_s / 静默零信号新鲜度错误)。
+                            # 先 tz_localize 为 CST 再取 epoch，与 datetime.now(CST) 口径一致。
+                            _bt = pd.to_datetime(data['df']['trade_time']).max().tz_localize(CST).timestamp()
                             if _bt > max_bar_ts:
                                 max_bar_ts = _bt
                         except Exception:
@@ -1377,6 +1519,34 @@ def run():
             save_state(st)
             write_metrics(time.time() - loop_start, len(batch),
                           err_count + (1 if outer_err else 0), max_bar_ts, len(active))
+
+            # ===== 静默零信号看门狗（2026-07-24 增强：自动检测+通知+自修复）=====
+            # 盘中数据正常(最新bar新鲜、全部标的昨收>0)却连续N轮零信号→告警并强制重连数据源。
+            # 直击"杜绝无信号输出"诉求：即便确无触发条件，也须即时告知而非静默吞没。
+            _all_pc_ok = all(STATE.get(s, {}).get('PC', 0) > 0 for s in active)
+            _fresh = max_bar_ts > 0 and (time.time() - max_bar_ts) <= SILENT_ZERO_FRESH_S
+            if in_session and len(batch) == 0 and err_count == 0 and _all_pc_ok and _fresh:
+                _silent_zero_streak += 1
+            else:
+                _silent_zero_streak = 0
+                _silent_zero_alerted = False
+                _silent_zero_reconnect_done = False
+            if _silent_zero_streak >= SILENT_ZERO_ROUNDS:
+                _need_alert = (not _silent_zero_alerted) or (_silent_zero_streak % (SILENT_ZERO_ROUNDS * 4) == 0)
+                if _need_alert:
+                    _silent_zero_alerted = True
+                    msg = (f"🚨 静默零信号告警：盘中({now.strftime('%H:%M:%S')})数据正常"
+                           f"(最新bar滞后≤{SILENT_ZERO_FRESH_S}s、全部标的昨收>0)，但已连续 "
+                           f"{_silent_zero_streak} 轮({_silent_zero_streak*SCAN_INTERVAL}s)无任何信号产出。"
+                           f"疑似信号检测被静默吞没或算法未触发。已自动重连数据源尝试修复。")
+                    _send_alert(msg)
+                    _alert_global("[tpoint] " + msg)
+                    print(f"  🚨 静默零信号看门狗触发 (streak={_silent_zero_streak})")
+                if not _silent_zero_reconnect_done:
+                    _silent_zero_reconnect_done = True
+                    tf = None  # 自修复：下轮强制重连数据源，刷新取数链路
+                    print("  🔧 静默零信号自修复：触发 tf 重连")
+
             if not batch:
                 print(f"  🔄 [{now.strftime('%H:%M:%S')}] 本轮无信号 ({len(TARGETS)}标的扫描完成)")
         except Exception as e:
