@@ -205,23 +205,47 @@ def _tasklist_python_pids():
 
 
 def _proc_alive(pid):
-    """进程是否存活（跨用户，Windows 用 ctypes 可靠判定）。"""
+    """进程是否存活（跨用户、跨 session）。
+    实现策略：
+      1) ctypes OpenProcess（最快，但 Session 0 进程对非 SYSTEM 用户返回 ERROR_ACCESS_DENIED=5）；
+      2) tasklist /FI 兜底（用 tasklist API 跨 session 也能列进程，受限更少）。
+    返回 bool。"""
     if not pid or pid <= 0:
         return False
     if os.name == 'nt':
+        # 路径 1: ctypes（SYSTEM session 0 内通常可用）
         try:
             import ctypes
             kernel32 = ctypes.windll.kernel32
             PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
             h = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-            if not h:
+            if h:
+                ec = ctypes.c_ulong()
+                kernel32.GetExitCodeProcess(h, ctypes.byref(ec))
+                kernel32.CloseHandle(h)
+                if ec.value == 259:  # STILL_ACTIVE
+                    return True
                 return False
-            ec = ctypes.c_ulong()
-            kernel32.GetExitCodeProcess(h, ctypes.byref(ec))
-            kernel32.CloseHandle(h)
-            return ec.value == 259  # STILL_ACTIVE
+            # OpenProcess 失败：若不是 ACCESS_DENIED（错误 5），说明进程真不在
+            err = ctypes.GetLastError()
+            if err != 5:
+                return False
+            # err == 5 (ACCESS_DENIED)：跨 session 受限，走 tasklist 兜底
+        except Exception:
+            pass
+        # 路径 2: tasklist（跨 session 不受 ctypes 限制）
+        try:
+            out = subprocess.check_output(
+                ['tasklist', '/fi', f'pid eq {pid}', '/fo', 'csv', '/nh'],
+                timeout=8, stderr=subprocess.DEVNULL, text=True, errors='replace')
+            for line in out.strip().splitlines():
+                parts = line.strip().strip('"').split('","')
+                if len(parts) >= 2 and parts[1].strip('"').isdigit() and int(parts[1].strip('"')) == pid:
+                    return True
         except Exception:
             return False
+        return False
+    # 非 Windows
     try:
         os.kill(pid, 0)
         return True
@@ -541,14 +565,38 @@ def check_startup():
     """1. 启动状态检查。"""
     results = []
 
-    # 1.1 VERSION 文件
+    # 1.1 VERSION（优先显示 monitor 进程实际运行的版本，而非当前磁盘 VERSION 文件）
+    # 背景：selfcheck 与 monitor 同工作区，但 monitor 进程加载的是其启动时的磁盘代码；
+    # 若之后切分支/改 VERSION 文件，磁盘 VERSION 会与进程实际代码不一致（如 07-24 误报
+    # 9.3.0 而进程实际跑 9.2.1）。monitor 启动时把 code_version+git_commit 写入 metrics.json，
+    # selfcheck 以 metrics 为准显示进程真实版本。
+    disk_ver = ''
     try:
         with open(VERSION_FILE, encoding='utf-8') as f:
-            ver = f.read().strip()
-        results.append(CheckResult('启动状态', 'VERSION 文件', 'PASS',
-                                   f'版本 {ver}', value=ver))
-    except Exception as e:
-        results.append(CheckResult('启动状态', 'VERSION 文件', 'FAIL', str(e)))
+            disk_ver = f.read().strip()
+    except Exception:
+        pass
+    proc_ver = None
+    proc_commit = None
+    try:
+        with open(METRICS_FILE, encoding='utf-8') as f:
+            m = json.load(f)
+        proc_ver = m.get('code_version')
+        proc_commit = m.get('git_commit')
+    except Exception:
+        pass
+    if proc_ver:
+        detail = f'monitor 进程实际版本 {proc_ver}'
+        if proc_commit:
+            detail += f'（commit {proc_commit}）'
+        if disk_ver and disk_ver != proc_ver:
+            detail += f'；磁盘 VERSION 文件={disk_ver}（不一致，进程运行旧代码，需重启 monitor 同步）'
+        results.append(CheckResult('启动状态', 'VERSION', 'PASS', detail, value=proc_ver))
+    else:
+        # monitor 未上报 code_version（旧进程 / 未重启）：退回磁盘 VERSION，并明确标注
+        detail = f'磁盘 VERSION 文件={disk_ver}' if disk_ver else 'VERSION 文件缺失'
+        detail += '（monitor 进程未上报 code_version，可能与其实际运行版本不一致；重启 monitor 后生效）'
+        results.append(CheckResult('启动状态', 'VERSION', 'WARN', detail, value=disk_ver))
 
     # 1.2 持仓文件
     if os.path.exists(PROMPT_FILE):
@@ -622,9 +670,36 @@ def check_startup():
     return results
 
 
+def _read_metrics_heartbeat():
+    """读 metrics.json 心跳：返回 {'age': int|None, 'alive': bool, 'ts': float}。
+    metrics.json 是 monitor 自身写入的（最权威的"monitor 在跑"信号），
+    即使进程检测受 ctypes 跨 session 限制失败，心跳新鲜即代表 monitor 实际在工作。
+    """
+    try:
+        with open(METRICS_FILE, encoding='utf-8') as f:
+            m = json.load(f)
+        ts = float(m.get('ts') or 0)
+        if ts <= 0:
+            return {'age': None, 'alive': False, 'ts': 0}
+        age = int(time.time() - ts)
+        return {'age': age, 'alive': age <= SERVICE_STALE_S, 'ts': ts}
+    except Exception:
+        return {'age': None, 'alive': False, 'ts': 0}
+
+
 def check_services(trading_day):
-    """2. 服务运行状态检查。"""
+    """2. 服务运行状态检查。
+    设计要点：
+      - ctypes OpenProcess 对 Session 0 进程（selfcheck 同 session 时也偶发）返回
+        ERROR_ACCESS_DENIED=5 → 误判进程已退出。本检查用 metrics.json 心跳（monitor
+        自己写的权威信号）作为 monitor 在跑的最终兜底，不依赖 OpenProcess。
+      - alert_engine 不写 metrics，但 _proc_alive 已有 tasklist 兜底，跨 session
+        受限更少。
+    """
     results = []
+
+    # 读 metrics 心跳（monitor 权威心跳，跨进程检测受限时用作兜底）
+    hb = _read_metrics_heartbeat()
 
     # 2.1 monitor 进程存活（四层校验：PID文件+命令行一致性+扫描+内存阈值）
     m = _find_service_pid('monitor.py', PID_FILE)
@@ -632,12 +707,21 @@ def check_services(trading_day):
         pid = m['pid']
         mem = m['mem_mb']
         mem_str = f'，内存 {mem:.0f}MB' if mem else ''
+        detail = f'PID {pid}{mem_str}'
+        if hb['alive'] and hb['age'] is not None:
+            detail += f'（metrics 心跳 {hb["age"]}s 前，监控正常）'
+        results.append(CheckResult('服务运行', 'monitor 进程', 'PASS', detail, value=pid))
+    elif hb['alive'] and hb['age'] is not None:
+        # 进程检测失败（ctypes 跨 session 受限），但 metrics 心跳新鲜 → monitor 实际在跑
         results.append(CheckResult('服务运行', 'monitor 进程', 'PASS',
-                                   f'PID {pid}{mem_str}', value=pid))
+                                   f'metrics 心跳 {hb["age"]}s 前（≤{SERVICE_STALE_S}s），'
+                                   f'monitor 在跑；进程检测跨 session 受限（ctypes ERROR_ACCESS_DENIED），'
+                                   f'以 metrics 心跳为权威信号',
+                                   value=hb['age'], threshold=SERVICE_STALE_S))
     else:
         # 非交易日 monitor 按设计退出，降级为 WARN
         status = 'WARN' if not trading_day else 'FAIL'
-        msg = 'monitor 进程未检测到（命令行/PID 文件均未命中，或进程已退出）'
+        msg = 'monitor 进程未检测到（命令行/PID 文件均未命中，且 metrics 心跳陈旧/缺失）'
         if not trading_day:
             msg += '（非交易日，monitor 按设计退出）'
         results.append(CheckResult('服务运行', 'monitor 进程', status, msg))
@@ -666,7 +750,8 @@ def check_services(trading_day):
         pass
 
     if pid_in_file is not None:
-        if _proc_alive(pid_in_file):
+        proc_ok = _proc_alive(pid_in_file)
+        if proc_ok:
             # 命令行不可读时同样信任 PID 文件（避免把正常 monitor 误报为 PID 复用）
             cmd = _proc_cmdline(pid_in_file)
             if cmd is None or 'monitor.py' in cmd:
@@ -675,13 +760,23 @@ def check_services(trading_day):
             else:
                 results.append(CheckResult('服务运行', '单实例锁一致性', 'WARN',
                                            f'PID 文件指向 {pid_in_file}，进程存活但命令行不匹配（疑似 PID 复用 / stale），建议删除 PID 文件'))
+        elif hb['alive'] and hb['age'] is not None:
+            # 进程检测失败（ctypes/tasklist 受限），但 metrics 心跳新鲜 → monitor 在跑
+            results.append(CheckResult('服务运行', '单实例锁一致性', 'PASS',
+                                       f'PID 文件指向 {pid_in_file}（进程检测跨 session 受限），'
+                                       f'metrics 心跳 {hb["age"]}s 前确认 monitor 在跑，PID 文件未失效'))
         else:
             results.append(CheckResult('服务运行', '单实例锁一致性', 'WARN',
-                                       f'PID 文件指向 {pid_in_file}，但进程已退出（stale lock，下次启动会自动清理）'))
+                                       f'PID 文件指向 {pid_in_file}，但进程已退出且 metrics 心跳陈旧（stale lock，下次启动会自动清理）'))
     else:
         if trading_day:
-            results.append(CheckResult('服务运行', '单实例锁一致性', 'WARN',
-                                       'PID 文件缺失或无效（monitor 未启动或异常退出）'))
+            if hb['alive'] and hb['age'] is not None:
+                # PID 文件缺失但 metrics 心跳新鲜（异常但 monitor 仍在写）
+                results.append(CheckResult('服务运行', '单实例锁一致性', 'WARN',
+                                           f'PID 文件缺失（monitor 未走标准 _acquire_lock 路径），但 metrics 心跳 {hb["age"]}s 前确认 monitor 在跑'))
+            else:
+                results.append(CheckResult('服务运行', '单实例锁一致性', 'WARN',
+                                           'PID 文件缺失或无效（monitor 未启动或异常退出）'))
         else:
             results.append(CheckResult('服务运行', '单实例锁一致性', 'PASS',
                                        '非交易日无 PID 文件（正常）'))

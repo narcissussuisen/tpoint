@@ -34,6 +34,19 @@ def _load_version():
         return '9.1.4'
 VERSION = _load_version()
 
+def _load_git_commit():
+    """读当前 git HEAD 短 hash（生产环境可能无 git，失败返回 None）。
+    用于写入 metrics.json 的 git_commit 字段，selfcheck 据此显示 monitor 进程实际代码版本。"""
+    try:
+        import subprocess as _sp
+        out = _sp.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=BASE_DIR, timeout=5, stderr=_sp.DEVNULL, text=True)
+        return out.strip() or None
+    except Exception:
+        return None
+GIT_COMMIT = _load_git_commit()
+
 def _env_or(name, default):
     """环境变量优先，否则用默认（脚本相对路径 / 原值）。"""
     v = os.environ.get(name)
@@ -679,6 +692,10 @@ def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
                     # data_lag_s 规则，避免午休"行情延迟/数据源中断"误报。切勿改为保留旧值！
                     'last_bar_ts': last_bar_ts if last_bar_ts else None,
                     'status': 'running',
+                    # code_version / git_commit：monitor 进程实际运行的代码版本（启动即固定）。
+                    # selfcheck 以这两项为准显示"进程真实版本"，避免磁盘 VERSION 与进程不一致时误报。
+                    'code_version': VERSION,
+                    'git_commit': GIT_COMMIT,
                 }, f)
             os.replace(_tmp, METRICS_FILE)  # 原子替换（同目录）
         except Exception:
