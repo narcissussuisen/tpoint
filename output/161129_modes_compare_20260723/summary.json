@@ -1,0 +1,38 @@
+{
+  "symbol": "161129.SZ",
+  "day": "2026-07-23",
+  "counts": {
+    "strict": {
+      "B": 2,
+      "S": 1,
+      "total": 3
+    },
+    "floor": {
+      "B": 2,
+      "S": 2,
+      "total": 4
+    },
+    "resonance": {
+      "B": 3,
+      "S": 3,
+      "total": 6
+    }
+  },
+  "agree_bars": 3,
+  "disagree_bars": 0,
+  "resonance_v9": {
+    "total": 3,
+    "win_rate": 33.3,
+    "avg_win": 0.948,
+    "avg_loss": -0.271,
+    "pl_ratio": 3.5,
+    "total_ret": 0.41,
+    "cum_nav": 1.004,
+    "avg_hold": 13.3,
+    "by_reason": {
+      "S": 1,
+      "TRAIL": 1,
+      "STOP": 1
+    }
+  }
+}

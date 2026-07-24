@@ -1,0 +1,4 @@
+﻿entry_idx,exit_idx,entry_price,exit_price,exit_reason,ret_pct,hold_bars,entry_reason
+153,169,2.11,2.13,S,0.948,16,均线引力(dev=-0.64%) + 量价底背离(量比2.44)
+196,208,2.12,2.12,TRAIL,-0.142,12,均线引力(dev=-0.29%) + MACD绿柱收缩
+211,223,2.12,2.11,STOP,-0.399,12,均线引力(dev=-0.24%) + MACD绿柱收缩

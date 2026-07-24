@@ -1,0 +1,41 @@
+{
+  "symbol": "161129.SZ",
+  "day": "2026-07-23",
+  "mode": "resonance",
+  "min_resonance": 2,
+  "n_signals": 6,
+  "n_B": 3,
+  "n_S": 3,
+  "dir_ok_24_count": 5,
+  "dir_ok_24_rate": 83.3,
+  "factor_combo": {
+    "B": "2    110\n4    101\n5    101\ndtype: str",
+    "S": "0    -1-10\n1    -1-10\n3    -1-10\ndtype: str"
+  },
+  "v9_roundtrip": {
+    "total": 3,
+    "win_rate": 33.3,
+    "avg_win": 0.948,
+    "avg_loss": -0.271,
+    "pl_ratio": 3.5,
+    "total_ret": 0.41,
+    "cum_nav": 1.004,
+    "avg_hold": 13.3,
+    "by_reason": {
+      "S": 1,
+      "TRAIL": 1,
+      "STOP": 1
+    }
+  },
+  "exit_config": {
+    "use_stop": true,
+    "stop_atr_mult": 1.5,
+    "stop_mode": "atr",
+    "use_time": true,
+    "time_stop_bars": 90,
+    "use_trailing": true,
+    "trail_activate_pct": 0.4,
+    "trail_pct": 0.6,
+    "s_signal_exit": true
+  }
+}
