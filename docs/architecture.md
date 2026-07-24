@@ -150,7 +150,7 @@ tpoint 是一套 **A 股分钟级做 T（T+0）策略监控与信号推送系统
 | `data/metrics.json` | 读写 | 写：monitor；读：alert_engine、selfcheck | `{ts, scan_duration_s, signals, errors, symbols, last_bar_ts, status}`；`last_bar_ts` 为最新行情棒 Unix 时间戳（null=非交易时段） |
 | `data/signal.txt` | 追加写 | 写：monitor；读：人工/复盘 | 按 `[日期]` 分段，每条信号含时间戳、B/S/X、价格、涨跌幅、触发位、RSI、温度 |
 | `data/state.json` | 读写 | monitor | 每日 B/S 计数、冷却时间戳、`pos_*`（持仓）、`_daily_refreshed_date`；跨天自动重置 |
-| `data/watchlist.json` | 只读 | monitor、selfcheck | 标的唯一真相源，如 `{"161129.SZ":"原油LOF易方达","688347.SH":"华虹宏力"}` |
+| `data/watchlist.json` | 只读 | monitor、selfcheck | 标的唯一真相源。格式兼容旧 `{"code":"名称"}` 与新 `{"code":{"name":..,"status":"active"|"suspended","suspended_until":"ISO时间"|null}}`；monitor 扫描前过滤 status=suspended 且期限未到的标的（停牌≠数据源中断，不计入 err_count、不报缺数告警） |
 | `data/risk_override.json` | 只读 | monitor | 风控闸门（模式②）：`{regime, action, risk_score, expires_at, source}`；缺失/过期/坏→`NONE`（放行） |
 | `data/.monitor.lock` / `.monitor.pid` | 读写 | monitor | 单实例锁（Windows `msvcrt.locking`）；防止重复运行 |
 | `data/.alert_engine.lock` / `.alert_engine.pid` | 读写 | alert_engine | 看门狗单实例锁；防止告警重发 |
@@ -221,7 +221,7 @@ tpoint 是一套 **A 股分钟级做 T（T+0）策略监控与信号推送系统
 | 配置文件 | 作用方 | 内容 |
 |----------|--------|------|
 | `config/monitor_config.json` | alert_engine | 飞书 `webhook_url`/`secret`、心跳轮询间隔、`service_stale_s`、告警规则列表（阈值/严重等级/cooldown） |
-| `data/watchlist.json` | monitor | 监控标的唯一真相源（**改之→重启 monitor 生效，支持热加载**） |
+| `data/watchlist.json` | monitor | 监控标的唯一真相源（**改之→热加载，下一轮生效**；新增 `status`/`suspended_until` 字段可让 monitor 自动跳过停牌标的，省去每次停牌手动改列表） |
 | `data/risk_override.json` | monitor | 风控闸门（外部风险 Agent 写入，过期失效） |
 | `VERSION` | 全局 | 版本号 |
 | `docs/design.md`、`docs/deploy.md`、`docs/t0_playbook.md` | 人 | 设计/部署/操作手册 |

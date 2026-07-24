@@ -12,7 +12,9 @@ def _load_targets():
     try:
         if _o.path.exists(_p):
             with open(_p, encoding='utf-8') as _f:
-                return _j.load(_f)
+                _wl = _j.load(_f)
+            if isinstance(_wl, dict):
+                return {c: (v if isinstance(v, str) else v.get('name', c)) for c, v in _wl.items()}
     except Exception:
         pass
     _bd = _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), 'backtest_data')

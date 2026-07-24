@@ -30,7 +30,7 @@ def _load_entry_targets():
             with open(_wl_path, encoding='utf-8') as f:
                 wl = json.load(f)
             if wl and isinstance(wl, dict) and len(wl) > 0:
-                return wl
+                return {c: (v if isinstance(v, str) else v.get('name', c)) for c, v in wl.items()}
     except Exception:
         pass
     # 兜底：自动发现 backtest_data/ 下有 1m CSV 的标的
