@@ -1,0 +1,121 @@
+{
+  "history": {
+    "n_days": 20,
+    "roundtrips": 108,
+    "closed": 108,
+    "win_rate": 0.5463,
+    "avg_pnl": -0.0227,
+    "avg_win": 0.7997,
+    "avg_loss": -1.0129,
+    "profit_factor": 0.95,
+    "skill": {
+      "6": 0.015,
+      "12": -0.023,
+      "24": -0.0636,
+      "48": -0.0218,
+      "120": -0.2395
+    }
+  },
+  "sensitivity": [
+    {
+      "config": "base(0.4/0.6,无时限)",
+      "n": 108,
+      "hr": 0.5463,
+      "avg": -0.0227,
+      "aw": 0.7997,
+      "al": -1.0129,
+      "pf": 0.9506
+    },
+    {
+      "config": "A:放宽移动止损(0.4/1.0)",
+      "n": 106,
+      "hr": 0.5283,
+      "avg": 0.0244,
+      "aw": 0.9931,
+      "al": -1.0605,
+      "pf": 1.0488
+    },
+    {
+      "config": "B:尾盘禁开(14:30)",
+      "n": 99,
+      "hr": 0.5657,
+      "avg": -0.0148,
+      "aw": 0.7872,
+      "al": -1.0591,
+      "pf": 0.9679
+    },
+    {
+      "config": "C:A+B组合",
+      "n": 97,
+      "hr": 0.5464,
+      "avg": 0.0314,
+      "aw": 0.9908,
+      "al": -1.1242,
+      "pf": 1.0616
+    },
+    {
+      "config": "D:仅强信号+放宽止损+尾盘禁",
+      "n": 72,
+      "hr": 0.5,
+      "avg": -0.0968,
+      "aw": 1.0225,
+      "al": -1.2161,
+      "pf": 0.8408
+    }
+  ],
+  "day0724": {
+    "signals": 7,
+    "roundtrips": 4,
+    "closed": 4,
+    "win_rate": 0.25,
+    "trips": [
+      {
+        "sym": "161129.SZ",
+        "side": "long",
+        "entry_time": "13:12:05",
+        "entry_price": 2.212,
+        "exit_time": "13:24:14",
+        "exit_price": 2.236,
+        "exit_reason": "live_X",
+        "pnl_pct": 1.0849909584086825
+      },
+      {
+        "sym": "161129.SZ",
+        "side": "long",
+        "entry_time": "14:21:03",
+        "entry_price": 2.208,
+        "exit_time": "14:35:04",
+        "exit_price": 2.198,
+        "exit_reason": "live_X",
+        "pnl_pct": -0.45289855072464524
+      },
+      {
+        "sym": "161129.SZ",
+        "side": "long",
+        "entry_time": "14:43:07",
+        "entry_price": 2.192,
+        "exit_time": "EOD",
+        "exit_price": 2.157,
+        "exit_reason": "EOD",
+        "pnl_pct": -1.5967153284671576
+      },
+      {
+        "sym": "513310.SH",
+        "side": "long",
+        "entry_time": "14:55:07",
+        "entry_price": 5.092,
+        "exit_time": "EOD",
+        "exit_price": 5.07,
+        "exit_reason": "EOD",
+        "pnl_pct": -0.43205027494107595
+      }
+    ],
+    "skill": {
+      "6": 1.7014,
+      "12": 2.1602,
+      "24": 0,
+      "48": 0,
+      "120": 0
+    }
+  }
+}
