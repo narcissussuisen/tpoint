@@ -1191,7 +1191,7 @@ def _warmup_tf():
 
 
 def run():
-    global tf, TARGETS, STATE
+    global tf, TARGETS, STATE, _silent_zero_streak, _silent_zero_alerted, _silent_zero_reconnect_done, _compute_err_alerted, _tf_reconnect_alerted
     lock_file = LOCK_FILE
     pid_file = PID_FILE
     # 获取锁；若被占用，先检查 stale 再尝试接管，避免无限循环
