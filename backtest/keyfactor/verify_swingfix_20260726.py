@@ -159,7 +159,7 @@ def write_html(synth_ok, synth_lines, real):
                     _esc(fn), s['old_low'], s['new_low'], s['rec_low'],
                     s['old_high'], s['new_high'], s['rec_high'], s['bars']))
 
-    synth_block = '<br>'.join(_esc(l) for l in synth_lines)
+    synth_block = '\n'.join(_esc(l) for l in synth_lines)
 
     ex_low = [e for e in (real['examples'] if real else []) if e[0] == 'LOW']
     ex_high = [e for e in (real['examples'] if real else []) if e[0] == 'HIGH']
