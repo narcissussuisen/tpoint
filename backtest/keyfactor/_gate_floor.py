@@ -28,19 +28,29 @@ DEFAULT_FLOOR_SUPPRESS_BUY_DAY_CHG = -1.0
 
 
 def _is_new_low(c, lo, i, w=_DEFAULT_LOCAL_W):
-    """c[i] 是否创窗口内新低（严格 < 前窗口最低价）。floor 档价格地板 B 用。"""
-    if i < 2:
+    """lo[i] 是否创窗口内新低（严格 < 前窗口最低价）。floor 档价格地板 B 用。
+
+    2026-07-26 修正(与生产 core/miji_alpha._is_new_low 同步):
+    旧实现用 c[i](收盘) 比前窗 lo.min() -> 结构性漏底。改为用 BAR 自身 lo[i] 比前窗
+    lo.min(), 即真正的 swing-low 判定。回测引擎须与生产一致。
+    """
+    if i < 1:
         return False
     win = lo[max(0, i - w):i]
-    return len(win) > 0 and float(c[i]) < float(win.min())
+    return len(win) > 0 and float(lo[i]) < float(win.min())
 
 
 def _is_new_high(c, h, i, w=_DEFAULT_LOCAL_W):
-    """c[i] 是否创窗口内新高（严格 > 前窗口最高价）。floor 档价格天花板 S 用。"""
-    if i < 2:
+    """h[i] 是否创窗口内新高（严格 > 前窗口最高价）。floor 档价格天花板 S 用。
+
+    2026-07-26 修正(与生产 core/miji_alpha._is_new_high 同步):
+    旧实现用 c[i](收盘) 比前窗 h.max() -> 结构性漏顶。改为用 BAR 自身 h[i] 比前窗
+    h.max(), 即真正的 swing-high 判定。回测引擎须与生产一致。
+    """
+    if i < 1:
         return False
     win = h[max(0, i - w):i]
-    return len(win) > 0 and float(c[i]) > float(win.max())
+    return len(win) > 0 and float(h[i]) > float(win.max())
 
 
 # ===================================================================

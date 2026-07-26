@@ -58,19 +58,29 @@ MAX_S_DAILY = 12
 
 
 def _is_new_low(c, lo, i, w=LOCAL_W):
-    """c[i] 是否创窗口内新低(严格 < 前窗口最低价)。floor 档价格地板B用。"""
-    if i < 2:
+    """lo[i] 是否创窗口内新低(严格 < 前窗口最低价)。floor 档价格地板B用。
+
+    2026-07-26 修正(移植自 D 分支 d_strategy.is_swing_low):
+    旧实现用 c[i](收盘) 比前窗 lo.min(), 顶部/底部反转 bar 收盘回落即漏判真实极值
+    -> 结构性漏底。改为用 BAR 自身 lo[i] 比前窗 lo.min(), 即真正的 swing-low 判定。
+    """
+    if i < 1:
         return False
     win = lo[max(0, i - w):i]
-    return len(win) > 0 and float(c[i]) < float(win.min())
+    return len(win) > 0 and float(lo[i]) < float(win.min())
 
 
 def _is_new_high(c, h, i, w=LOCAL_W):
-    """c[i] 是否创窗口内新高(严格 > 前窗口最高价)。floor 档价格天花板S用。"""
-    if i < 2:
+    """h[i] 是否创窗口内新高(严格 > 前窗口最高价)。floor 档价格天花板S用。
+
+    2026-07-26 修正(移植自 D 分支 d_strategy.is_swing_high):
+    旧实现用 c[i](收盘) 比前窗 h.max(), 顶部反转 bar 收盘回落即漏判真实极值
+    -> 结构性漏顶。改为用 BAR 自身 h[i] 比前窗 h.max(), 即真正的 swing-high 判定。
+    """
+    if i < 1:
         return False
     win = h[max(0, i - w):i]
-    return len(win) > 0 and float(c[i]) > float(win.max())
+    return len(win) > 0 and float(h[i]) > float(win.max())
 
 
 # ========== 技巧一: 分时均线"引力定律" ==========
