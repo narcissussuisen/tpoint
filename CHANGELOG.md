@@ -3,6 +3,45 @@
 > 版本号规则：MAJOR.MINOR.PATCH；PATCH=同一算法框架内的修复/硬化（每个修复 +1）。
 > 说明仅标注各版本**核心算法与信号语义**的差异，便于回溯。
 
+## v9.3.0 — MTF 多时间框架共振研究 (V15) + 盲 holdout 结论（研究态，未发布）
+> 研究线：在 v9.2.x floor 门控 + miji_alpha 因果摆点之上，验证「高周期(15m)同向摆点共振门控」能否把分钟级信号从 HFT 噪声中分离出可交易 edge。
+> 状态：**研究完成，结论为「降噪有效、无泛化 edge」，不进入生产。**
+
+### 背景与动机
+- 方向一（多时间框架共振）是 miji 分钟级信号框架的延续优化；战场 = 5-∞ 分钟 T+0 区间 + T+1 隔夜 swing。
+- 已知痛点：5-30 分 HFT 噪声桶（PF 0.37）拖垮池化 PF 至 0.88；|imb| regime 滤镜方向反了（moved 组 PF 反而更高）。
+
+### 方法（floord 因果摆点 + MTF 门控）
+- 信号：沿用 floord 因果 K-bar 摆点（W=K=5, GAP=3）+ miji_alpha，1m 信号确认 bar 下一 bar 收盘执行（严格因果、无前视）。
+- MTF 共振门控：当日 1m 聚合成 5m/15m 连续 K 线（跨午休不串根），同阈值/同 basis 跑 pivot_signals；高周期摆点可见 1m 索引 = (idx+1)*tf，与 1m 自身 exec=idx+1 平行 → 无前视。
+- 共振判据：1m 买信号执行前，要求存在同向高周期摆点，可见索引 j≤i 且 i−j≤lookback（V15: 15m/240；V5: 5m/120）。
+- 变体：V1(无门控) / V15(15m) / V5(5m) / Vboth(OR)。
+- 复用：真实成本（个股买0.05%/卖0.10%含印花税，ETF 0.09%来回）、最小持有5min、止损1.5%、最长3日、T+1/T+0 区分、IS/OOS 拆分（61 天窗口前半/后半）。
+
+### 关键结果
+- **in-sample（8 只手工标的 = 茅台/平安/宁德/招行/华虹/璞泰来/中韩ETF/原油LOF，P0-A+B 配置）**：
+  - 池化 PF：V1 0.88 → **V15 1.08**；净额 −84% → +17.4%。
+  - 增益集中在华虹(688347, V15 PF 1.95) + 中韩ETF(513310, V15 PF 1.15) 两只；其余 6 只 V15 仍 <1。
+  - 5m 共振(V5)反而更差(0.79)，Vboth(OR)被稀释回 0.87 → 共振须站足够高周期，5m 仍是噪声。
+- **盲 holdout（同窗口、V15 原参数不重调）**：
+  - 159985 豆粕ETF（缓存未调参，同窗口）：P0-A+B/V15 PF=0.89（净额 −0.9%）→ 未复现 edge。
+  - **40 只新鲜 T+0 ETF/LOF**（37 只 mootdx 现拉 + 缓存 513040/518880/159985，longonly）：**池化 PF=0.605（整池亏损）**；PF>1 仅 6/40（15%）；其中 162411/164824 笔数仅 13-17（小样本假阳性）。
+  - 真正边际 PF>1 的（513100纳指1.61 / 513500标普1.34 / 513520日经1.12 / 159980有色1.14）在成本+噪声下不显著。
+
+### 方法论收获（最重要）
+- 「in-sample 内部 OOS 切分」只能防参数过拟合，**防不住宇宙过拟合**（从 8 只里挑 2 幸存者 = 极端事后选择）。
+- 升级为「**新宇宙盲 holdout**」：参数与标的在调参时均不可见，同一 61 天窗口、V15 原参数不重调 → 才戳穿选择偏差。
+- 任何「某策略在某标的上 PF>1」的声称，今后必须过盲 holdout 这一关。
+
+### 结论
+- V15 作为**降噪器有效**（砍掉 HFT 噪声桶、保住 swing 段），但**未制造可泛化 alpha**；盲池池化 PF 0.605 钉死这点。
+- 撤回此前「上线 688347+513310」建议（事后选择偏差）。miji V15 门控目前不足以构成可上线模块。
+- 下一步：① 对 4075 只个股的 T+1 隔夜 regime 跑同样盲 holdout（验证 floord 原本战场）；② 见「V15 优化方向」讨论。
+
+### 产物
+- 脚本：`backtest/keyfactor/miji_floord_mtf.py`（MTF共振）、`miji_floord_holdout.py`（单标的holdout）、`miji_floord_holdout_batch.py`（批量盲holdout）、`fetch_holdout_1m.py`（拉37只新鲜T0）、`probe_holdout_pool.py`（候选池探测）。
+- 报告：`output/miji_floord_mtf/report.html`、`output/miji_floord_holdout/holdout_metrics.json`、`output/miji_floord_holdout_batch/batch_report.html` + `batch_metrics.json`。
+
 ## v9.2.1 — 收敛第一性 + 风险节点修复（固化 tag v9.2.1-converged）
 - **回归第一性（07-22 收敛）**：
   - 盘后假告警副作用治理：删除残留 `data/risk_override_secondary.json` 的 HALT_BUY（避免次日禁买）；回退 Fix4b 兜底 + secondary 合并逻辑。
