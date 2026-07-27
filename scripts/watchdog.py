@@ -10,13 +10,17 @@ v3 加固（2026-07-27，解决 09:15–09:18 重复拉起风暴）：
   3. 不再调用 clear_locks()：monitor / alert_engine 各自 acquire_single_instance 已处理 stale lock，
      watchdog 盲目删 .alert_engine.pid 会破坏活实例的 PID 账目。
 """
-import subprocess, os, sys, time, atexit
+import subprocess, os, sys, time, atexit, threading
 
 BASE = r'C:\Users\YZP\WorkBuddy\Claw\tpoint'
 # 用 WorkBuddy 托管的 python（3.13.12，91KB 启动器）而非 venv 的 241KB python.exe——
 # 实测 venv 的 python.exe 在 Windows 上启动即自复制出一模一样的子进程（parent→child 同 cmdline），
 # 导致 monitor/engine/watchdog 每个都变成双进程，引发重复告警。托管 python 不会自复制。
-PY   = r'C:\Users\YZP\.workbuddy\binaries\python\versions\3.13.12\python.exe'
+# watchdog 自身与 monitor/engine 均用 pythonw（无窗口子系统），彻底无 cmd 弹窗。
+# 子进程 stdout/stderr 用【PIPE + 父进程 tee 线程】写日志文件——不依赖句柄继承，
+# 规避 pythonw 父进程文件句柄不可继承导致的 OSError 22 静默崩溃（旧方案已验证会偶发）。
+PY     = r'C:\Users\YZP\.workbuddy\binaries\python\versions\3.13.12\pythonw.exe'   # watchdog 自身（无窗口）
+PY_CON = r'C:\Users\YZP\.workbuddy\binaries\python\versions\3.13.12\pythonw.exe'   # monitor/engine（无窗口子系统）
 DATA = os.path.join(BASE, 'data')
 LOGS = os.path.join(BASE, 'logs')
 WATCHDOG_LOG  = os.path.join(LOGS, 'watchdog.log')
@@ -70,10 +74,10 @@ def _wmi_has(script_basename):
     """通过 WMI Get-CimInstance 取真实命令行，校验是否有进程以 script_basename 启动。"""
     try:
         ps = (
-            "$procs = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\""
+            "$projs = Get-CimInstance Win32_Process -Filter \"Name='python.exe' OR Name='pythonw.exe'\""
             " | Where-Object { $_.CommandLine -and $_.CommandLine -like '*tpoint*' }"
             " | Select-Object -ExpandProperty CommandLine;"
-            "if ($procs -match '" + script_basename + "') { exit 0 } else { exit 1 }"
+            "if ($projs -match '" + script_basename + "') { exit 0 } else { exit 1 }"
         )
         r = subprocess.run(
             ['powershell', '-NoProfile', '-Command', ps],
@@ -86,19 +90,36 @@ def _wmi_has(script_basename):
 
 class Supervisor:
     def __init__(self):
-        self.spawned = {}      # label -> pid
-        self.spawn_ts = {}     # label -> time.time()
+        self.procs = {}       # label -> Popen 对象（用 p.poll() 做可靠存活判断）
+        self.spawn_ts = {}    # label -> time.time()
+        self._log_lock = threading.Lock()  # 多 tee 线程写同一日志文件时串行化
 
     def is_running(self, label, basename):
-        # 1) 本地刚 spawn 的 PID，优先用 os.kill 验证（WMI 在进程刚起时可能尚未可见）
-        pid = self.spawned.get(label)
-        if pid and _alive(pid):
+        # 1) 本地子进程：直接用 Popen 对象判断（基于真实进程句柄，100% 可靠，
+        #    不依赖 os.kill(pid,0)——后者在跨令牌/沙箱下会误报死亡，引发重复拉起风暴）
+        p = self.procs.get(label)
+        if p is not None and p.poll() is None:
             return True
         # grace 期内不再走 WMI，避免刚 spawn 的进程尚未被 WMI 枚举到而误判
         if label in self.spawn_ts and (time.time() - self.spawn_ts[label]) < SPAWN_GRACE:
             return True
         # 2) WMI 兜底（覆盖外部/manual 拉起的进程）
         return _wmi_has(basename)
+
+    def _tee(self, stream, log_path):
+        """后台线程：把子进程管道输出逐行追加写入日志文件。"""
+        try:
+            with open(log_path, 'a', encoding='utf-8', errors='ignore') as lf:
+                for raw in iter(stream.readline, b''):
+                    try:
+                        line = raw.decode('utf-8', 'ignore')
+                        with self._log_lock:
+                            lf.write(line)
+                            lf.flush()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     def spawn(self, label, script_path, log_path):
         env = os.environ.copy()
@@ -108,15 +129,17 @@ class Supervisor:
         env['MACD_GATE_MODE']      = 'floor'
         env['TP_LAUNCHED_BY_V9LAUNCH'] = '1'
         env['TP_LOCK_BYPASS']       = '1'  # 跳过 alert_engine 的 msvcrt 文件锁（engine 自身 PID 单实例保证不重复）
-        log_fh = open(log_path, 'a', encoding='utf-8', errors='ignore')
+        # stdout/stderr 用 PIPE：子进程输出经父进程 tee 线程写日志文件，
+        # 完全不依赖句柄继承 → 规避 pythonw 父进程文件句柄不可继承导致的 OSError 22 静默崩溃。
         p = subprocess.Popen(
-            [PY, script_path], creationflags=0x8|0x200,
+            [PY_CON, script_path], creationflags=0x8|0x200|0x08000000,  # DETACHED|NEW_PROCESS_GROUP|CREATE_NO_WINDOW(无窗口)
             cwd=BASE, env=env, stdin=subprocess.DEVNULL,
-            stdout=log_fh, stderr=log_fh, close_fds=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=False,
         )
-        log_fh.close()
+        threading.Thread(target=self._tee, args=(p.stdout, log_path), daemon=True).start()
+        threading.Thread(target=self._tee, args=(p.stderr, log_path), daemon=True).start()
         log(f'spawned {label} PID={p.pid}')
-        self.spawned[label] = p.pid
+        self.procs[label] = p
         self.spawn_ts[label] = time.time()
         return p.pid
 
