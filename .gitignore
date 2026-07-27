@@ -55,4 +55,6 @@ data/.monitor.lock
 data/.monitor.pid
 data/.alert_engine.lock
 data/.alert_engine.pid
+data/.watchdog.lock
+data/.watchdog.pid
 .monitor.log

@@ -5,7 +5,8 @@ cd /d "C:\Users\YZP\WorkBuddy\Claw\tpoint"
 
 set PYTHONPATH=C:\Users\YZP\WorkBuddy\Claw\tpoint\venv\Lib\site-packages;C:\Users\YZP\WorkBuddy\Claw\tpoint\venv\Lib;C:\Users\YZP\WorkBuddy\Claw\tpoint
 set MACD_GATE_MODE=floor
-set PY_EXE=C:\Users\YZP\WorkBuddy\Claw\tpoint\venv\Scripts\python.exe
+set TP_LAUNCHED_BY_V9LAUNCH=1
+set PY_EXE=C:\Users\YZP\.workbuddy\binaries\python\versions\3.13.12\python.exe
 
 if not exist logs mkdir logs
 

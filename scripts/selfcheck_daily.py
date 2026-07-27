@@ -564,10 +564,10 @@ def check_monitoring(trading_day):
     dur = metrics.get('scan_duration_s')
     session = in_trading_session()
     if dur is not None and session:
-        if dur <= 0 or dur <= 0.5:
+        if dur <= 0 or dur < 0.1:
             results.append(CheckResult('监控状态', '扫描耗时合理性', 'FAIL',
-                f'{dur}s（≤0.5s 或=0，疑似空转/未真正扫描/tf=None），正常应为 1-3s',
-                value=dur, threshold=0.5))
+                f'{dur}s（<0.1s 或=0，疑似空转/未真正扫描/tf=None），正常实扫 3 标的约 0.4-0.6s',
+                value=dur, threshold=0.1))
         elif dur <= 3:
             results.append(CheckResult('监控状态', '扫描耗时合理性', 'PASS',
                 f'{dur}s（正常 1-3s）', value=dur, threshold=3))
@@ -773,13 +773,13 @@ def check_scheduled_tasks():
                                        f'状态={state}，账户={principal}，最后运行={t.get("lastrun","N/A")}，'
                                        f'结果={t.get("lastresult","N/A")}，命令={cmd[:60]}'))
         else:
-            # 服务可能经由 Startup V9Launch.bat 自启（非计划任务），以进程存活为准，避免误报 FAIL
+            # 服务经 watchdog 守护进程（scripts/watchdog.py）保活，非计划任务，以进程存活为准，避免误报 FAIL
             if running.get(name):
                 results.append(CheckResult('计划任务', name, 'PASS',
-                                           '未注册为计划任务，但进程存活（经 Startup V9Launch.bat 自启，属正常设计）'))
+                                           '未注册为计划任务，但进程存活（由 watchdog 守护 scripts/watchdog.py 保活，属正常设计）'))
             else:
                 results.append(CheckResult('计划任务', name, 'FAIL',
-                                           '任务未注册且进程未检测到（检查 V9Launch.bat 是否启动；或运行 scripts/install_tasks.bat）'))
+                                           '任务未注册且进程未检测到（检查 watchdog 是否在跑；或运行 scripts/launch_watchdog.py）'))
 
     # 自检任务本身
     if 'tpoint_selfcheck' in found:
@@ -875,8 +875,8 @@ def _suggestion(r):
         '资源使用/内存使用率': '内存紧张。检查 monitor 进程内存是否持续增长（内存泄漏）；重启 monitor。',
         '资源使用/磁盘 C: 使用率': '磁盘空间不足。清理 logs/ 下的旧日志和 backtest/ 下的旧 CSV。',
         '资源使用/monitor 进程内存': 'monitor 内存偏高（>300MB）。可能是 pandas DataFrame 累积；考虑定时重启。',
-        '计划任务/tpoint_monitor': 'monitor 经 Startup V9Launch.bat 自启（非计划任务，属正常设计）。若进程也未存活，检查 V9Launch.bat 是否随登录启动。',
-        '计划任务/tpoint_alert_engine': 'alert_engine 经 Startup V9Launch.bat 自启（非计划任务，属正常设计）。若进程也未存活，检查 V9Launch.bat 是否随登录启动。',
+        '计划任务/tpoint_monitor': 'monitor 由 watchdog 守护进程（scripts/watchdog.py）保活，非计划任务，属正常设计。若进程也未存活，检查 watchdog 是否在跑（scripts/launch_watchdog.py）。',
+        '计划任务/tpoint_alert_engine': 'alert_engine 由 watchdog 守护进程（scripts/watchdog.py）保活，非计划任务，属正常设计。若进程也未存活，检查 watchdog 是否在跑（scripts/launch_watchdog.py）。',
     }
     return suggestions.get(key, '查看对应日志排查；如持续异常请人工介入。')
 

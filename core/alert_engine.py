@@ -109,7 +109,33 @@ def acquire_single_instance(lock_file, pid_file, max_attempts=20):
       - 失败但无存活持有者（pid 缺失/已死）→ 抖动后退避重试，乐观接管。
       - 全部尝试后仍失败、且确有存活实例 → 安静退出；否则才告警退出。
     返回锁文件句柄(常驻)；若确有其它活实例则直接 exit(0)。
+
+    2026-07-27 增：TP_LOCK_BYPASS=1 时跳过文件锁直接接管（依赖 watchdog 单一 spawn 保证不重复）。
+      解决 msvcrt+Windows 文件锁在 fork/exec 边界间歇泄漏导致 20次重试全失败的死循环。
     """
+    if os.environ.get('TP_LOCK_BYPASS') == '1':
+        # 跳过 msvcrt 文件锁（解决 Windows 文件锁间歇泄漏死循环），但仍须 PID 单实例保证：
+        # 防止多个 watchdog / 手动拉起各自 spawn 出重复 engine → 飞书告警重发。
+        _holder = _ae_read_holder_pid(pid_file)
+        if _holder is not None and _holder != os.getpid() and _ae_is_process_alive(_holder):
+            print(f"[{time.strftime('%H:%M:%S')}] 告警引擎 LOCK_BYPASS 检测到已有活实例 pid={_holder}，本实例退出(不重复运行)")
+            sys.exit(0)
+        try:
+            with open(pid_file, 'w') as pf:
+                pf.write(str(os.getpid()))
+            print(f"[{time.strftime('%H:%M:%S')}] 告警引擎 LOCK_BYPASS 接管 (pid={os.getpid()})，依赖 PID 单实例+watchdog 保证")
+        except Exception as e:
+            print(f"[{time.strftime('%H:%M:%S')}] 告警引擎 LOCK_BYPASS 写 pid 失败: {e}")
+        # 返回一个永不能 unlock 的 dummy 让 cleanup 不崩
+        class _DummyLf:
+            def close(self): pass
+            def write(self, *_a, **_kw): pass
+            def flush(self): pass
+            def fileno(self): return -1
+        atexit.register(lambda: (
+            _ae_remove_if_exists(pid_file),
+        ))
+        return _DummyLf()
     attempt = 0
     lf = None
     while attempt < max_attempts:
