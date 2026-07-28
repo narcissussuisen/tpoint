@@ -38,6 +38,29 @@
 - 撤回此前「上线 688347+513310」建议（事后选择偏差）。miji V15 门控目前不足以构成可上线模块。
 - 下一步：① 对 4075 只个股的 T+1 隔夜 regime 跑同样盲 holdout（验证 floord 原本战场）；② 见「V15 优化方向」讨论。
 
+## v9.3.0-vwap — VWAP 均值回归移植 + 盲 holdout（研究态，未发布）
+> 研究线：把聚宽 ATR/VWAP 分时做T 文档的「VWAP 均值回归做T」移植进 miji 盲 holdout 框架，验证「日内均值回归」是否比 floord 摆点有更优的泛化 edge。
+> 状态：**盲 holdout 结论与 miji floord 一致 —— 无泛化 edge。**
+> 分支：`exp/v9.3.0-vwap-mr`（基于 release/v9.2.2 @ 66b4b4d）。脚本：`backtest/keyfactor/miji_vwap_mr.py`。
+
+### 方法（复用 miji harness）
+- 信号：当日累计量价 VWAP = cumsum(close*vol)/cumsum(vol)（因果）；偏离 VWAP ≥0.8% 反向做T，止损0.5%/止盈0.6%（入场价计），回归 VWAP 平仓，冷却10根（docx 原参数，**不重调**）。
+- 战场/成本复用：T+0 ETF/LOF（longonly）多空日内往返、尾盘强平，成本买0.05%/卖0.05%；T+1 个股（bidirectional）仅做多（买背离），当日不可卖 → 次日起 revert/stop/最长3日平仓，成本买0.05%/卖0.10%含印花税。
+- 盲 holdout 框架复用：窗口严格 = miji in-sample 同一 61 天（2026-04-17..2026-07-16，读 metrics.json['common']）；T+0 盲池=40 只（缓存+现拉 ETF/LOF，排除 in-sample 513310/161129）；T+1 盲池=从4075 缓存个股先验等距抽样 124 只（排除 in-sample 个股，覆盖≥55/61天）。容错加载：缓存存在交易所后缀错配（如 513310.SZ 存为 513310.SH_1m.csv）按数字前缀 glob 解析。
+
+### 关键结果（与 miji MTF 盲 holdout 对比）
+- **T+0 盲池（40 只）**：PF>1 = **7/40（17.5%）**；**池化 PF = 0.590**（整池亏损）。
+  - 对比 miji MTF：6/40（15%）、池化 0.605 → VWAP 命中率略高但池化 PF 几乎相同，**二者统计不可区分，皆 <1**。
+  - 7 个「赢家」中 160140/164824 笔数仅 2（小样本假阳性），其余 n=9-37、PF 1.0-2.7，在成本+噪声下不显著。
+- **T+1 盲池（124 抽样，有效 111）**：PF>1 = **1/111（0.9%）**；**池化 PF = 0.513**（整池亏损）。唯一 601005.SH（n=39, PF=1.32）近乎噪声。
+- **in-sample 参考（7 只有数据，601318 无缓存）**：PF>1 = **0/7**（161129 0.58 / 300750 0.79 / 513310 0.54 / 600036 0.23 / 600519 0.11 / 603659 0.31 / 688347 0.95）→ VWAP 连 miji「幸存者」都未讨好。
+
+### 结论
+- **VWAP 均值回归（docx 头牌策略）在盲 holdout 上同样证伪**：与 floord 摆点高度同构（T+0 命中率 15%↔17.5%、池化 PF 0.605↔0.590），说明问题在「T+0 ETF/LOF 日内均值回归」这类信号本身在该 61 天窗口/regime 下无 edge，而非某个具体信号实现。
+- 文档自报 65% 胜率 = 510300 单标的 in-sample 产物，正是我们已逃离的幸存者陷阱；本盲 holdout 框架即为其反向验证。
+- **miji 作为「可交易策略」彻底证伪**（floord 摆点 + VWAP 均值回归两类基础信号均过不了盲 holdout）。应回归其生产定位：**盘中监控信号**（floor 门控 + miji_alpha 的异动提示），而非回测交易策略。
+- T+1 隔夜「买背离持有」 adaptation 也失败，但属对 docx 日内策略的隔夜改造，非 docx 本意，结论权重低于 T+0 对比。
+
 ### 产物
 - 脚本：`backtest/keyfactor/miji_floord_mtf.py`（MTF共振）、`miji_floord_holdout.py`（单标的holdout）、`miji_floord_holdout_batch.py`（批量盲holdout）、`fetch_holdout_1m.py`（拉37只新鲜T0）、`probe_holdout_pool.py`（候选池探测）。
 - 报告：`output/miji_floord_mtf/report.html`、`output/miji_floord_holdout/holdout_metrics.json`、`output/miji_floord_holdout_batch/batch_report.html` + `batch_metrics.json`。
