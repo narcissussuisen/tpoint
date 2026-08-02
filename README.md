@@ -12,7 +12,7 @@ Current: see [VERSION](VERSION) / [CHANGELOG](CHANGELOG.md)
 
 - **v9.0.0** — initial "miji" release: VWAP-based signal detection + trailing stop-loss
 - **v9.1.0** — first-principles factor v2 iteration: 75% signal hit rate (was 0%)
-- 后续版本见 CHANGELOG / git tags（`v9.2.2` 为当前生产构建）
+- 后续版本见 CHANGELOG / git tags（`v9.3.0` 为当前生产构建，父版本 v9.2.2；研究线统一 `research/*` 分支，不占生产版本号）
 
 ## Structure
 

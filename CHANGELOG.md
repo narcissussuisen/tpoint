@@ -3,7 +3,24 @@
 > 版本号规则：MAJOR.MINOR.PATCH；PATCH=同一算法框架内的修复/硬化（每个修复 +1）。
 > 说明仅标注各版本**核心算法与信号语义**的差异，便于回溯。
 
-## v9.3.0 — MTF 多时间框架共振研究 (V15) + 盲 holdout 结论（研究态，未发布）
+## v9.3.0 — 生产优化版（08-02 部署线，P0-P3 落地）
+> 父版本：v9.2.2（floor 漏顶漏底修复基线）。2026-08-02 上线，watchdog v3.1 周一 08-03 09:25 自动拉起生效。
+> 状态：**生产发布版**（tag v9.3.0，分支 release/v9.3.0）。
+
+### 本版本落地项（相对 v9.2.2 的信号语义变化）
+- **P0 — MACD 背离强度门槛 mhd=0.15**：`core/miji_alpha.py` 新增 `MHD_THRESHOLD = env TP_MHD_THRESHOLD（默认 0.15）`；`check_miji_trigger/check_b_trigger/check_s_trigger` 透传 `min_hist_diff`（生产此前恒 0.0，本次真正接入）。弱背离（hist 差值 < 0.15）= 噪音不再触发。
+- **P1 — ATR 波动率门控（per-symbol）**：`atr_min_pct`（默认 None=关，env TP_ATR_MIN_PCT），watchlist 5 只全部启用 0.25；滤低波动标的的烂信号。
+- **P3-1 — 多周期 MACD 方向过滤 mpr_b60（per-symbol）**：B 侧 60m 同向过滤，仅空仓 B 入场透传；S 侧不动。`data/monitor_config.json` 热重载。
+- **早盘规则**：`TP_MORNING_B_MHD` 默认关（实证 mhd 门槛放宽会放回噪音）。
+- **出场/成本**：`core/exit_manager.py` 用户费率成本模型（佣金万一、印花税卖出万5.641 仅股票、滑点 2bps）；`core/datasource.py` 腾讯域名池 failover + 新浪 1m 第三级兜底。
+- **S 信号专项（阶段D）**：`gate_sell` 加 vwap_dev_ceil/atr_min_pct_s 参数，**回测结论不落地**（S_vwap_dev 最优箱是入场过滤语义，与 s_signal_exit 出场架构错配，负优化已放弃）。
+
+### 验证
+- 40 只调参池固定全集口径 + watchlist 5 只独立验证；ATR×mpr 叠加中位胜率 47.8→56.2%（+8.4pp）；B 信号保留 47%。
+- 自检 9/9 通过；生产配置触发链路（600570 07-16 → B=6 S=2）；watchlist==monitor_config。
+- 部署验收报告：`output/deploy_acceptance_20260802.html`。
+
+## research/v9.3.0-mtf — MTF 多时间框架共振研究 (V15) + 盲 holdout 结论（研究态，未发布）
 > 研究线：在 v9.2.x floor 门控 + miji_alpha 因果摆点之上，验证「高周期(15m)同向摆点共振门控」能否把分钟级信号从 HFT 噪声中分离出可交易 edge。
 > 状态：**研究完成，结论为「降噪有效、无泛化 edge」，不进入生产。**
 
@@ -38,7 +55,7 @@
 - 撤回此前「上线 688347+513310」建议（事后选择偏差）。miji V15 门控目前不足以构成可上线模块。
 - 下一步：① 对 4075 只个股的 T+1 隔夜 regime 跑同样盲 holdout（验证 floord 原本战场）；② 见「V15 优化方向」讨论。
 
-## v9.3.0-vwap — VWAP 均值回归移植 + 盲 holdout（研究态，未发布）
+## research/v9.3.0-vwap-mr — VWAP 均值回归移植 + 盲 holdout（研究态，未发布）
 > 研究线：把聚宽 ATR/VWAP 分时做T 文档的「VWAP 均值回归做T」移植进 miji 盲 holdout 框架，验证「日内均值回归」是否比 floord 摆点有更优的泛化 edge。
 > 状态：**盲 holdout 结论与 miji floord 一致 —— 无泛化 edge。**
 > 分支：`exp/v9.3.0-vwap-mr`（基于 release/v9.2.2 @ 66b4b4d）。脚本：`backtest/keyfactor/miji_vwap_mr.py`。
