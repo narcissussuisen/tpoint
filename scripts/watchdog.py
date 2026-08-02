@@ -1,14 +1,13 @@
-"""tpoint 守护进程 v3 — 单实例 + PID 追踪防重复拉起。
+"""tpoint 守护进程 v3.1 — 单实例 + PID 追踪防重复拉起 + 交易日感知。
 
-策略：每 30s 检查 monitor.py / alert_engine.py 是否在跑；任一不在则重启。
+v3.1（2026-08-02）：非交易日（周末/节假日）不 spawn monitor/alert_engine。
+修复 respawn storm：周末 monitor 启动即退出（is_trading_today=False），watchdog
+误判"未运行"而每 60s 无限拉起（实测 15:03-15:13 每分钟 spawn 一个僵尸 monitor）。
+交易日照常保活；交易日内非交易时段（盘前/午休/收盘后）进程需保持常驻（心跳），
+故只在"整天非交易日"维度拦截，不做盘中时段判断。
+
+策略：每 30s 检查 monitor.py / alert_engine.py 是否在跑；任一不在且当天为交易日则重启。
 独立 Python 进程，不依赖任何 cmd.exe / bat（OS 杀 cmd 时 watchdog 仍能恢复服务）。
-
-v3 加固（2026-07-27，解决 09:15–09:18 重复拉起风暴）：
-  1. 自身单实例：启动即检查 .watchdog.pid，若持有者仍存活则安静退出，防止多处启动造成多 watchdog。
-  2. PID 追踪：spawn 后记录子进程 PID，下一轮优先用 os.kill(pid,0) 校验，
-     避免 WMI 在子进程刚起时尚未可见导致误判"未运行"而重复 spawn。
-  3. 不再调用 clear_locks()：monitor / alert_engine 各自 acquire_single_instance 已处理 stale lock，
-     watchdog 盲目删 .alert_engine.pid 会破坏活实例的 PID 账目。
 """
 import subprocess, os, sys, time, atexit, threading
 
@@ -28,6 +27,21 @@ WATCHDOG_PID  = os.path.join(DATA, '.watchdog.pid')
 
 CHECK_INTERVAL = 30
 SPAWN_GRACE    = 60   # spawn 后 60s 内优先信任本地 PID，不走 WMI
+
+
+def is_trading_today():
+    """交易日判断：周一至周五且非 2026 节假日（与 core/monitor.py 口径一致）。
+    节假日表同步维护；不在表内的工作日视为交易日。"""
+    try:
+        now = time.localtime()
+        if now.tm_wday >= 5:
+            return False
+        from core.monitor import is_trading_today as _m
+        return bool(_m())
+    except Exception:
+        # import 失败（如 PYTHONPATH 异常）时退化为仅周末判断，保证工作日可用
+        return time.localtime().tm_wday < 5
+
 
 def log(msg):
     line = f'[{time.strftime("%Y-%m-%d %H:%M:%S")}] {msg}\n'
@@ -81,7 +95,7 @@ def _wmi_has(script_basename):
         )
         r = subprocess.run(
             ['powershell', '-NoProfile', '-Command', ps],
-            capture_output=True, timeout=15,
+            capture_output=True, timeout=15, creationflags=0x08000000,
         )
         return r.returncode == 0
     except Exception as e:
@@ -95,16 +109,32 @@ class Supervisor:
         self._log_lock = threading.Lock()  # 多 tee 线程写同一日志文件时串行化
 
     def is_running(self, label, basename):
-        # 1) 本地子进程：直接用 Popen 对象判断（基于真实进程句柄，100% 可靠，
-        #    不依赖 os.kill(pid,0)——后者在跨令牌/沙箱下会误报死亡，引发重复拉起风暴）
+        # 1) 本地子进程：直接用 Popen 对象判断（基于真实进程句柄，100% 可靠）
         p = self.procs.get(label)
         if p is not None and p.poll() is None:
             return True
-        # grace 期内不再走 WMI，避免刚 spawn 的进程尚未被 WMI 枚举到而误判
+        # grace 期内信任本地 PID，不走文件判定，避免刚 spawn 的进程尚未写 pid 文件而误判
         if label in self.spawn_ts and (time.time() - self.spawn_ts[label]) < SPAWN_GRACE:
             return True
-        # 2) WMI 兜底（覆盖外部/manual 拉起的进程）
-        return _wmi_has(basename)
+        # 2) PID 文件权威判定（绕过 WMI）：仅认 watchdog 自己拉起的 monitor/engine 写入的
+        #    .monitor.svc.pid / .alert_engine.pid。不再用 WMI 兜底——Session0 僵尸 monitor 的
+        #    命令行含 'tpoint'/'monitor.py'，会被 WMI 误判为存活，导致 watchdog 不拉起自己的
+        #    monitor（详见 2026-07-30 复盘）。僵尸用旧锁路径，本进程用 .monitor.svc.*，互不干扰。
+        if label == 'monitor':
+            pidf = os.path.join(DATA, '.monitor.svc.pid')
+        elif label == 'alert_engine':
+            pidf = os.path.join(DATA, '.alert_engine.pid')
+        else:
+            pidf = None
+        if pidf:
+            try:
+                if os.path.exists(pidf):
+                    _c = open(pidf).read().strip()
+                    if _c.isdigit() and _alive(int(_c)):
+                        return True
+            except Exception:
+                pass
+        return False
 
     def _tee(self, stream, log_path):
         """后台线程：把子进程管道输出逐行追加写入日志文件。"""
@@ -132,9 +162,9 @@ class Supervisor:
         # stdout/stderr 用 PIPE：子进程输出经父进程 tee 线程写日志文件，
         # 完全不依赖句柄继承 → 规避 pythonw 父进程文件句柄不可继承导致的 OSError 22 静默崩溃。
         p = subprocess.Popen(
-            [PY_CON, script_path], creationflags=0x8|0x200|0x08000000,  # DETACHED|NEW_PROCESS_GROUP|CREATE_NO_WINDOW(无窗口)
+            [PY_CON, script_path], creationflags=0x200|0x08000000,  # NEW_PROCESS_GROUP|CREATE_NO_WINDOW(无窗口)；移除 DETACHED 以规避 pythonw 父进程下子进程标准句柄异常退出
             cwd=BASE, env=env, stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=False,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True,
         )
         threading.Thread(target=self._tee, args=(p.stdout, log_path), daemon=True).start()
         threading.Thread(target=self._tee, args=(p.stderr, log_path), daemon=True).start()
@@ -144,19 +174,28 @@ class Supervisor:
         return p.pid
 
     def run(self):
-        log('watchdog v3 started')
+        log('watchdog v3.1 started (trading-day aware)')
         targets = [
             ('monitor',      os.path.join(BASE, 'core', 'monitor.py'),
                 os.path.join(LOGS, 'monitor_console.log')),
             ('alert_engine', os.path.join(BASE, 'core', 'alert_engine.py'),
                 os.path.join(LOGS, 'alert_engine_console.log')),
         ]
+        last_trading_state = None
         while True:
+            trading = is_trading_today()
+            if trading != last_trading_state:
+                log(f'trading day state: {trading} (was {last_trading_state})')
+                last_trading_state = trading
             for label, script_path, log_path in targets:
                 base = os.path.basename(script_path)
                 if not self.is_running(label, base):
-                    log(f'{label} ({base}) not detected — restarting')
-                    self.spawn(label, script_path, log_path)
+                    if trading:
+                        log(f'{label} ({base}) not detected — restarting')
+                        self.spawn(label, script_path, log_path)
+                    else:
+                        # 非交易日：不 spawn（monitor 启动即退出→误判→respawn storm 根因，v3.1）
+                        log(f'{label} ({base}) not running, non-trading day — skip spawn')
             time.sleep(CHECK_INTERVAL)
 
 if __name__ == '__main__':

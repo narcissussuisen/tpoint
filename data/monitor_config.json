@@ -1,0 +1,27 @@
+{
+  "161129.SZ": {
+    "comment": "原油LOF T+0；ATR中位0.163%（F盘66d）→高波动档，B侧mpr60",
+    "mpr_enable": "B",
+    "mpr_periods": [60]
+  },
+  "513310.SH": {
+    "comment": "中韩半导体ETF T+0；ATR中位0.203%（F盘66d）→高波动档，B侧mpr60（回测+2.6pp）",
+    "mpr_enable": "B",
+    "mpr_periods": [60]
+  },
+  "300058.SZ": {
+    "comment": "蓝色光标；ATR中位0.246%（F盘145d）→高波动档，B侧mpr60",
+    "mpr_enable": "B",
+    "mpr_periods": [60]
+  },
+  "600570.SH": {
+    "comment": "恒生电子；ATR中位0.129%（F盘124d）→高波动档，B侧mpr60",
+    "mpr_enable": "B",
+    "mpr_periods": [60]
+  },
+  "688111.SH": {
+    "comment": "金山办公；ATR中位0.148%（F盘145d）→高波动档，B侧mpr60",
+    "mpr_enable": "B",
+    "mpr_periods": [60]
+  }
+}
