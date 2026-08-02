@@ -549,7 +549,8 @@ def detect_miji_signals(data, pc, start_idx=2,
                         enable=(True, True, True), vol_in_gate=False,
                         macd_min_hist_diff=0.0, atr_min_pct=None,
                         is_morning=None, morning_min_hist_diff=0.0,
-                        mpr_enable=False, mpr_periods=MPR_PERIODS):
+                        mpr_enable=False, mpr_periods=MPR_PERIODS,
+                        vwap_dev_ceil=None, atr_min_pct_s=None):
     """做T秘籍三因子共振信号检测
 
     共振公式 (MD文档核心):
@@ -579,6 +580,9 @@ def detect_miji_signals(data, pc, start_idx=2,
                 True/'both' = B/S 双侧。
                 数据不足（数组全 0/缺失）自动跳过该 bar（早盘降级）。
     mpr_periods: 参与方向过滤的大周期（默认 (60,15)）。
+    vwap_dev_ceil: S 侧 VWAP 偏离上限 %（None=关闭；P3-2 S 信号专项，与 _gate_floor.gate_sell
+                语义一致——极端偏离追高过远时 S 胜率回落，> 上限禁止 S）。
+    atr_min_pct_s: S 侧 ATR 波动率下限门槛 %（None=关闭；与 B 侧 atr_min_pct 对称）。
     """
     if require_macd is not None:
         macd_gate_mode = 'strict' if require_macd else 'off'
@@ -729,6 +733,15 @@ def detect_miji_signals(data, pc, start_idx=2,
             if mpr_enable in (True, 'both', 'S'):
                 mpr_ok = _mpr_sell_ok(data, i, mpr_periods)
                 sell_pass = bool(sell_pass and mpr_ok)
+            # ---- S 侧偏离上限 + ATR 门控（P3-2，2026-08-02；默认关） ----
+            # vwap_dev_ceil: 极端偏离（追高过远）= 弹簧拉伸过度，S 胜率回落 → 上限过滤
+            if vwap_dev_ceil is not None:
+                dev_ok = (vwap[i] <= 0) or (((c[i] - vwap[i]) / vwap[i] * 100.0) <= vwap_dev_ceil)
+                sell_pass = bool(sell_pass and dev_ok)
+            # atr_min_pct_s: 低波动区（atr/c*100 < 阈值）= 无肉可做，禁止 S（与 B 侧对称）
+            if atr_min_pct_s is not None:
+                atr_ok = ((atr[i] / c[i] * 100.0) >= atr_min_pct_s)
+                sell_pass = bool(sell_pass and atr_ok)
             if sell_pass:
                 details = []
                 if g_factor == -1: details.append(f'均线引力(dev={g_dev:.2f}%)')
@@ -760,7 +773,8 @@ def detect_miji_signals(data, pc, start_idx=2,
 
 def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD,
                        macd_gate_mode=MACD_GATE_MODE, min_hist_diff=MHD_THRESHOLD,
-                       atr_min_pct=None, mpr_enable=None, mpr_periods=MPR_PERIODS):
+                       atr_min_pct=None, mpr_enable=None, mpr_periods=MPR_PERIODS,
+                       vwap_dev_ceil=None, atr_min_pct_s=None):
     """单bar三因子共振判定, 供monitor实时调用.
 
     返回: (b_triggered, s_triggered, b_detail, s_detail, snapshot)
@@ -771,6 +785,9 @@ def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD,
     mpr_enable: 多周期 MACD 方向过滤（P3-1，默认 None=取模块级 MPR_ENABLE；None 且 MPR_ENABLE=False
                 则关闭=生产行为）。B 需大周期 hist<0、S 需大周期 hist>0。
     mpr_periods: 参与方向过滤的大周期（默认 (60,15)）。
+    vwap_dev_ceil: S 侧 VWAP 偏离上限 %（None=关闭=现状；P3-2 S 信号专项，
+                极端偏离追高过远时 S 胜率回落，> 上限禁止 S）。
+    atr_min_pct_s: S 侧 ATR 波动率下限门槛 %（None=关闭=现状；与 B 侧 atr_min_pct 对称）。
     """
     c = data['c']; h = data['h']; lo = data['lo']
     vwap = data['vwap']; atr = data['atr']; v = data['v']
@@ -834,9 +851,10 @@ def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD,
     
     s_trig, s_base, s_ceil = gate_sell(
         g_factor, m_factor, g_dev, i, macd_gate_mode=macd_gate_mode,
-        c=c, h=h, day_chg=day_chg, last_sell_ceil_bar=-999,
+        c=c, h=h, vwap=vwap, atr=atr, day_chg=day_chg, last_sell_ceil_bar=-999,
         trend_state=trend_state if guard_active else 0,
         floor_trend_threshold=2.0 if guard_active else 0.0,
+        vwap_dev_ceil=vwap_dev_ceil, atr_min_pct_s=atr_min_pct_s,
     )
 
     # ---- 多周期 MACD 方向过滤（P3-1，2026-08-02；默认关=生产行为） ----
@@ -1156,15 +1174,19 @@ def check_b_trigger(data, i, min_resonance=RESONANCE_THRESHOLD,
 
 def check_s_trigger(data, i, min_resonance=RESONANCE_THRESHOLD,
                     macd_gate_mode=MACD_GATE_MODE, min_hist_diff=MHD_THRESHOLD,
-                    atr_min_pct=None, mpr_enable=None, mpr_periods=MPR_PERIODS):
+                    atr_min_pct=None, mpr_enable=None, mpr_periods=MPR_PERIODS,
+                    vwap_dev_ceil=None, atr_min_pct_s=None):
     """S 信号触发判定 (monitor 兼容). 返回 (triggered: bool, reason: str).
 
     mpr_enable/mpr_periods: 多周期 MACD 方向过滤（P3-1）透传 check_miji_trigger。
     None=取模块级 MPR_ENABLE（默认关=生产行为）；'S'/'both' 时 S 需大周期 hist>0。
+    vwap_dev_ceil/atr_min_pct_s: S 侧专项参数（P3-2）透传 check_miji_trigger。
     """
     _, s, _, sd, _ = check_miji_trigger(data, i, min_resonance,
                                         macd_gate_mode=macd_gate_mode,
                                         min_hist_diff=min_hist_diff,
                                         atr_min_pct=atr_min_pct,
-                                        mpr_enable=mpr_enable, mpr_periods=mpr_periods)
+                                        mpr_enable=mpr_enable, mpr_periods=mpr_periods,
+                                        vwap_dev_ceil=vwap_dev_ceil,
+                                        atr_min_pct_s=atr_min_pct_s)
     return (s, sd)

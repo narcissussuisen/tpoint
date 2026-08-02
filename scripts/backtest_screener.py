@@ -96,7 +96,8 @@ def day_prev_close(df, date):
 
 
 def backtest_symbol(csv_path, config=None, engine='miji', macd_min_hist_diff=0.0, atr_min_pct=None,
-                    mpr_enable=False, mpr_periods=None):
+                    mpr_enable=False, mpr_periods=None,
+                    vwap_dev_ceil=None, atr_min_pct_s=None):
     """对单个 1m CSV 跑完整 v9 回测（逐日 detect → simulate_day 配对）。
 
     engine:
@@ -107,6 +108,8 @@ def backtest_symbol(csv_path, config=None, engine='miji', macd_min_hist_diff=0.0
     macd_min_hist_diff: MACD 背离强度阈值（0=不过滤=原行为；0.15=报告建议值，P0 接入）。
     atr_min_pct: ATR 波动率下限门槛 %（None=关闭；0.20~0.30 候选，P1 验证）。
     mpr_enable/mpr_periods: 多周期 MACD 方向过滤（P3-1，默认关）；支持 'B'/'S'/'both'。
+    vwap_dev_ceil: S 侧 VWAP 偏离上限 %（None=关闭；P3-2 S 信号专项）。
+    atr_min_pct_s: S 侧 ATR 波动率下限门槛 %（None=关闭；与 B 侧 atr_min_pct 对称）。
 
     返回 dict：{symbol, days, trips, metrics, pass_verdict}。"""
     if engine == 'miji':
@@ -148,7 +151,8 @@ def backtest_symbol(csv_path, config=None, engine='miji', macd_min_hist_diff=0.0
         data = compute_miji_indicators(o, h, lo, c, v, pc)
         sigs = detect_miji_signals(data, pc, macd_min_hist_diff=macd_min_hist_diff,
                                    atr_min_pct=atr_min_pct,
-                                   mpr_enable=mpr_enable, mpr_periods=mpr_periods)
+                                   mpr_enable=mpr_enable, mpr_periods=mpr_periods,
+                                   vwap_dev_ceil=vwap_dev_ceil, atr_min_pct_s=atr_min_pct_s)
         prices = {'o': o, 'h': h, 'lo': lo, 'c': c, 'atr': data['atr'],
                   'trend': data.get('trend'), 'n': data['n']}
         trips = simulate_day(sigs, prices, mcfg, cost=cost)
