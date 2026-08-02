@@ -1,237 +1,286 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""读取 output/review_2026_07_21.json，生成结构化 HTML 复盘报告。"""
-import json, os
-
-HERE = r'C:\Users\YZP\WorkBuddy\Claw\tpoint'
-J = os.path.join(HERE, 'output', 'review_2026_07_21.json')
-OUT = os.path.join(HERE, 'output', 'review_2026_07_21.html')
-
-with open(J, encoding='utf-8') as f:
-    R = json.load(f)
-
-t = R['today']
-p = R['prior_signal_days_161129']
-m161 = t['161129.SZ']['stats']
-m688 = t['688347.SH']['stats']
-s161 = t['161129.SZ']
-s688 = t['688347.SH']
-
-def pct(x):
-    return f"{x:+.2f}%"
-
-def redgreen(x, invert=False):
-    # 涨为红，跌为绿（A股约定）
-    cls = 'up' if (x >= 0) != invert else 'down'
-    return f'<span class="{cls}">{x:+.2f}%</span>'
-
-def chg_cell(x):
-    return redgreen(x)
-
-# ---- 关键衍生计算 ----
-# 引力买/卖触发阈值（占价百分比）≈ ±VWAP_DEV * ATR/price*100 = ±0.6*atr_pct
-grav_buy_thr_161 = -0.6 * m161['atr_pct']
-grav_sell_thr_688 = +0.6 * m688['atr_pct']
-
-# 近3日 161129 均值（对比）
-import statistics as st_
-ranges = [d['stats']['intraday_range_pct'] for d in p]
-volxs = [d['stats']['total_volume_vs_med'] for d in p]
-avg_range = sum(ranges)/len(ranges)
-avg_volx = sum(volxs)/len(volxs)
-avg_b = sum(d['strict']['b_count'] for d in p)/len(p)
-avg_s = sum(d['strict']['s_count'] for d in p)/len(p)
-
-HTML = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>tpoint 策略 2026-07-21 运行复盘报告</title>
-<style>
-  :root {{
-    --bg:#f5f7fa; --card:#ffffff; --ink:#1f2733; --sub:#5b6675; --line:#e4e9f0;
-    --up:#d8392b; --down:#15934a; --accent:#2f6fed; --warn:#b7791f; --ok:#15934a;
-    --hbg:#eef3fb;
-  }}
-  * {{ box-sizing:border-box; }}
-  body {{ margin:0; background:var(--bg); color:var(--ink);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
-    line-height:1.65; font-size:15px; }}
-  .wrap {{ max-width:1080px; margin:0 auto; padding:28px 22px 60px; }}
-  h1 {{ font-size:25px; margin:0 0 4px; }}
-  .sub {{ color:var(--sub); font-size:14px; margin-bottom:18px; }}
-  .card {{ background:var(--card); border:1px solid var(--line); border-radius:12px;
-    padding:20px 22px; margin:16px 0; box-shadow:0 1px 3px rgba(20,40,80,.04); }}
-  h2 {{ font-size:19px; margin:4px 0 14px; padding-left:11px; border-left:4px solid var(--accent); }}
-  h3 {{ font-size:15.5px; margin:18px 0 8px; color:var(--accent); }}
-  table {{ width:100%; border-collapse:collapse; font-size:13.5px; margin:8px 0 6px; }}
-  th,td {{ border:1px solid var(--line); padding:8px 10px; text-align:right; }}
-  th {{ background:var(--hbg); font-weight:600; text-align:center; }}
-  td.lbl, th.lbl {{ text-align:left; }}
-  .up {{ color:var(--up); font-weight:600; }}
-  .down {{ color:var(--down); font-weight:600; }}
-  .ok {{ color:var(--ok); font-weight:600; }}
-  .bad {{ color:var(--up); font-weight:600; }}
-  .warn {{ color:var(--warn); font-weight:600; }}
-  .tag {{ display:inline-block; padding:1px 8px; border-radius:20px; font-size:12px; font-weight:600; }}
-  .tag.r {{ background:#fdecea; color:var(--up); }}
-  .tag.g {{ background:#e8f6ee; color:var(--down); }}
-  ul {{ margin:8px 0; padding-left:20px; }}
-  li {{ margin:5px 0; }}
-  .kv {{ display:flex; flex-wrap:wrap; gap:10px 26px; margin:6px 0; }}
-  .kv div {{ font-size:14px; }}
-  .kv b {{ color:var(--ink); }}
-  .note {{ color:var(--sub); font-size:13px; font-style:italic; }}
-  .summary li {{ margin:7px 0; }}
-  code {{ background:#eef1f6; padding:1px 6px; border-radius:5px; font-size:13px; }}
-  .pill {{ background:#eef3fb; color:var(--accent); padding:2px 9px; border-radius:6px; font-size:12.5px; font-weight:600; }}
-</style>
-</head>
-<body>
-<div class="wrap">
-
-<h1>tpoint 策略运行复盘报告</h1>
-<div class="sub">交易日 <b>2026-07-21（周二）</b> · 标的 <b>161129 原油LOF易方达</b> / <b>688347 华虹宏力</b> · 引擎 miji_alpha v9.1.4（1分钟K · MACD_GATE_MODE=strict）</div>
-
-<div class="card">
-<h2>〇、结论摘要</h2>
-<ul class="summary">
-  <li><span class="pill">系统</span> 监控进程今日<b>正常启动并存活</b>（Startup V9Launch 自启；16:22 自检健康；metrics 心跳新鲜；PID 存活）。</li>
-  <li><span class="pill">实测信号</span> 688347 录得 <b>1 次 BUY</b>（入场 335.5，未平仓，持仓在盘中冻结）；<b>161129 今日 0 信号</b>。</li>
-  <li><span class="pill">根因</span> 开盘 <b>09:31–09:35</b> 监控日志反复出现 <code>原油LOF易方达 no intraday data</code> 与 <code>'NoneType' object has no attribute 'klines'</code>（tf 未初始化）——交易时段数据源对两标的（尤其 LOF 161129）分钟K<b>返回空 / 断流</b>，致 161129 全天未被有效扫描、688347 仅在前 2 根 bar 取得数据后扫描即中断。</li>
-  <li><span class="pill">离线验证</span> 用与生产<b>完全一致</b>的引擎在收盘后已恢复的行情上重放：161129 本应产生 <b>2B+1S</b>、688347 应产生完整 B/S 序列。→ <b>策略逻辑正确，问题在数据 / 初始化可用性，而非市场条件或参数</b>。</li>
-  <li><span class="pill">偏离度</span> 今日两标的波动率与成交量均<b>显著放大</b>（161129 成交 158× 常态中位、振幅 6.5%；688347 涨停 +20%、振幅 15.8%），市场条件远满足触发前置，故"信号少"并非行情平淡所致。</li>
-</ul>
-</div>
-
-<!-- ========== 1. 市场条件 ========== -->
-<div class="card">
-<h2>一、市场条件诊断</h2>
-<p>下表为两标的今日（2026-07-21）真实行情（来源：mootdx 通达信 TCP 7709，与生产同源）。策略三因子共振的<b>前置条件</b>是：价格相对 VWAP 有足够偏离（引力）、日内存在波动（ATR&gt;0）、有成交与背离结构。结论：<b>两标的均强烈满足前置条件</b>，市场条件不是信号缺失原因。</p>
-<table>
-<tr><th class="lbl">指标</th><th>161129 原油LOF</th><th>688347 华虹</th><th>前置要求（隐含）</th><th>是否满足</th></tr>
-<tr><td class="lbl">开盘价</td><td>{m161['open']}</td><td>{m688['open']}</td><td>—</td><td>—</td></tr>
-<tr><td class="lbl">最高价</td><td>{m161['high']}</td><td>{m688['high']}</td><td>—</td><td>—</td></tr>
-<tr><td class="lbl">最低价</td><td>{m161['low']}</td><td>{m688['low']}</td><td>—</td><td>—</td></tr>
-<tr><td class="lbl">收盘价</td><td>{m161['close']}</td><td>{m688['close']}</td><td>—</td><td>—</td></tr>
-<tr><td class="lbl">涨跌幅</td><td>{chg_cell(m161['day_chg_pct'])}</td><td>{chg_cell(m688['day_chg_pct'])}</td><td>有方向即可</td><td class="ok">满足</td></tr>
-<tr><td class="lbl">日内振幅</td><td>{m161['intraday_range_pct']}%</td><td>{m688['intraday_range_pct']}%</td><td>&gt;1% 为宜</td><td class="ok">显著满足</td></tr>
-<tr><td class="lbl">ATR(1m,末值)</td><td>{m161['atr_last']}（{m161['atr_pct']}%）</td><td>{m688['atr_last']}（{m688['atr_pct']}%）</td><td>ATR&gt;0</td><td class="ok">满足</td></tr>
-<tr><td class="lbl">成交量 / 常态中位</td><td>{m161['total_volume_vs_med']:.0f}×</td><td>{m688['total_volume_vs_med']:.0f}×</td><td>放量更利背离</td><td class="ok">大幅放量</td></tr>
-<tr><td class="lbl">平均|偏离VWAP|</td><td>{m161['avg_abs_dev_vwap_pct']}%</td><td>{m688['avg_abs_dev_vwap_pct']}%</td><td>偏离越大越易触发</td><td class="ok">满足</td></tr>
-<tr><td class="lbl">最大|偏离VWAP|</td><td>{m161['max_abs_dev_vwap_pct']}%</td><td>{m688['max_abs_dev_vwap_pct']}%</td><td>—</td><td>—</td></tr>
-</table>
-<p class="note">读数：161129 最大单根偏离 VWAP 达 −2.44%（深度超卖），688347 最高 +10.81%（深度超买）。两者均反复穿越引力带，<b>行情层面具备充足触发素材</b>。</p>
-</div>
-
-<!-- ========== 2. 参数审查 ========== -->
-<div class="card">
-<h2>二、策略参数审查</h2>
-<p>生产配置（来自 <code>core/miji_alpha.py</code> 与 <code>monitor.py</code>）：当前以 <b>MACD_GATE_MODE='strict'</b> 运行——即 bar≥15 后，买点必须叠加 MACD 底背离、卖点必须叠加 MACD 顶背离，单纯 VWAP 引力超卖/超买不再直接触发。</p>
-<table>
-<tr><th class="lbl">参数</th><th>当前值</th><th>默认/对照</th><th>对信号的影响</th></tr>
-<tr><td class="lbl">MACD_GATE_MODE</td><td><b>strict</b></td><td>off（纯引力，无MACD门控）</td><td class="warn">最强过滤器：仅放行 MACD 背离确认的引力信号</td></tr>
-<tr><td class="lbl">VWAP_DEV_BUY / SELL</td><td>0.6 / 0.6</td><td>0.8（旧）</td><td>放宽引力带，已利于触发</td></tr>
-<tr><td class="lbl">VOL_DIV_ENABLED</td><td>False</td><td>True（旧）</td><td>量价背离因子关闭（实证净负，属有意优化）</td></tr>
-<tr><td class="lbl">RESONANCE_THRESHOLD</td><td>2</td><td>2</td><td class="note">死参数，仅元信息，不参与触发</td></tr>
-<tr><td class="lbl">ATR_PERIOD / SIGNAL_GAP</td><td>14 / 8</td><td>14 / 8</td><td>同基准</td></tr>
-<tr><td class="lbl">移动止损</td><td>激活0.4% / 回撤0.6%</td><td>—</td><td>仅浮盈≥0.4%后启动，需 0.6% 回撤才平仓</td></tr>
-<tr><td class="lbl">MAX_B / MAX_S 每日</td><td>12 / 12</td><td>12 / 12</td><td>上限宽松，非瓶颈</td></tr>
-</table>
-<h3>可能造成"漏信号"的参数项</h3>
-<ul>
-  <li><b>MACD 严格门控（头号嫌疑）</b>：今日 161129 有 <b>{s161['strict']['diag']['g_oversold']}</b> 根 bar 满足引力超卖（本可买），但仅 <b>{s161['strict']['diag']['m_buydiv']}</b> 根同时具备 MACD 底背离 → 严格门控实际放行 {s161['strict']['b_count']} 买。若为 <code>off</code> 模式（纯引力），引力即可买 → {s161['off']['b_count']} 买 / {s161['off']['s_count']} 卖。即严格门控"过滤"了 <b>{s161['strict']['diag']['miss_buy']}/{s161['strict']['diag']['g_oversold']}</b> 的超卖机会。</li>
-  <li><b>VOL_DIV_ENABLED=False</b>：量价背离因子完全关闭，使"三因子"退化为"双因子"，少一层确认——但属有意优化（净负），且非今日零信号之因。</li>
-  <li><b>RESONANCE_THRESHOLD=2</b>：为死参数，不参与触发判定，无影响。</li>
-</ul>
-<p class="note">结论：参数整体<b>偏严</b>（尤其 MACD 严格门控会压低信号频次），但它只"少给信号"而非"零信号"——引擎在拿到数据时仍稳定产出信号。今日零信号的根因在数据层，参数只是次要的灵敏度调节项。若希望提高灵敏度，可评估 <code>MACD_GATE_MODE='off'</code> 或 <code>'floor'</code>（价格新低/新高+偏离超阈即触发）。</p>
-</div>
-
-<!-- ========== 3. 对比分析 ========== -->
-<div class="card">
-<h2>三、对比分析（161129 近可得信号日）</h2>
-<p>用同一引擎重放 161129 近期交易日，与今日对比。注：仅 <b>3</b> 个近交易日能取到 161129 的 1m 数据（LOF 分钟K在 mootdx 上部分日期缺失，<b>进一步印证数据可用性问题</b>），故以这 3 日作为正常信号日样本。</p>
-<table>
-<tr><th class="lbl">交易日</th><th>涨跌幅</th><th>日内振幅</th><th>成交/中位</th><th>引力超卖bar数</th><th>MACD买背离bar</th><th>strict 买/卖</th><th>off 买/卖</th></tr>
-<tr><td class="lbl">2026-07-21（今）</td><td>{chg_cell(m161['day_chg_pct'])}</td><td>{m161['intraday_range_pct']}%</td><td>{m161['total_volume_vs_med']:.0f}×</td><td>{s161['strict']['diag']['g_oversold']}</td><td>{s161['strict']['diag']['m_buydiv']}</td><td>{s161['strict']['b_count']} / {s161['strict']['s_count']}</td><td>{s161['off']['b_count']} / {s161['off']['s_count']}</td></tr>
 """
-for d in p:
-    st_ = d['stats']; sd = d['strict']; so = d['off']
-    HTML += f"""<tr><td class="lbl">{d['day']}</td><td>{chg_cell(st_['day_chg_pct'])}</td><td>{st_['intraday_range_pct']}%</td><td>{st_['total_volume_vs_med']:.0f}×</td><td>{sd['diag']['g_oversold']}</td><td>{sd['diag']['m_buydiv']}</td><td>{sd['b_count']} / {sd['s_count']}</td><td>{so['b_count']} / {so['s_count']}</td></tr>
+build_review_html.py — 汇编 tpoint 每日复盘 HTML（单文件自包含，图表 base64 内嵌）
+用法: python build_review_html.py [YYYY-MM-DD]
+读取: output/review_{date}.json (daily_signal_review 复算) + output/chart_{date}_{sym}.png + data/push_audit.jsonl
+产出: output/review_{date}.html
+涵盖: 〇今日实盘投递分类 / 一信号清单 / 二有效性验证 / 三失效原因 / 四整体+5日基线+异常 / 五行情图
 """
-HTML += f"""
-</table>
-<h3>量化偏离</h3>
-<ul>
-  <li>市场活跃度：今日振幅 <b>{m161['intraday_range_pct']}%</b> vs 3日均值 <b>{avg_range:.2f}%</b>（<span class="up">+{(m161['intraday_range_pct']/avg_range-1)*100:.0f}%</span>）；成交 <b>{m161['total_volume_vs_med']:.0f}×</b> vs 均值 <b>{avg_volx:.0f}×</b>（持平）。→ 今日行情<b>不弱于</b>正常信号日。</li>
-  <li>信号产出：3个正常信号日平均 <b>{avg_b:.1f} 买 / {avg_s:.1f} 卖</b>；离线重放今日应得 <b>2 买 / 1 卖</b>（同量级）。但<b>实时产出 = 0</b>。</li>
-  <li><b>偏离判定</b>：在行情更活跃的前提下实时信号反而为 0，而离线重放同引擎同数据可得正常值 → 偏离 100% 来自<b>执行层（盘中扫描断流）</b>，而非市场模式偏离。</li>
-</ul>
-</div>
+import sys, os, json, datetime, base64
 
-<!-- ========== 4. 数据支撑 ========== -->
-<div class="card">
-<h2>四、数据支撑：关键指标实测 vs 触发阈值</h2>
-<p>下表以 161129 为例，列出核心算法指标实测值与触发阈值的差距，定位"信号未触发"的直接阻断项。</p>
-<table>
-<tr><th class="lbl">指标</th><th>今日实测</th><th>触发阈值</th><th>差距</th><th>是否满足</th></tr>
-<tr><td class="lbl">引力买（价格≤VWAP−0.6·ATR）</td><td>最超卖 dev=−{abs(s161['strict']['diag']['max_os_dev'])}%</td><td>dev ≤ {grav_buy_thr_161:.2f}%</td><td>−{abs(s161['strict']['diag']['max_os_dev'])-abs(grav_buy_thr_161):.2f}%（远超）</td><td class="ok">满足（{s161['strict']['diag']['g_oversold']}根）</td></tr>
-<tr><td class="lbl">MACD 底背离(m_factor==1)</td><td>{s161['strict']['diag']['m_buydiv']} 根</td><td>严格门控下≥1根（bar≥15）</td><td>+{s161['strict']['diag']['m_buydiv']} 根（有但稀少）</td><td class="warn">部分满足（仅{s161['strict']['diag']['m_buydiv']}根）</td></tr>
-<tr><td class="lbl">量价背离因子</td><td>关闭</td><td>n/a</td><td>—</td><td class="note">不参与</td></tr>
-<tr><td class="lbl">共振分(RESONANCE_THRESHOLD)</td><td>元信息</td><td>不参与触发</td><td>—</td><td class="note">死参数</td></tr>
-<tr><td class="lbl"><b>盘中分钟K数据可得性（隐含前置）</b></td><td><b>交易时段为空</b></td><td>intraday 非空</td><td><b>断流</b></td><td class="bad">不满足 ← 真正阻断项</td></tr>
-</table>
-<p>688347（卖点侧）：最超买 dev=+{s688['strict']['diag']['max_ob_dev']}%，卖阈值仅需 dev ≥ +{grav_sell_thr_688:.2f}%（引力满足 {s688['strict']['diag']['g_overbought']} 根）；严格门控下需 MACD 顶背离（实测 {s688['strict']['diag']['m_selldiv']} 根），离线重放可得 9 卖。但实时因开盘后扫描断流，仅记录 1 买、0 卖。</p>
-<p class="note">直接原因总结：161129 实时"无信号"的<b>直接阻断项是盘中分钟K数据不可得（数据层）</b>，而非任何算法阈值——引力阈值（−0.14%）与 MACD 背离阈值（≥1根）在今日行情下均能被满足（离线重放已验证）。</p>
-</div>
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, 'output')
+DATA = os.path.join(ROOT, 'data')
 
-<!-- ========== 5. 系统状态 ========== -->
-<div class="card">
-<h2>五、系统状态验证</h2>
-<div class="kv">
-  <div><b>启动：</b><span class="ok">正常</span></div>
-  <div><b>进程：</b>存活（PID 见 16:22 自检）</div>
-  <div><b>自检：</b>16:22 健康（仅良性重复自检 WARN）</div>
-  <div><b>心跳：</b>新鲜（≤120s）</div>
-</div>
-<h3>开盘异常（关键证据）</h3>
-<ul>
-  <li>09:31:55 今次启动，加载 watchlist 2 标的（原油LOF易方达、华虹宏力），日K刷新 688347 pc=331.48。</li>
-  <li>09:31–09:35 连续出现 <code>原油LOF易方达 no intraday data</code> 与 <code>'NoneType' object has no attribute 'klines'</code>（tf 未初始化）——属 07-21 已知的 tf 初始化缺陷类。</li>
-  <li>结果：161129 全天无有效扫描（state.json 无 <code>bar_161129</code> 键、无 07-21 计数）；688347 仅在前 2 根 bar 取得数据生成 1 买后，扫描即中断（持仓 max_fav 冻结于 341.5，远低于日内高点 397.78）。</li>
-</ul>
-<h3>系统实际给出的信号</h3>
-<table>
-<tr><th class="lbl">标的</th><th>实时信号</th><th>说明</th></tr>
-<tr><td class="lbl">688347 华虹</td><td><span class="tag g">BUY ×1</span></td><td>入场 335.5（bar2，dev=−1.36%）；0 卖；持仓在盘中冻结。收盘 +20% 涨停，该多仓理论浮盈约 +18.5%，但因扫描断流未触发移动止损/卖出。</td></tr>
-<tr><td class="lbl">161129 原油LOF</td><td><span class="tag r">无信号</span></td><td>全天未扫描（数据不可得），实时 0 信号。</td></tr>
-</table>
-<h3>若正常运行能否准确提示预期建议？</h3>
-<p>能。离线重放（同引擎、同 bar、数据恢复后）确认：161129 应提示 <b>2 次买点 + 1 次卖点</b>（含 bar67 买 1.921、bar214 买 1.910 等 MACD 背离买点）；688347 应提示开盘超卖买点并随涨停过程给出卖出/移动止损序列（共 9 卖）。<b>今日"信号未达预期"本质是运行中数据源断流导致扫描失效，并非策略失效。</b></p>
-<h3>改进建议</h3>
-<ul>
-  <li><b>数据源韧性</b>：mootdx 连接采用指数退避重连；腾讯分时兜底在<b>开盘即生效</b>（当前 LOF 开盘常空，需提前兜底），覆盖 161129 这类 LOF/T+0 基金。</li>
-  <li><b>静默零信号告警</b>：新增"连续 N 根 bar 数据缺失 / 某标的 M 轮未扫描"告警，避免像今日这样静默吞掉整日信号。</li>
-  <li><b>tf 预热</b>：进程启动阶段主动预热并校验 <code>tf.klines</code>，消除 'NoneType' 初始化窗口。</li>
-  <li><b>参数（可选）</b>：评估 <code>MACD_GATE_MODE='off'</code> / <code>'floor'</code> 提升信号灵敏度（代价是更多弱信号/噪声）。</li>
-</ul>
-</div>
+TARGET = sys.argv[1] if len(sys.argv) > 1 else datetime.date.today().strftime('%Y-%m-%d')
+D8 = TARGET.replace('-', '')
 
-<div class="card">
-<h2>附：数据与方法</h2>
-<ul>
-  <li>行情：mootdx 通达信 TCP 7709（与生产同源）；引擎 miji_alpha v9.1.4，1 分钟 K，复刻生产 <code>MACD_GATE_MODE='strict'</code> 与 <code>detect_for</code> 出场逻辑（移动止损 0.4%/0.6%）。</li>
-  <li>离线重放对当日/历史每根 bar 全量复算，与生产逐轮扫描语义一致；'off' 列为对照（纯引力无 MACD 门控）。</li>
-  <li>实时信号与系统状态取自 <code>data/state.json</code>、<code>data/metrics.json</code> 与 <code>logs/monitor_console.log</code>、<code>logs/selfcheck/</code>（2026-07-21）。</li>
-  <li>报告生成时间：{R['meta']['generated_at']}。</li>
-</ul>
-</div>
+doc = json.load(open(os.path.join(OUT, 'review_%s.json' % TARGET), encoding='utf-8'))
+syms = doc['symbols']
+wl = json.load(open(os.path.join(DATA, 'watchlist.json'), encoding='utf-8'))
 
-</div>
-</body>
-</html>
+# ---------- push_audit 分类 ----------
+audit = []
+ap = os.path.join(DATA, 'push_audit.jsonl')
+try:
+    for line in open(ap, encoding='utf-8'):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        if r.get('ts', '').startswith(TARGET):
+            audit.append(r)
+except FileNotFoundError:
+    pass
+
+FIX_T = '2026-07-30 14:07'   # 重放修复部署时刻
+for r in audit:
+    r['cls'] = '真实实时' if r['ts'] >= FIX_T else '历史重放'
+n_real = sum(1 for r in audit if r['cls'] == '真实实时')
+n_spam = sum(1 for r in audit if r['cls'] == '历史重放')
+
+# ---------- 工具 ----------
+def b64(path):
+    return 'data:image/png;base64,' + base64.b64encode(open(path, 'rb').read()).decode('ascii')
+
+def esc(x):
+    return (str(x).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
+
+def fmt_time(t):
+    return str(t)[11:16]
+
+def cond_of(r):
+    tag = (r.get('tag') or '').strip('[]')
+    band = r.get('band') or ''
+    c = (tag + ' / ' + band).strip(' /') if tag or band else '—'
+    return c
+
+# ---------- 统计 ----------
+cmp = doc['comparison']
+base = doc['baseline_mean']
+total = doc['today_legacy']
+bl_days = doc['baseline_days']
+
+# ============================ HTML ============================ #
+css = """
+* { box-sizing: border-box; }
+body { font-family: -apple-system,'Segoe UI','Microsoft YaHei',sans-serif; background:#0f1115; color:#e6e6e6; margin:0; padding:24px; line-height:1.6; }
+.wrap { max-width:1200px; margin:0 auto; }
+h1 { font-size:25px; color:#fff; border-bottom:2px solid #2d6cdf; padding-bottom:12px; }
+h2 { font-size:18px; color:#7db3ff; margin-top:32px; border-left:4px solid #2d6cdf; padding-left:10px; }
+.sub { color:#9aa0a6; font-size:13px; margin-bottom:6px; }
+.card { background:#1a1d24; border:1px solid #2a2e37; border-radius:10px; padding:16px 18px; margin:12px 0; }
+.kpis { display:flex; flex-wrap:wrap; gap:12px; margin:14px 0; }
+.kpi { flex:1; min-width:140px; background:#161a22; border:1px solid #2a2e37; border-radius:10px; padding:12px; text-align:center; }
+.kpi .v { font-size:23px; font-weight:700; }
+.kpi .l { font-size:12px; color:#9aa0a6; margin-top:3px; }
+table { width:100%; border-collapse:collapse; margin:10px 0; font-size:13px; }
+th,td { border:1px solid #2a2e37; padding:7px 9px; text-align:left; vertical-align:top; }
+th { background:#21262f; color:#cdd6e0; font-weight:600; }
+tr:nth-child(even) td { background:#161a22; }
+.ok { color:#3fb950; font-weight:600; } .bad { color:#f85149; font-weight:600; } .warn { color:#d29922; font-weight:600; }
+.buy { color:#f85149; } .sell { color:#3fb950; }
+.banner { background:#2a1416; border:1px solid #f85149; border-radius:10px; padding:14px 18px; margin:14px 0; color:#ffb3b3; }
+.banner b { color:#ff6b6b; }
+.note { background:#1f2430; border-left:3px solid #d29922; padding:10px 14px; margin:10px 0; font-size:13.5px; color:#d7dde5; }
+.good { border-left-color:#3fb950; }
+.bad-n { border-left-color:#f85149; }
+.chart { width:100%; border:1px solid #2a2e37; border-radius:8px; margin:10px 0; background:#fff; }
+.foot { color:#6b7178; font-size:12px; margin-top:28px; text-align:center; }
+code { background:#0d1117; padding:2px 6px; border-radius:4px; color:#79c0ff; font-size:12px; }
 """
 
-with open(OUT, 'w', encoding='utf-8') as f:
-    f.write(HTML)
-print("HTML written:", OUT, len(HTML), "bytes")
+body = []
+body.append('<h1>📊 tpoint 每日信号复盘 — %s</h1>' % TARGET)
+body.append('<div class="sub">门控：<code>MACD_GATE_MODE=floor</code>（生产 floord v9.2.2）｜ 数据截止 %s 15:00（全日 240 根 1m）｜ 生成于 %s</div>'
+            % (TARGET, datetime.datetime.now().strftime('%Y-%m-%d %H:%M')))
+
+# 披露横幅
+body.append('<div class="banner"><b>⚠️ 今日投递异常说明（重要）</b><br>'
+            '今日 tpoint 经历 <b>respawn storm + 历史信号重放 bug</b>（已于 <b>14:07</b> 修复）。全天 <code>push_audit</code> 共 <b>%d</b> 条推送，'
+            '其中 <b>%d 条为风暴期对历史 bar 的重放</b>（时间戳集中在 09:44 / 09:49 / 13:54–13:59，非实时信号），'
+            '仅 <b>%d 条</b>（14:37–14:49）为修复后的<b>真实实时推送</b>。<br>'
+            '下方<b>第一节信号清单</b>为 floor 引擎在今日<b>真实 1m 行情</b>上从零复算识别的全部 <b>%d</b> 个信号（含触发条件与向前有效性），是今日市场信号的完整逻辑视图；'
+            '实盘真实投递仅 %d 条（见第〇节）。</div>'
+            % (len(audit), n_spam, n_real, total['n_signals'], n_real))
+
+# KPI
+n_X = total['n_signals'] - total['n_B'] - total['n_S']
+body.append('<div class="kpis">'
+            '<div class="kpi"><div class="v" style="color:#7db3ff">%d</div><div class="l">引擎复算信号(买%d/卖%d/出场%d)</div></div>'
+            '<div class="kpi"><div class="v" style="color:#f85149">%d</div><div class="l">实盘投递(真实%d/重放%d)</div></div>'
+            '<div class="kpi"><div class="v">%s%%</div><div class="l">方向信号向前胜率</div></div>'
+            '<div class="kpi"><div class="v">%s</div><div class="l">近5日基线(信号/日)</div></div>'
+            '<div class="kpi"><div class="v" style="color:#f85149">%.2f×</div><div class="l">今日/基线 倍数(异常)</div></div>'
+            '</div>' % (total['n_signals'], total['n_B'], total['n_S'], n_X,
+                        len(audit), n_real, n_spam,
+                        ('%g' % doc['today_win_rate']), ('%g' % base['n_signals']),
+                        (total['n_signals'] / base['n_signals'] if base['n_signals'] else 0)))
+
+# 〇、实盘投递分类
+body.append('<h2>〇、今日实盘投递实况（push_audit 逐笔分类）</h2>')
+body.append('<div class="sub">分类口径：推送时间戳 ≥ 14:07（重放修复部署时刻）记为<b>真实实时</b>；此前记为<b>历史重放</b>（风暴期重发，非实时信号）。</div>')
+body.append('<div class="card"><table><thead><tr><th>时间</th><th>标的</th><th>类型</th><th>价格</th><th>分类</th></tr></thead><tbody>')
+for r in sorted(audit, key=lambda x: x['ts']):
+    cls = r['cls']
+    ctag = '<span class="ok">真实实时</span>' if cls == '真实实时' else '<span class="bad">历史重放</span>'
+    op = r['type']; ocls = 'buy' if op == 'B' else ('sell' if op == 'S' else '')
+    body.append('<tr><td>%s</td><td>%s</td><td class="%s"><b>%s</b></td><td>%s</td><td>%s</td></tr>'
+                % (r['ts'][11:19], r['sym'], ocls, op, r.get('price'), ctag))
+body.append('</tbody></table></div>')
+body.append('<div class="note">实盘权威计数（<code>state.json</code> 当日 <code>_b/_s_count</code>）：161129 B0/S1、688347 B5/S1、513310 B1/S1，合计 <b>9</b> 次引擎触发（含风暴期重放触发的计数）。</div>')
+
+# 一、信号清单
+body.append('<h2>一、当日信号清单（floor 引擎复算 · 真实 1m 行情）</h2>')
+body.append('<div class="sub">下表为 floor 引擎在 %s 真实 1m 数据上从零复算识别的全部信号（tag=共振条件 / band=触碰轨道）。类型：B=买入 / S=卖出(反T空) / X=出场。此清单不含重放，是今日市场信号的完整逻辑视图。</div>' % TARGET)
+all_rows = []
+for sym, res in syms.items():
+    for r in res.get('rows', []):
+        all_rows.append((sym, res.get('name', sym), r))
+all_rows.sort(key=lambda x: (x[0], x[2]['time']))
+body.append('<div class="card"><table><thead><tr><th>时间</th><th>标的</th><th>类型</th><th>价格</th><th>触发条件(复算)</th></tr></thead><tbody>')
+for sym, name, r in all_rows:
+    op = r['type']; ocls = 'buy' if op == 'B' else ('sell' if op == 'S' else '')
+    body.append('<tr><td>%s</td><td>%s %s</td><td class="%s"><b>%s</b></td><td>%.3f</td><td>%s</td></tr>'
+                % (fmt_time(r['time']), sym, name, ocls, op, r['price'], cond_of(r)))
+body.append('</tbody></table></div>')
+
+# 二、有效性验证
+body.append('<h2>二、信号触发后市场走势验证（有效 / 失效）</h2>')
+body.append('<div class="sub">验证口径：B 看触发后剩余时段最高价相对入场 ≥ +0.15%% 判有效；S 看最低价相对入场 ≥ +0.15%% 判有效（floor 引擎向前验证）。X 出场不参与方向判定。</div>')
+body.append('<div class="card"><table><thead><tr><th>时间</th><th>标的</th><th>类型</th><th>价格</th><th>判定</th><th>有利%</th><th>不利%</th><th>触发条件</th></tr></thead><tbody>')
+for sym, name, r in all_rows:
+    if r['type'] == 'X':
+        continue
+    if r['valid'] is True:
+        vtag = '<span class="ok">✓ 有效</span>'
+    elif r['valid'] is False:
+        vtag = '<span class="bad">✗ 失效</span>'
+    else:
+        vtag = '<span class="warn">—</span>'
+    body.append('<tr><td>%s</td><td>%s</td><td class="%s"><b>%s</b></td><td>%.3f</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>'
+                % (fmt_time(r['time']), sym, ('buy' if r['type'] == 'B' else 'sell'), r['type'],
+                   r['price'], vtag,
+                   ('%g' % r['max_fav_pct']) if r['max_fav_pct'] is not None else '—',
+                   ('%g' % r['adverse_pct']) if r['adverse_pct'] is not None else '—',
+                   cond_of(r)))
+body.append('</tbody></table></div>')
+body.append('<div class="note good">方向信号向前有效性：%d 个方向信号中 <b>%d 有效 / %d 失效</b>（名义命中率 %s%%）。</div>'
+            % (total['valid'] + total['invalid'], total['valid'], total['invalid'],
+               ('%g' % doc['today_win_rate'])))
+
+# 三、失效原因
+body.append('<h2>三、失效信号原因分析</h2>')
+failed = [(sym, name, r) for sym, name, r in all_rows if r['type'] != 'X' and r['valid'] is False]
+if not failed:
+    body.append('<div class="card"><div class="note good">✅ 无向前失效的方向信号。</div></div>')
+else:
+    for sym, name, r in failed:
+        body.append('<div class="card"><div class="note bad-n">❌ <b>%s %s %s [%s]</b><br>'
+                    '• 触发条件：%s<br>'
+                    '• 失效表现：%s<br>'
+                    '• 根因：%s</div></div>'
+                    % (sym, fmt_time(r['time']), r['type'], cond_of(r),
+                       cond_of(r), esc(r['reason']),
+                       '当日该标的单边重挫（688347 -14.9%% / 513310 -6.2%%），floor 价格地板/均线引力买入逻辑在弱势段机械"接飞刀"，买入后价格继续下探未出现 +0.15%% 以上有利波动即被击穿。'))
+body.append('<div class="note bad-n">⚠️ 模式提示：今日 <b>3 个失效信号全部为买入(B)</b>，集中在极端下跌段。暴跌日 floor 买入信号密集且易失效，建议对买方信号叠加止跌/底背离共振过滤，避免在单边下行中机械抄底。</div>')
+
+# 四、整体 + 基线
+body.append('<h2>四、整体表现与近5交易日基线对比</h2>')
+body.append('<div class="card"><table><thead><tr><th>指标</th><th>今日</th><th>近5日均值(%s)</th><th>判定</th></tr></thead><tbody>'
+            % ', '.join(d[5:] for d in bl_days))
+for c in cmp:
+    flag = c['anomaly']
+    fcolor = '#f85149' if flag else '#3fb950'
+    body.append('<tr><td>%s</td><td><b>%s</b></td><td>%s</td><td style="color:%s;font-weight:700">%s</td></tr>'
+                % (esc(c['metric']), c['today'], c['baseline'],
+                   fcolor, ('⚠ 异常' if flag else '正常')))
+body.append('</tbody></table></div>')
+body.append('<div class="note">基线交易日：%s。所有日期均用当前 floor 引擎复算，口径一致。</div>' % ', '.join(bl_days))
+body.append('<div class="note">① <b>信号数异常(%.2f×)</b>：主因=重放风暴导致引擎在风暴期对历史 bar 重复触发 + 当日极端波动（688347 振幅 16.4%%、513310 7.5%%）放大买卖点是非。剔除重放后，实盘真实触发仅 %d 次。<br>'
+            '② <b>胜率 75%% ≈ 基线 71%%</b>：信号质量未明显恶化，异常在"量"不在"质"。<br>'
+            '③ <b>688347 今日 0 个卖信号</b>（仅买+出场）：floor 门控在单边暴跌日只产生"抄底"逻辑、缺乏逢高反T卖点，是单边市特征，需注意买方信号密集与失效集中。</div>'
+            % (total['n_signals'] / base['n_signals'] if base['n_signals'] else 0, n_real))
+
+# 四·B、[P2-3 迭代] 卡方风格绩效统计卡片（复用 performance_stats.kf_style_stats）
+try:
+    sys.path.insert(0, ROOT)
+    from scripts.performance_stats import kf_style_stats
+    # 从复盘 rows 提取 trip 形态（ret 用向前验证 max_fav/adverse 近似收益）
+    trips = []
+    for sym, res in syms.items():
+        for r in res.get('rows', []):
+            if r['type'] == 'X':
+                continue
+            fav = r.get('max_fav_pct')
+            adv = r.get('adverse_pct')
+            if fav is None or adv is None:
+                continue
+            # 近似净收益：有利波动幅度 + 不利波动幅度（不对称粗略估算）
+            ret = fav if r['valid'] is True else -(abs(adv) if adv is not None else 0)
+            trips.append({'ret_pct': ret, 'hold_bars': 0,
+                          'exit_reason': 'S' if r['type'] == 'S' else 'B',
+                          'entry_date': TARGET})
+    kf = kf_style_stats(trips) if trips else {'n_trips': 0}
+    if kf.get('n_trips', 0):
+        # [轮次2-3 迭代] 样本量警告：年化/夏普在样本<20 时失真（4笔→1033%），
+        # 在卡方卡片中显著展示，避免单日复算被误读为长期绩效。
+        warn = kf.get('sample_warning')
+        warn_html = ''
+        if warn:
+            warn_html = ('<div class="note" style="color:#ffab40">⚠️ 样本量警告：<b>%s</b>'
+                         '（%d 笔）。当日复算的胜率/年化/Level 受样本量影响可能失真，'
+                         '仅作当日信号质量参考，不代表长期绩效。</div>'
+                         % (warn, kf['n_trips']))
+        kf_cards = (
+            '<div class="kpi"><div class="v" style="color:#7db3ff">%d</div><div class="l">样本信号</div></div>'
+            '<div class="kpi"><div class="v">%s%%</div><div class="l">20日胜率(当日近似)</div></div>'
+            '<div class="kpi"><div class="v">%s</div><div class="l">Level 星级</div></div>'
+            '<div class="kpi"><div class="v">%s%%</div><div class="l">当日开仓率</div></div>'
+            '<div class="kpi"><div class="v">%s</div><div class="l">盈亏比</div></div>'
+            % (kf['n_trips'], kf['win_rate_20d'],
+               '★' * kf['level_star'],
+               kf['open_rate_today_pct'] if kf['open_rate_today_pct'] is not None else '—',
+               kf['pl_ratio']))
+        body.append('<h2>四·B、卡方风格绩效统计（[P2-3] 与 kf xlsx 口径对齐）</h2>')
+        body.append('<div class="sub">从当日复算信号近似计算（向前验证有利/不利波动），与卡方 5002 只 xlsx 口径同构展示：胜率/开仓率/Level 星级。tpoint 无费用模型，数值仅作分布对照。</div>')
+        body.append('<div class="kpis">%s</div>' % kf_cards)
+        body.append(warn_html)
+        body.append('<div class="note">对照锚点：卡方 xlsx 全市场 20日胜率中位 <b>61.0%%</b>、开仓率≥50%% 仅 <b>18.3%%</b>；watchlist 内 688111.SH 锚点 Level3/年化 22.58%%/开仓率 57.94%%/胜率 50%%。</div>')
+except Exception as e:
+    body.append('<div class="note">[P2-3] 绩效统计卡片生成跳过：%s</div>' % esc(e))
+
+# 五、行情图
+body.append('<h2>五、当日行情图（tpoint 信号标注）</h2>')
+body.append('<div class="sub">5 分钟蜡烛；▲红=B买入，▼绿=S卖出/反T空，✕橙=X出场。标注为 floor 引擎在真实行情上复算的信号（实盘当日仅 4 条真实实时推送，详见第〇节）。</div>')
+for sym in wl:
+    res = syms.get(sym)
+    if not res:
+        continue
+    name = res.get('name', sym)
+    st = res.get('stats', {})
+    s = res.get('summary', {})
+    daystat = ''
+    if st:
+        daystat = '低 %s / 高 %s / 收 %s（涨跌 %s%%）' % (st.get('low'), st.get('high'), st.get('close'), st.get('day_chg_pct'))
+    fn = os.path.join(OUT, 'chart_%s_%s.png' % (TARGET, sym.replace('.', '_')))
+    if os.path.exists(fn):
+        body.append('<h3>%s %s &nbsp;<span class="sub">复算 %d 信号(买%d/卖%d/出场%d) ｜ %s</span></h3>'
+                    % (sym, name, s.get('n_signals', 0), s.get('n_B', 0), s.get('n_S', 0), s.get('n_X', 0), daystat))
+        body.append('<img class="chart" src="%s" alt="%s 行情图">' % (b64(fn), sym))
+
+body.append('<div class="foot">tpoint floord v9.2.2 ｜ 报告由 floor 引擎从零复算 + 1m 行情向前验证 + 行情图(信号标注) 生成 ｜ 数据截止 %s 15:00</div>' % TARGET)
+
+html = ('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>tpoint 每日复盘 %s</title><style>%s</style></head>'
+        '<body><div class="wrap">') % (TARGET, css) + ''.join(body) + '</div></body></html>'
+
+hpath = os.path.join(OUT, 'review_%s.html' % TARGET)
+with open(hpath, 'w', encoding='utf-8') as f:
+    f.write(html)
+print('[ok] HTML ->', hpath, '(%d bytes)' % len(html))

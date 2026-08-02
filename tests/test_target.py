@@ -1,4 +1,5 @@
 import traceback, os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'core'))
 from datasource import MootdxDataSource
 print("import OK, 创建实例...")
 tf = MootdxDataSource()

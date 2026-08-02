@@ -99,18 +99,43 @@ def get_daily_vol_med(ds, sym, day, win=10):
 
 
 def fetch_1m(ds, sym, day):
+    """[P1-3 迭代] 复盘 1m 数据获取：口径对齐 mootdx 真实 OHLC。
+
+    当日（复算当日）→ 强制 mootdx 主源（historical_1m 直取当日真实 1m K线），
+    不再走 intraday() 的腾讯分时兜底——腾讯分时 open=前收/high=low=极值，
+    会与实盘 mootdx 真实数据产生口径偏差（07-31 588000 复算 B@1.783 vs 实盘 1.788）。
+    仅当 mootdx 完全失败才降级 intraday（合成数据，报告将标注来源）。
+
+    历史 → historical_1m（本就纯 mootdx，无兜底）。
+    """
     if day == datetime.datetime.now(CST).strftime('%Y-%m-%d'):
-        df = ds.intraday(sym)
+        # 当日：优先 mootdx 真实 1m（historical_1m offset 拉取后按日过滤）
+        try:
+            df = ds.historical_1m(sym, day)
+            if df is not None and len(df) >= 5:
+                df.attrs['data_source'] = 'mootdx'
+                return df
+        except Exception:
+            pass
+        # mootdx 失败才降级 intraday（腾讯分时合成数据，标注来源）
+        try:
+            df = ds.intraday(sym)
+            if df is not None and len(df) >= 5:
+                df.attrs['data_source'] = 'tencent_synth'
+                print(f"  ⚠️ 当日 {sym} mootdx 1m 失败，降级腾讯分时合成数据（口径偏差风险）")
+                return df
+        except Exception:
+            df = None
+        return None
     else:
         try:
             df = ds.historical_1m(sym, day)
+            if df is not None and len(df) >= 5:
+                df.attrs['data_source'] = 'mootdx'
+                return df
         except Exception:
             df = None
-    if df is None or len(df) < 5:
         return None
-    df = df.sort_values('trade_time').reset_index(drop=True)
-    df['volume'] = df['volume'].clip(lower=0)
-    return df
 
 
 def build_data(df, pc):
@@ -309,7 +334,9 @@ def load_push_audit(audit_path, date=None):
 # ----------------------------------------------------------------------------- #
 # HTML 报告
 # ----------------------------------------------------------------------------- #
-def build_html(target, sym_results, baseline, comparison, live_counts=None, audit_rows=None):
+def build_html(target, sym_results, baseline, comparison, live_counts=None, audit_rows=None, diff_rows=None):
+    def esc(x):
+        return (str(x).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
     # ---- Fix3: 实盘权威源（state.json）vs 复算对照 + Δ ----
     live_counts = live_counts or {}
     all_syms = sorted(set(list(sym_results.keys()) + list(live_counts.keys())))
@@ -348,6 +375,28 @@ def build_html(target, sym_results, baseline, comparison, live_counts=None, audi
      <th style="padding:8px">时间</th><th>标的</th><th>类型</th><th>价格</th><th>飞书code</th><th>结果</th></tr></thead>
    <tbody>{arows}</tbody></table>
 </div>"""
+    # [P2-2 迭代] 实盘/复算 diff 汇总（自动）
+    diff_html = ''
+    if diff_rows:
+        drows = ''
+        for d in diff_rows:
+            vcolor = {'一致': '#0a8f3c', '实盘>复算(可能重放/多次同bar)': '#d4380d',
+                      '实盘<复算(可能漏推/首扫抑制)': '#fa8c16'}.get(d['verdict'], '#333')
+            drows += (f"<tr><td>{esc(d['sym'])} {esc(d['name'])}</td>"
+                      f"<td>{d['live_B']}</td><td>{d['live_S']}</td>"
+                      f"<td>{d['recalc_B']}</td><td>{d['recalc_S']}</td>"
+                      f"<td>{d['delta_B']:+d}</td><td>{d['delta_S']:+d}</td>"
+                      f"<td style='color:{vcolor};font-weight:700'>{esc(d['verdict'])}</td></tr>")
+        diff_html = f"""
+<div style="background:#fff;border-radius:10px;padding:18px;margin-top:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+  <h2 style="font-size:16px;margin:0 0 4px;color:#1f2a44">〇·C 实盘 vs 复算 diff 汇总（自动）</h2>
+  <p style="color:#888;font-size:12px;margin:0 0 10px">Δ = 实盘 − 复算。负值→疑似漏推/首扫抑制（P0-2 已收窄窗口）；正值→疑似重放或同 bar 多次计数。仅汇总计数，逐笔见 push_audit。</p>
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+   <thead><tr style="background:#f0f2f5;color:#555;text-align:left">
+     <th style="padding:8px">标的</th><th>实盘买</th><th>实盘卖</th><th>复算买</th><th>复算卖</th><th>Δ买</th><th>Δ卖</th><th>结论</th></tr></thead>
+   <tbody>{drows}</tbody></table>
+</div>"""
+
     live_section = f"""
 <div style="background:#fff;border-radius:10px;padding:18px;margin-top:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)">
   <h2 style="font-size:16px;margin:0 0 4px;color:#1f2a44">〇、实盘权威源（state.json）vs 复算对照</h2>
@@ -357,10 +406,8 @@ def build_html(target, sym_results, baseline, comparison, live_counts=None, audi
      <th style="padding:8px">标的</th><th>实盘买</th><th>实盘卖</th><th>实盘合计</th>
      <th>复算买</th><th>复算卖</th><th>复算合计</th><th>Δ</th><th>偏差%</th></tr></thead>
    <tbody>{cmp_rows_live}</tbody></table>
-</div>{audit_html}"""
+</div>{diff_html}{audit_html}"""
 
-    def esc(x):
-        return (str(x).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
     # 信号明细：按标的分类展示
     def _row_html(r):
         if r['valid'] is True:
@@ -509,8 +556,8 @@ def main():
         wl = json.load(open(os.path.join(ROOT, 'data', 'watchlist.json'), encoding='utf-8'))
         SYMS = list(wl.keys()); NAME = wl
     except Exception:
-        SYMS = ['161129.SZ', '688347.SH', '513310.SH']
-        NAME = {'161129.SZ': '原油LOF易方达', '688347.SH': '华虹公司', '513310.SH': '中韩半导体ETF华泰柏瑞'}
+        SYMS = ['161129.SZ', '513310.SH', '300058.SZ', '600570.SH', '688111.SH']
+        NAME = {'161129.SZ': '原油LOF易方达', '513310.SH': '中韩半导体ETF华泰柏瑞', '300058.SZ': '蓝色光标', '600570.SH': '恒生电子', '688111.SH': '金山办公'}
 
     ds = MootdxDataSource()
     sym_results = {}
@@ -618,6 +665,30 @@ def main():
     audit_path = os.path.join(ROOT, 'data', 'push_audit.jsonl')
     audit_rows = load_push_audit(audit_path, target)
 
+    # ---- [P2-2 迭代] 实盘/复算 diff 汇总（自动）----
+    # 每个标的：实盘计数 vs 复算计数 → 差异绝对值 + 方向（漏推/多算/一致）
+    diff_rows = []
+    for sym in sorted(set(list(sym_results.keys()) + list(live_counts.keys()))):
+        live = live_counts.get(sym, {'B': 0, 'S': 0, 'total': 0})
+        recalc = sym_results.get(sym, {}).get('summary')
+        rB = (recalc or {}).get('n_B', 0)
+        rS = (recalc or {}).get('n_S', 0)
+        dB = live['B'] - rB
+        dS = live['S'] - rS
+        if dB == 0 and dS == 0:
+            verdict = '一致'
+        elif dB > 0 or dS > 0:
+            verdict = '实盘>复算(可能重放/多次同bar)'
+        else:
+            verdict = '实盘<复算(可能漏推/首扫抑制)'
+        diff_rows.append({
+            'sym': sym, 'name': (sym_results.get(sym, {}).get('name')
+                                 or live_counts.get(sym, {}).get('name', '')),
+            'live_B': live['B'], 'live_S': live['S'], 'live_total': live['total'],
+            'recalc_B': rB, 'recalc_S': rS, 'recalc_total': (recalc or {}).get('n_signals', 0),
+            'delta_B': dB, 'delta_S': dS, 'verdict': verdict,
+        })
+
     # ---- 输出 ----
     out_json = {
         'date': target, 'mode': 'floor (production)', 'generated_at': time.strftime('%Y-%m-%d %H:%M:%S'),
@@ -634,6 +705,7 @@ def main():
         'baseline_note': baseline_note,
         'live_counts': live_counts,
         'audit_count': len(audit_rows),
+        'diff': diff_rows,  # [P2-2] 实盘/复算自动 diff
     }
     os.makedirs(os.path.join(ROOT, 'output'), exist_ok=True)
     jpath = os.path.join(ROOT, 'output', f'review_{target}.json')
@@ -643,7 +715,7 @@ def main():
     with open(hpath, 'w', encoding='utf-8') as f:
         f.write(build_html(target, {k: v for k, v in sym_results.items() if v.get('summary')},
                            {'note': baseline_note}, comparison,
-                           live_counts=live_counts, audit_rows=audit_rows))
+                           live_counts=live_counts, audit_rows=audit_rows, diff_rows=diff_rows))
     print(f"\n[ok] JSON -> {jpath}")
     print(f"[ok] HTML -> {hpath}")
 

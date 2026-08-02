@@ -203,7 +203,7 @@ tpoint 是一套 **A 股分钟级做 T（T+0）策略监控与信号推送系统
 | 类别 | 依赖 | 说明 |
 |------|------|------|
 | 运行时 | Python 3.11（项目 `venv`，`venv/Scripts/python.exe`） | 依赖隔离在 venv，不污染全局 |
-| 第三方库 | `requests`、`numpy`、`pandas`、`mootdx>=0.11`、`pytdx` | 见 `requirements.txt` |
+| 第三方库 | `requests`、`numpy`、`pandas`、`mootdx>=0.11`、`pytdx` | 见 `config/requirements.txt` |
 | 行情中间件 | 通达信行情服务器（TCP 7709）+ 腾讯财经 HTTP | 无 Key、免费；需放行出站 7709 |
 | 消息中间件 | 飞书开放平台群机器人 Webhook（3 个 hook） | 仅需 Webhook URL，无需自建服务 |
 | 文件/锁 | 本地文件系统 + `msvcrt`(Win)/`fcntl`(Linux) 文件锁 | 单实例互斥、状态留存 |

@@ -63,7 +63,7 @@ def _find_python() -> str:
 
     print("[run] 错误: 未找到安装了 mootdx/requests 的 Python 解释器！")
     print(f"[run] 已检查: {list(seen)}")
-    print("[run] 请先安装依赖: pip install -r requirements.txt")
+    print("[run] 请先安装依赖: pip install -r config/requirements.txt")
     sys.exit(1)
 
 
