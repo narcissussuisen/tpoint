@@ -249,6 +249,12 @@ def per_symbol_mpr(sym):
     return c.get('mpr_enable'), c.get('mpr_periods')
 
 
+def per_symbol_atr(sym):
+    """返回该标的的 atr_min_pct（ATR 波动率门控，P1/阶段A）；未配置→None（关）。"""
+    c = PER_SYMBOL_CFG.get(sym) or {}
+    return c.get('atr_min_pct')
+
+
 _load_per_symbol_cfg()
 if PER_SYMBOL_CFG:
     print(f"📋 per-symbol 参数来自 monitor_config.json: {json.dumps(PER_SYMBOL_CFG, ensure_ascii=False)}")
@@ -775,7 +781,7 @@ def _risk_gate(sym, name, data, st, sigs, action):
     return sigs
 
 
-def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None):
+def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_pct=None):
     """v9 信号检测 + 出场管理（v9.1.3+：自由双向 / 动态仓位 / 持续监控）。
 
     - 取消严格 B/S 交替配对（任务三）：每根 bar 独立评估买卖；同侧累加仓位，
@@ -876,9 +882,10 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None):
             continue
 
         # ===== 空仓：自由双向 + 动态仓位（任务三/四） =====
-        # [方案A] B 入场判定透传 per-symbol mpr（mpr_enable='B' → 大周期 hist<0 才放行）；
-        # S 判定不过滤（S 信号一个不少，保反T/逃顶能力）。
-        tb, rb = check_b_trigger(data, i, mpr_enable=mpr_enable, mpr_periods=mpr_periods)
+        # [方案A+] B 入场判定透传 per-symbol mpr + atr_min_pct（叠加过滤，2026-08-02 实证
+        # atr025+mpr_b60 胜率 47.8→56.2%，5/5 达标）；S 判定不过滤（S 信号一个不少）。
+        tb, rb = check_b_trigger(data, i, mpr_enable=mpr_enable, mpr_periods=mpr_periods,
+                                 atr_min_pct=atr_min_pct)
         ts, rs = check_s_trigger(data, i)
         if not (tb or ts):
             st[bar_key] = now
@@ -1370,11 +1377,14 @@ def run():
                                     for j in range(1, idx):
                                         st[f"bar_{sym}_{j}"] = now_ts()
                                     break
-                        # [方案A] per-symbol mpr 透传：按标的取 monitor_config.json 配置
+                        # [方案A+] per-symbol 透传：mpr（多周期 MACD）+ atr_min_pct（ATR 门控）
                         # （每轮读一次该标的，改配置后无需重启；见 run() 顶部热重载）
                         _mpr_e, _mpr_p = per_symbol_mpr(sym)
+                        _atr_p = per_symbol_atr(sym)
                         sigs = _risk_gate(sym, name, data, st,
-                                          detect_for(sym, name, data, st, mpr_enable=_mpr_e, mpr_periods=_mpr_p),
+                                          detect_for(sym, name, data, st,
+                                                     mpr_enable=_mpr_e, mpr_periods=_mpr_p,
+                                                     atr_min_pct=_atr_p),
                                           override_action)
                         if _first_scan:
                             # 首扫抑制：重启/长断线后 detect_for 会重扫一段历史 bar 以重建持仓状态，
