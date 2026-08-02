@@ -10,7 +10,7 @@ env['PYTHONPATH'] = f'{SP};{os.path.join(BASE, "venv", "Lib")};{BASE}'
 fl = open(os.path.join(BASE, 'logs', 'watchdog.log'), 'a', encoding='utf-8')
 p = subprocess.Popen(
     [PY, os.path.join(BASE, 'scripts', 'watchdog.py')],
-    creationflags=0x8 | 0x200,
+    creationflags=0x200 | 0x08000000,  # NEW_PROCESS_GROUP | CREATE_NO_WINDOW；禁用 DETACHED_PROCESS(0x8) 规避 pythonw 父进程句柄异常（与 watchdog v3.1 spawn 一致）
     cwd=BASE, env=env,
     stdin=subprocess.DEVNULL, stdout=fl, stderr=fl, close_fds=True,
 )
