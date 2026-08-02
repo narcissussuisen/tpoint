@@ -18,7 +18,7 @@ LOGS = os.path.join(BASE, 'logs')
 DETACHED = 0x00000008 | 0x00000200
 
 # 1) 清理 stale lock
-for fn in ('.monitor.lock', '.monitor.pid', '.alert_engine.lock', '.alert_engine.pid'):
+for fn in ('.monitor.svc.lock', '.monitor.svc.pid', '.alert_engine.lock', '.alert_engine.pid'):
     p = os.path.join(DATA, fn)
     if os.path.exists(p):
         try: os.remove(p); print(f'  rm stale {p}')

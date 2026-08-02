@@ -46,8 +46,8 @@ VERSION_FILE = os.path.join(BASE_DIR, 'VERSION')
 METRICS_FILE = os.path.join(DATA_DIR, 'metrics.json')
 STATE_FILE = os.path.join(DATA_DIR, 'state.json')
 SIGNAL_FILE = os.path.join(DATA_DIR, 'signal.txt')
-LOCK_FILE = os.path.join(DATA_DIR, '.monitor.lock')
-PID_FILE = os.path.join(DATA_DIR, '.monitor.pid')
+LOCK_FILE = os.path.join(DATA_DIR, '.monitor.svc.lock')
+PID_FILE = os.path.join(DATA_DIR, '.monitor.svc.pid')
 PROMPT_FILE = os.path.join(BASE_DIR, '..', 'stock-pool', 'prompt-common.md')
 CONFIG_FILE = os.path.join(BASE_DIR, 'config', 'monitor_config.json')
 WATCHLIST_FILE = os.path.join(DATA_DIR, 'watchlist.json')
@@ -862,7 +862,7 @@ def _suggestion(r):
     suggestions = {
         '服务运行/monitor 进程': '检查 run_monitor.bat 是否在运行；手动执行 `scripts/run_monitor.bat` 重启；查看 logs/monitor_fatal.log 和 monitor_lifecycle.log。',
         '服务运行/alert_engine 进程': '检查 run_engine.bat 是否在运行；手动执行 `scripts/run_engine.bat` 重启；查看 logs/engine_crash.log。',
-        '服务运行/单实例锁一致性': '删除 data/.monitor.lock 和 data/.monitor.pid（stale lock），再重启 monitor。此为已知跨会话检测问题。',
+        '服务运行/单实例锁一致性': 'monitor 单实例锁已切到 data/.monitor.svc.lock/.monitor.svc.pid（旧 .monitor.lock 可能被 Session0 僵尸占用）。若 stale，删 .monitor.svc.* 并重启 monitor。',
         '监控状态/metrics.json 可读': 'monitor 未启动或未写入心跳。先确认 monitor 进程存活，再检查 data/ 目录权限。',
         '监控状态/心跳新鲜度': 'monitor 可能卡在 mootdx 数据源连接。查看 monitor_console.log 最后输出；考虑重启 monitor。',
         '监控状态/扫描耗时合理性': '扫描耗时异常短（≤0.5s/0）说明 monitor 未真正扫描（可能 tf=None 或空转）。检查 monitor 进程是否存活、logs/monitor_console.log 是否每轮抛 compute exception；必要时清理锁文件并重启 monitor。',

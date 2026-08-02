@@ -12,7 +12,7 @@ schtasks /end /tn tpoint_alert_engine 2>nul
 
 echo [2/4] Kill monitor/alert_engine by PID (precise)...
 setlocal enabledelayedexpansion
-for %%f in (.monitor.pid .alert_engine.pid) do (
+for %%f in (.monitor.svc.pid .alert_engine.pid) do (
   if exist "data\%%f" (
     set /p pid=<"data\%%f"
     if defined pid (
@@ -39,5 +39,5 @@ start "v9_engine"  /MIN cmd /c "C:\Users\YZP\WorkBuddy\Claw\tpoint\scripts\run_e
 echo.
 echo Done. Verify with:
 echo   Get-Process python ^| Select-Object Id, SessionId, StartTime
-echo   type data\.monitor.pid
+echo   type data\.monitor.svc.pid
 pause

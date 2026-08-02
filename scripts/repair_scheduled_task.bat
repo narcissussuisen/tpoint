@@ -19,7 +19,7 @@ if exist "%VENV%" (
     if !ERRORLEVEL! equ 0 (
         echo   OK: dependencies complete
     ) else (
-        echo   FAIL: dependencies missing. Run: pip install -r requirements.txt
+        echo   FAIL: dependencies missing. Run: pip install -r config/requirements.txt
     )
 ) else (
     echo   FAIL: venv python not found at %VENV%

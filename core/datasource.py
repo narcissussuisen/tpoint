@@ -12,6 +12,7 @@ import socket
 import time
 import urllib.request
 import re
+import json
 import pandas as pd
 import numpy as np
 from mootdx.quotes import Quotes
@@ -30,6 +31,25 @@ _TDX_SERVERS = [
     ('180.153.39.50', 7709),    # 上海电信
     ('61.135.142.73', 7709),    # 北京联通2
 ]
+
+# [轮次2-1 迭代] 腾讯行情服务域名池（服务器级 failover）。
+# 07-31 盘中 getaddrinfo 间歇失败致腾讯分时兜底单域名单点故障（4 标的长时间失联）。
+# 轮询策略：按序尝试，某域名网络异常 → 立即切下一个；全部失败才算兜底失败。
+# 域名池含主备镜像（ifzq.gtimg.cn 主域 + 无前缀备用 + 镜像域），
+# 任一可用即恢复分时数据，避免"一个域名 DNS 抖→全链路哑火"。
+_TENCENT_HOSTS = [
+    'web.ifzq.gtimg.cn',     # 主域（腾讯财经分时接口，07-31 实测可用）
+    'ifzq.gtimg.cn',         # 备用域（同接口无 web 前缀，07-31 实测可用）
+    'web.sqt.gtimg.cn',      # 腾讯行情镜像（部分网络可达）
+]
+
+# 腾讯分时接口路径（域名池共用）
+_TENCENT_PATH = '/appstock/app/minute/query?code='
+
+# [轮次2-1 迭代] 独立厂商第三级兜底：新浪财经 1m K线（真实 OHLC，质量优于腾讯分时合成）。
+# 与腾讯分时互为"跨厂商冗余"——腾讯全家族 DNS 故障时仍有新浪可兜底。
+# 返回 250 根真实 OHLC 1m K 线（约 2 个交易日），调用方 intraday() 会过滤当日行。
+_SINA_MINUTE_URL = 'https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20_=/CN_MarketDataService.getKLineData?symbol={tcode}&scale=1&ma=no&datalen=250'
 
 
 def _probe(ip, port, timeout=2.0):
@@ -307,27 +327,70 @@ class MootdxDataSource:
         """腾讯分时接口兜底：当 mootdx 无分钟K时（LOF/T+0 基金常见），
         从腾讯分时 API 拉取当日分钟线，组装成与 intraday() 同格式的 DataFrame。
         数据格式：每行 "HHMM price volume amount"，从 09:30 到当前时间。
-        返回 DataFrame[trade_time, trade_date, open, close, high, low, volume] 或 None。"""
-        try:
+        返回 DataFrame[trade_time, trade_date, open, close, high, low, volume] 或 None。
+
+        2026-07-31 迭代改进（P0-1 数据源韧性）：
+        - 复用 _retry_with_backoff（3 次 / 1s-4s 退避）应对盘中间歇性 DNS 抖动
+          （getaddrinfo failed 曾致 07-31 全天漏推 ~50% 信号）；
+        - 重试仅对"网络级异常"生效（urllib 抛错）；返回 None（无数据）不重试；
+        - 总耗时 ≤ 首试+7s < SCAN_INTERVAL(15s)，不阻塞主循环。
+
+        [轮次2-1 迭代] 服务器级 failover：
+        - 腾讯域名单点 → 域名池 _TENCENT_HOSTS（3 个镜像）按序尝试；
+        - 再加独立厂商新浪 1m（真实 OHLC）作第三级，抗"腾讯全家族 DNS 故障"；
+        - 某源网络异常立即切换下一个（不重试当前源）；全池失败才对"整池"做 1 次退避重试；
+        - 消除 07-31 "单个域名 DNS 抖→全天失联"单点故障。
+        """
+        def _fetch_sina():
+            """新浪 1m K线（真实 OHLC，JSONP 格式）。返回 DataFrame 或 None。"""
+            tcode = _tencent_code(sym)  # 'sz161129' 新浪同格式
+            url = _SINA_MINUTE_URL.format(tcode=tcode)
+            req = urllib.request.Request(url, headers={
+                'User-Agent': 'Mozilla/5.0',
+                'Referer': 'https://finance.sina.com.cn/',
+            })
+            raw = urllib.request.urlopen(req, timeout=8).read().decode('utf-8', errors='ignore')
+            m = re.search(r'\((\[.*\])\)', raw, re.S)
+            if not m:
+                return None
+            rows = []
+            for d in json.loads(m.group(1)):
+                try:
+                    day, o, h, l, c, vol = (d['day'], float(d['open']), float(d['high']),
+                                            float(d['low']), float(d['close']), float(d.get('volume', 0)))
+                    rows.append({
+                        'trade_time': pd.Timestamp(day),
+                        'trade_date': str(day)[:10],
+                        'open': o, 'close': c, 'high': h, 'low': l,
+                        'volume': vol,
+                    })
+                except (KeyError, TypeError, ValueError):
+                    continue
+            if len(rows) < 3:
+                return None
+            df = pd.DataFrame(rows)
+            return df.sort_values('trade_time').reset_index(drop=True)
+
+        def _fetch_host(host, timeout=8.0):
+            """单域名单次拉取，返回 DataFrame 或 None（无数据不算异常）。"""
             tcode = _tencent_code(sym)  # 'sz161129'
-            # 腾讯全量分时接口（返回当天所有分钟线）
-            url = f'https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={tcode}'
+            url = f'https://{host}{_TENCENT_PATH}{tcode}'
             req = urllib.request.Request(url, headers={
                 'User-Agent': 'Mozilla/5.0',
                 'Referer': 'https://finance.qq.com/',
             })
-            raw = urllib.request.urlopen(req, timeout=10).read().decode('gbk', errors='ignore')
+            raw = urllib.request.urlopen(req, timeout=timeout).read().decode('gbk', errors='ignore')
             # 解析 JSON: {"data": {"sz161129": {"data": {"data": ["0930 1.995 ...", ...], "date":"20260721"}}}}
             import json as _json
             j = _json.loads(raw)
             # 导航到 data 数组
             d = j.get('data', {})
-            sym_data = d.get(tcode, {}) or d.get(list(d.keys())[0] if d else '', {})
+            sym_data = d.get(tcode, {}) or (d.get(list(d.keys())[0]) if d else {})
             inner = sym_data.get('data', {})
             lines = inner.get('data', [])
             date_str = inner.get('date', '')
             if not lines or not date_str:
-                return None
+                return None  # 无数据不算网络异常，不重试
             rows = []
             prev_price = None
             for line in lines:
@@ -337,10 +400,9 @@ class MootdxDataSource:
                 hhmm = parts[0]
                 price = float(parts[1])
                 volume = float(parts[2]) if len(parts) >= 3 and parts[2] != '0' else 0.0
-                if len(hhmm) == 4:
-                    tt = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {hhmm[:2]}:{hhmm[2:]}:00"
-                else:
+                if len(hhmm) != 4:
                     continue
+                tt = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {hhmm[:2]}:{hhmm[2:]}:00"
                 if prev_price is None:
                     o = h = l = price
                 else:
@@ -360,11 +422,41 @@ class MootdxDataSource:
             if len(rows) < 3:
                 return None
             df = pd.DataFrame(rows)
-            # 过滤 volume=0 且 price 不变的"死"行（集合竞价阶段），保留至少首尾
-            # 但不过滤太多——有些基金确实低活跃，有少量交易就是有效数据
             return df.sort_values('trade_time').reset_index(drop=True)
+
+        def _fetch_pool():
+            """三级兜底链：腾讯域名池(3) → 新浪 1m(独立厂商) → 全部失败抛异常给退避。
+            单源失败打印切换日志；返回 None（无数据）也切下一源（可能别源有数据）。"""
+            last_exc = None
+            # ① 腾讯域名池
+            for host in _TENCENT_HOSTS:
+                try:
+                    df = _fetch_host(host)
+                    if df is not None:
+                        return df
+                except Exception as e:
+                    last_exc = e
+                    print(f"  ⚠️ 腾讯分时 {sym} 域名 {host} 失败，切换备用: {e}")
+            # ② 独立厂商新浪（真实 OHLC，跨厂商冗余）
+            try:
+                df = _fetch_sina()
+                if df is not None:
+                    print(f"  ✅ 新浪1m兜底成功 {sym}: {len(df)} 根 (跨厂商冗余)")
+                    return df
+            except Exception as e:
+                last_exc = e
+                print(f"  ⚠️ 新浪1m {sym} 失败: {e}")
+            # ③ 全池失败：抛最后一个异常触发退避重试（仅网络级失败会走到这）
+            if last_exc is not None:
+                raise last_exc
+            return None  # 所有源都返回无数据（非网络异常），直接 None
+
+        try:
+            # [P0-1] 整池失败走退避重试（3次/1s-4s）；返回 None 不重试
+            return _retry_with_backoff(_fetch_pool, max_retries=3, base=1.0, cap=7.0,
+                                       label=f'腾讯分时池 {sym}')
         except Exception as e:
-            print(f"  ⚠️ 腾讯分时兜底失败 {sym}: {e}")
+            print(f"  ⚠️ 腾讯分时兜底失败(全池重试3次) {sym}: {e}")
             return None
 
     def historical_1m(self, sym, day, offset=2000):

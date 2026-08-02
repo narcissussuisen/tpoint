@@ -17,6 +17,13 @@ del /Q "C:\Users\YZP\WorkBuddy\Claw\tpoint\data\.alert_engine.lock" 2>nul
 del /Q "C:\Users\YZP\WorkBuddy\Claw\tpoint\data\.alert_engine.pid" 2>nul
 
 :loop
+:: 2026-07-31 护栏：若 watchdog 已拉起 alert_engine（data\.alert_engine.pid 指向存活进程），
+:: 本 Session0 启动器让出，避免双 alert_engine 双跑（watchdog v3 已单一负责拉起 alert_engine）。
+if exist "data\.alert_engine.pid" (
+  for /f %%p in (data\.alert_engine.pid) do (
+    tasklist /fi "pid eq %%p" 2>nul | find "%%p" >nul && (echo [%date% %time%] alert_engine %%p already running (watchdog), run_engine yields >> "C:\Users\YZP\WorkBuddy\Claw\tpoint\logs\engine_crash.log" & goto :eof)
+  )
+)
 "%PY_EXE%" core\alert_engine.py
 echo [%date% %time%] tpoint_alert_engine exited, restart in 5s >> "C:\Users\YZP\WorkBuddy\Claw\tpoint\logs\engine_crash.log"
 timeout /t 5 /nobreak >nul
