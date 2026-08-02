@@ -1,1 +1,0 @@
-{"regime": "green", "action": "ALLOW_BUY", "risk_score": 11, "market_risk": 0, "macro_risk": 0, "policy_risk": 54, "macro_stale": false, "reason": "综合11｜市场0()｜宏观0(PMI50.3)｜政策54(政策关键词:监管/利好(宽松))", "triggered_at": "2026-07-22 03:00:50", "expires_at": "2026-07-22 03:10:50", "source": "vr_risk_agent"}

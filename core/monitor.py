@@ -21,6 +21,8 @@ from miji_alpha import compute_miji_indicators, check_b_trigger, check_s_trigger
 from indicators import stars, K1
 # 出场管理：接 exit_manager 的移动止损/硬止损/S信号出场（P0 待办）
 from exit_manager import make_config
+# watchlist 归一化 + 停牌过滤（2026-08-02 自 main fd26203 移植：status/suspended_until 字段，扫描前过滤停牌标的）
+from watchlist import normalize_entry, is_suspended, active_symbols, market_open
 
 # ========== 路径配置化（跨平台，无需硬编码绝对路径） ==========
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -192,29 +194,49 @@ def load_targets():
 # 监控标的加载：唯一数据源 = data/watchlist.json
 # 2026-07-21 移除硬编码 5 持仓兜底：所有标的必须从此文件动态读取，
 # 避免启动时读失败→整日扫描错误标的(实证: 10:28 161129 未被监控)。
+# 2026-08-02 移植 fd26203：归一化标的结构（含停牌状态）{code: {name, status, suspended_until}}，
+# monitor 扫描前用 active_symbols(WATCH_ENTRIES) 过滤停牌标的。
+WATCH_ENTRIES = {}
+
 def _load_watchlist():
-    """从 data/watchlist.json 读取监控标的 {sym: name}。文件不存在或为空则报错退出。"""
+    """读取 data/watchlist.json → 返回 {sym: name}（归一化名字），同时刷新全局 WATCH_ENTRIES。
+    兼容旧格式 {sym: name} 与新格式 {sym: {name,status,suspended_until}}。
+    文件缺失/空/损坏返回 None（由调用方延迟重试）。"""
+    global WATCH_ENTRIES
     try:
         if os.path.exists(WATCHLIST_FILE):
             with open(WATCHLIST_FILE, encoding='utf-8') as f:
-                wl = json.load(f)
-            if wl and isinstance(wl, dict) and len(wl) > 0:
-                return wl
+                raw = json.load(f)
+        else:
+            raw = {}
     except Exception as e:
         print(f"❌ 读取 watchlist.json 失败: {e}")
-    print("❌ watchlist.json 不存在、为空或格式错误。无法确定监控标的，monitor 无法启动。")
-    print(f"   请在 {WATCHLIST_FILE} 中配置至少一个标的（如 {json.dumps({'161129.SZ': '原油LOF易方达'}, ensure_ascii=False)}）")
-    return None
+        return None
+    if not isinstance(raw, dict) or len(raw) == 0:
+        print("❌ watchlist.json 不存在、为空或格式错误。无法确定监控标的，monitor 无法启动。")
+        print(f"   请在 {WATCHLIST_FILE} 中配置至少一个标的（如 {json.dumps({'161129.SZ': '原油LOF易方达'}, ensure_ascii=False)}）")
+        return None
+    targets = {}
+    entries = {}
+    for code, val in raw.items():
+        e = normalize_entry(code, val)
+        targets[code] = e['name']
+        entries[code] = e
+    WATCH_ENTRIES = entries
+    return targets
 
 TARGETS = _load_watchlist()
 if not TARGETS:
     # 延迟到 run() 启动时再次尝试（可能用户还没来得及写好配置）
     print("⚠️ 启动时未加载到标的，将在 run() 循环中周期重试 watchlist.json")
 else:
-    print(f"📋 监控标的来自 watchlist.json: {', '.join(TARGETS.values())}")
+    _has_susp = any(is_suspended(e) for e in WATCH_ENTRIES.values())
+    print(f"📋 监控标的来自 watchlist.json: {', '.join(TARGETS.values())}"
+          + ("（含停牌过滤）" if _has_susp else ""))
 
 _EXCLUDE = {'920222.BJ', '920222.SZ'}
 TARGETS = {k: v for k, v in TARGETS.items() if k not in _EXCLUDE}
+WATCH_ENTRIES = {k: v for k, v in WATCH_ENTRIES.items() if k not in _EXCLUDE}
 
 # ========== per-symbol 监控参数（方案A，2026-08-02） ==========
 # 独立于 watchlist.json（保持 {sym: name} 结构不变，不破坏热重载/对比逻辑）。
@@ -1293,6 +1315,13 @@ def run():
         batch = []
         audit_meta = []  # 与 batch 一一对应，用于推送审计日志
         loop_start = time.time(); err_count = 0; max_bar_ts = 0.0; outer_err = False
+        # 停牌标的过滤：扫描前剔除 status=suspended 且期限未到的标的
+        # （不拉数据→不计 err_count、不累加 miss、不推数据源中断告警）。suspended_until 过期自动复牌。
+        try:
+            active = active_symbols(WATCH_ENTRIES, now)
+        except Exception as _e:
+            print(f"  [warning] active_symbols 异常, 本轮回退全量扫描: {_e}")
+            active = list(TARGETS.keys())
         # 先补发上一轮失败的推送（频限11232等），再扫描新信号——根治"失败即丢推"
         try:
             _drain_pending()
@@ -1305,9 +1334,9 @@ def run():
             #     实际 socket 操作是串行的。若后续标的增多导致锁竞争明显，
             #     可直接改 max_workers=1（纯串行）消除线程创建开销。
             sym_data = {}
-            max_workers = min(5, len(TARGETS))
+            max_workers = min(5, len(active))
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_sym = {executor.submit(compute, sym): sym for sym in TARGETS}
+                future_to_sym = {executor.submit(compute, sym): sym for sym in active}
                 for future in as_completed(future_to_sym):
                     sym = future_to_sym[future]
                     name = TARGETS[sym]
@@ -1324,11 +1353,17 @@ def run():
             # 静默零信号检测：本轮未取到 bar 的标的计数（堵"数据中断静默吞信号"）
             if sym_data:
                 st['_tf_unhealthy'] = False
+            # 停牌标的：直接清零 miss 并清去抖锁，不参与缺数计数/告警（治本：停牌≠数据源中断）
             for sym in TARGETS:
+                if sym not in active:
+                    st[f'_miss_{sym}'] = 0
+                    st.pop(f'alerted_miss_{sym}', None)
+            # 仅真实开盘时段累计缺数；盘前09:25-09:30/午休无数据属正常，不计数(避免盘前误报)
+            for sym in active:
                 if sym in sym_data:
                     st[f'_miss_{sym}'] = 0
                     st.pop(f'alerted_miss_{sym}', None)  # 数据恢复 → 清除去抖锁
-                else:
+                elif market_open(now):
                     st[f'_miss_{sym}'] = st.get(f'_miss_{sym}', 0) + 1
             # 告警（仅交易时段 + 过开盘宽限期，去抖避免刷屏）
             def _in_grace(tt):
@@ -1336,7 +1371,7 @@ def run():
                 return (t.replace(hour=9, minute=30) <= tt < t.replace(hour=9, minute=30 + g)) or \
                        (t.replace(hour=13, minute=0) <= tt < t.replace(hour=13, minute=5))
             if not _in_grace(now.time()):
-                for sym in TARGETS:
+                for sym in active:
                     m = st.get(f'_miss_{sym}', 0)
                     key_a = f'alerted_miss_{sym}'
                     if m >= ALERT_MISS_ROUNDS and not st.get(key_a):
@@ -1350,8 +1385,9 @@ def run():
                         print(f"  🚨 已推送静默零信号告警 {nm}({sym}) miss={m}")
 
             # 2) 顺序处理信号：避免共享状态 st 竞争
+            #    遍历 active（与拉取一致）：停牌标的无数据，语义上直接不参与信号处理
             override_action = _load_risk_override()  # 模式② 顶层风控闸门（每轮读一次）
-            for sym, name in TARGETS.items():
+            for sym, name in ((s, TARGETS[s]) for s in active):
                     data = sym_data.get(sym)
                     if not data:
                         continue
@@ -1430,9 +1466,9 @@ def run():
                 push_batch(batch, audit_meta=audit_meta)
             save_state(st)
             write_metrics(time.time() - loop_start, len(batch),
-                          err_count + (1 if outer_err else 0), max_bar_ts, len(TARGETS))
+                          err_count + (1 if outer_err else 0), max_bar_ts, len(active))
             if not batch:
-                print(f"  🔄 [{now.strftime('%H:%M:%S')}] 本轮无信号 ({len(TARGETS)}标的扫描完成)")
+                print(f"  🔄 [{now.strftime('%H:%M:%S')}] 本轮无信号 ({len(active)}标的扫描完成)")
         except Exception as e:
             outer_err = True
             print(f"💥 [{now.strftime('%H:%M:%S')}] v9扫描崩溃: {e}")
