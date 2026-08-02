@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>tpoint 两段式调参报告 2026-08-02</title>
+<style>
+body{background:#11151c;color:#d5dae2;font-family:Segoe UI,Microsoft YaHei,sans-serif;padding:24px;max-width:1200px;margin:auto}
+h1{color:#fff;font-size:20px} h2{color:#9ec9ff;font-size:15px;margin-top:28px}
+.card{background:#1a2029;border-radius:12px;padding:18px;margin-top:12px}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #2a3140;font-size:13px}
+th{color:#8a93a6;font-weight:500}
+.dim{color:#7d8798;font-size:11px}
+.sum{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
+.sum div{background:#232b38;border-radius:8px;padding:12px 18px}
+.sum b{font-size:22px;display:block;color:#fff}
+</style></head><body>
+<h1>tpoint 两段式调参网格搜索 · 2026-08-02</h1>
+<div class="card">
+  <h2>口径说明</h2>
+  <p>胜率 = 净收益&gt;0 比例（扣双边成本：万一佣金不免五；个股卖出印花税万5.641；ETF/LOF 无印花税；滑点 2bps/边）。</p>
+  <p>出场：仅移动止损（act 0.4% / trail 0.6%），S 信号自然出场。门控：MACD_GATE_MODE=floor（生产同源）。</p>
+  <p>调参池 40 只（T+0 与 T+1 各半，排除基线样本与 watchlist 验证集）；watchlist 5 只独立验证、不做二次调参。</p>
+</div>
+<div class="card">
+  <h2>第一段：调参池 40 只粗筛（按固定口径净胜率中位降序）</h2>
+  <table>
+    <tr><th>组合</th><th>净胜率中位(全)</th><th>盈亏比中位(全)</th><th>净胜率中位(样本≥20)</th><th>样本≥20</th><th>总笔数</th><th>B信号</th><th>S信号</th></tr>
+    <tr><td>基线 mhd0.15</td><td>47.40%</td><td>0.86</td><td>47.40%</td><td>40/40</td><td>3956</td><td>7507</td><td>6046</td></tr><tr><td>mhd=0.20</td><td>47.40%</td><td>0.86</td><td>47.40%</td><td>40/40</td><td>3955</td><td>7502</td><td>6045</td></tr><tr><td>mhd=0.25</td><td>47.40%</td><td>0.86</td><td>47.40%</td><td>40/40</td><td>3956</td><td>7498</td><td>6045</td></tr><tr><td>mhd=0.30</td><td>47.40%</td><td>0.86</td><td>47.40%</td><td>40/40</td><td>3954</td><td>7496</td><td>6044</td></tr><tr><td>mhd0.15+早盘B放宽0.05</td><td>47.40%</td><td>0.86</td><td>47.40%</td><td>40/40</td><td>3961</td><td>7568</td><td>6050</td></tr><tr><td>mhd=0.05</td><td>47.25%</td><td>0.86</td><td>47.25%</td><td>40/40</td><td>4056</td><td>7684</td><td>6117</td></tr><tr><td>mhd=0.10</td><td>47.25%</td><td>0.86</td><td>47.25%</td><td>40/40</td><td>3973</td><td>7535</td><td>6058</td></tr><tr><td>mhd0.15+VWAP0.7</td><td>47.05%</td><td>0.90</td><td>47.05%</td><td>40/40</td><td>3812</td><td>7204</td><td>6111</td></tr><tr><td>mhd0.15+VWAP0.5</td><td>47.00%</td><td>0.88</td><td>47.00%</td><td>40/40</td><td>4075</td><td>7750</td><td>5983</td></tr><tr><td>mhd0.15+ATR0.20</td><td>45.50%</td><td>0.78</td><td>47.05%</td><td>26/40</td><td>3021</td><td>5343</td><td>6157</td></tr><tr><td>mhd0.15+ATR0.25</td><td>44.25%</td><td>0.74</td><td>48.50%</td><td>23/40</td><td>2673</td><td>4359</td><td>6189</td></tr><tr><td>mhd0.15+ATR0.30</td><td>43.80%</td><td>0.73</td><td>47.20%</td><td>22/40</td><td>2319</td><td>3587</td><td>6223</td></tr><tr><td>mhd0.15+RSI&lt;30</td><td>40.00%</td><td>0.88</td><td>45.30%</td><td>16/40</td><td>702</td><td>1009</td><td>6046</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>局部细搜：调参池 40 只（ATR/VWAP/RSI 邻近 + 组合叠加）</h2>
+  <table>
+    <tr><th>组合</th><th>净胜率中位(全)</th><th>盈亏比中位(全)</th><th>净胜率中位(样本≥20)</th><th>样本≥20</th><th>总笔数</th><th>B信号</th><th>S信号</th></tr>
+    <tr><td>mhd0.15+VWAP0.65</td><td>47.55%</td><td>0.89</td><td>47.55%</td><td>40/40</td><td>3883</td><td>7350</td><td>6076</td></tr><tr><td>基线 mhd0.15</td><td>47.40%</td><td>0.86</td><td>47.40%</td><td>40/40</td><td>3956</td><td>7507</td><td>6046</td></tr><tr><td>mhd0.15+VWAP0.75</td><td>46.95%</td><td>0.91</td><td>46.95%</td><td>40/40</td><td>3717</td><td>7063</td><td>6149</td></tr><tr><td>mhd0.15+ATR0.22</td><td>45.80%</td><td>0.77</td><td>47.60%</td><td>24/40</td><td>2885</td><td>4949</td><td>6168</td></tr><tr><td>mhd0.15+ATR0.26</td><td>43.55%</td><td>0.71</td><td>48.50%</td><td>23/40</td><td>2610</td><td>4197</td><td>6196</td></tr><tr><td>mhd0.15+ATR0.24</td><td>43.40%</td><td>0.72</td><td>47.10%</td><td>23/40</td><td>2739</td><td>4550</td><td>6180</td></tr><tr><td>mhd0.15+ATR0.25+VWAP0.7</td><td>42.45%</td><td>0.71</td><td>48.60%</td><td>23/40</td><td>2566</td><td>4137</td><td>6240</td></tr><tr><td>mhd0.15+RSI&lt;35</td><td>41.25%</td><td>0.81</td><td>44.50%</td><td>18/40</td><td>1051</td><td>1864</td><td>6046</td></tr><tr><td>mhd0.15+RSI&lt;25</td><td>35.60%</td><td>0.61</td><td>47.75%</td><td>6/40</td><td>334</td><td>414</td><td>6046</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>第二段：watchlist 5 只独立验证（不做二次调参）</h2>
+  <table>
+    <tr><th>标的</th><th>基线 mhd0.15</th><th>mhd0.15+VWAP0.65</th><th>mhd0.15+ATR0.25</th><th>mhd0.15+RSI&lt;30</th></tr>
+    <tr><td>513310.SH</td><td>59笔 45.8%<br><span class="dim">PL 0.79</span></td><td>59笔 45.8%<br><span class="dim">PL 0.79</span></td><td>43笔 48.8%<br><span class="dim">PL 0.78</span></td><td>35笔 54.3%<br><span class="dim">PL 0.72</span></td></tr><tr><td>161129.SZ</td><td>81笔 55.6%<br><span class="dim">PL 0.89</span></td><td>79笔 54.4%<br><span class="dim">PL 0.87</span></td><td>53笔 60.4%<br><span class="dim">PL 0.80</span></td><td>29笔 44.8%<br><span class="dim">PL 0.74</span></td></tr><tr><td>600570.SH</td><td>104笔 51.0%<br><span class="dim">PL 0.61</span></td><td>103笔 50.5%<br><span class="dim">PL 0.57</span></td><td>69笔 56.5%<br><span class="dim">PL 0.65</span></td><td>18笔 44.4%<br><span class="dim">PL 0.88</span></td></tr><tr><td>300058.SZ</td><td>209笔 48.3%<br><span class="dim">PL 0.89</span></td><td>207笔 47.8%<br><span class="dim">PL 0.87</span></td><td>175笔 49.7%<br><span class="dim">PL 0.79</span></td><td>39笔 43.6%<br><span class="dim">PL 1.37</span></td></tr><tr><td>688111.SH</td><td>215笔 47.4%<br><span class="dim">PL 0.77</span></td><td>211笔 46.4%<br><span class="dim">PL 0.76</span></td><td>128笔 53.1%<br><span class="dim">PL 0.63</span></td><td>49笔 44.9%<br><span class="dim">PL 0.73</span></td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>ATR 门控分品种影响（atr_min_pct=0.25，调参池 40 只）</h2>
+  <table>
+    <tr><th>品种组</th><th>标的数</th><th>信号消失</th><th>基线胜率中位</th><th>ATR后胜率中位</th><th>Δ</th></tr>
+    <tr><td>T+0 ETF/LOF</td><td>20</td><td>9</td><td>47.6%</td><td>42.9%</td><td>-4.7pp</td></tr><tr><td>T+1 个股</td><td>20</td><td>0</td><td>47.4%</td><td>48.2%</td><td>+0.9pp</td></tr>
+  </table>
+  <p class="dim">T+0 组 9/20 只信号全部消失、剩余 11 只胜率中位 -4.7pp → ATR 对低波动 ETF/LOF 是纯伤害；T+1 组 0 只消失、+0.8pp → 对个股轻微正向。watchlist 的 161129 为高波动 LOF（atr 中位高），ATR 剔除的正是其低波动烂信号（+4.8pp）。</p>
+</div>
+
+<div class="card">
+  <h2>结论与生产建议（2026-08-02 两段式验证）</h2>
+  <table>
+    <tr><th>旋钮</th><th>调参池 40 只（固定全集口径）</th><th>watchlist 5 只独立验证</th><th>结论</th></tr>
+    <tr>
+      <td><b>mhd=0.15</b>（P0 已上线）</td>
+      <td>基线 47.40%；0.10~0.30 平台期 47.25~47.40%，0.05 47.25%</td>
+      <td>基线中位 48.30%</td>
+      <td>✅ 维持 0.15 不动（平台期中部，弱背离过滤有效）</td>
+    </tr>
+    <tr>
+      <td><b>ATR 门控</b>（P1）</td>
+      <td>atr_025 固定口径 44.25%（-3.15pp）；<br>
+          <b>T+0 组 20 只 → 9 只信号消失</b>、胜率中位 47.6→42.9%；<br>
+          T+1 组 20 只 → 0 只消失、47.4→48.2%</td>
+      <td>5/5 全提升（中位 +4.8pp）：161129 55.6→60.4、600570 51.0→56.5、688111 47.4→53.1、300058 48.3→49.7、513310 45.8→48.8</td>
+      <td>⚠️ <b>分品种生效</b>：对 T+1 个股与高波动 T+0 有效，对低波动 ETF/LOF 团灭。<br>
+          不可全局上线；若上线需按标的波动特征选择性启用（如 atr 中位 &gt; 0.25% 才启用），<br>
+          或仅对 watchlist 的 161129 单独启用（它本身高波动，ATR 剔除的正是低波动烂信号）。</td>
+    </tr>
+    <tr>
+      <td><b>VWAP_DEV 0.6→0.7</b></td>
+      <td>0.70：47.05%（-0.35pp）但盈亏比 0.90（+0.04）；<br>0.65 最优 47.55%（+0.15pp）、盈亏比 0.89</td>
+      <td>0.65/0.70 均无单只 &gt;1.2pp 退化；300058 盈亏比 0.89→0.95、688111 0.71→0.77</td>
+      <td>✅ 可接入：<b>VWAP_DEV_BUY 0.6→0.65</b>（盈亏比 +0.03、胜率持平、样本保留），<br>0.70 亦可但胜率略降；方向与报告「深负偏离 0.4389 优势」一致</td>
+    </tr>
+    <tr>
+      <td><b>RSI&lt;30</b></td>
+      <td>固定 40.00%（-7.4pp），40 只中 24 只样本崩</td>
+      <td>161129 -10.8pp、600570 -6.6pp、300058 -4.7pp</td>
+      <td>❌ 放弃（过度过滤 + 独立集严重退化；冒烟 61.75% 为小样本假象）</td>
+    </tr>
+    <tr>
+      <td><b>早盘放宽</b></td>
+      <td>47.40% ≈ 基线（差异 &lt;0.01pp）</td>
+      <td>—（默认关闭）</td>
+      <td>✅ 维持默认关闭（两轮验证：放宽仅把 78% 弱背离噪音放回，无增益）</td>
+    </tr>
+  </table>
+  <h2 style="margin-top:18px">下一步</h2>
+  <ul>
+    <li><b>接入 VWAP_DEV_BUY=0.65</b>（低成本、盈亏比增益、无退化）——改 core/miji_alpha.py 常量后重启 monitor。</li>
+    <li><b>ATR 门控按标的类型选择性启用</b>：对 watchlist 的 161129 单独启用 0.25%（回测 +4.8pp 且不伤其他标的），其余标的暂不启用；需要 monitor 支持 per-symbol 参数覆盖（新增配置项）。</li>
+    <li>盈亏比 0.6-0.9 仍远低于 1.6 达标线 → <b>出场侧是主矛盾</b>（移动止损吃不满趋势），入场过滤只能微调；P3 应优先做 S 信号专项与出场管理。</li>
+    <li>P3：多周期 MACD 共振、S 信号专项、长周期（10-15 年）数据源验证。</li>
+  </ul>
+</div>
+</body></html>

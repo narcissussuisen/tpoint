@@ -1,0 +1,80 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>floor 漏顶漏底修复 · 真实数据验证</title>
+<style>
+ body{font-family:-apple-system,Segoe UI,Roboto,'Microsoft YaHei',sans-serif;margin:0;background:#f5f6f8;color:#1f2329}
+ .wrap{max-width:980px;margin:24px auto;padding:0 18px}
+ h1{font-size:22px;margin:0 0 4px}
+ .sub{color:#8a8f99;font-size:13px;margin-bottom:18px}
+ .card{background:#fff;border:1px solid #e5e6eb;border-radius:10px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+ .card h2{font-size:15px;margin:0 0 12px;color:#1f2329}
+ table{width:100%;border-collapse:collapse;font-size:13px}
+ th,td{padding:7px 9px;text-align:right;border-bottom:1px solid #f0f0f0}
+ th:first-child,td:first-child{text-align:left}
+ thead th{background:#fafbfc;color:#5e6573;font-weight:600}
+ .hl{color:#cf1322;font-weight:700}
+ .muted{color:#a9aeb8;text-align:center}
+ .ok{color:#18a058;font-weight:700}
+ pre{background:#0f1115;color:#d6e0ff;padding:12px 14px;border-radius:8px;font-size:12.5px;line-height:1.6;overflow:auto}
+ .concl li{margin:6px 0;line-height:1.7}
+ .tag{display:inline-block;background:#e8f3ff;color:#1664ff;border-radius:4px;padding:1px 7px;font-size:12px;margin-left:6px}
+</style></head><body><div class="wrap">
+<h1>floor 漏顶漏底修复 · 真实数据验证<span class="tag">v9.2.2</span></h1>
+<div class="sub">生产 floor 模式 `_is_new_low/_is_new_high`：旧逻辑用收盘价 c[i] 比前窗极值 → 顶部/底部反转 bar 收盘回落即漏判真实极值。修复后改用 BAR 自身 lo[i]/h[i]。本报告以真实 1m 数据量化修复增量。</div>
+
+<div class="card"><h2>(A) 合成单元测试 — 反转收盘极值</h2>
+<pre>  顶部反转(top):     旧=False  修复后=True  (期望 旧漏/新捕)
+  底部反转(bottom):  旧=False  修复后=True  (期望 旧漏/新捕)
+  正常极值(normal):  旧=True  修复后=True  (期望 两者都捕)
+  &amp;gt;&amp;gt;&amp;gt; PASS: 修复后模块正确捕获反转收盘极值</pre>
+<p class="ok">结论：PASS：修复后模块正确捕获反转收盘极值</p></div>
+
+<div class="card"><h2>(B) 真实 1m 数据全量扫描（窗口 W=15）</h2>
+<table><thead><tr><th>标的</th><th>旧·新低</th><th>新·新低</th><th>新捕获低</th><th>旧·新高</th><th>新·新高</th><th>新捕获高</th><th>扫描bar数</th></tr></thead>
+<tbody><tr><td>159985.SZ</td><td>233</td><td>358</td><td class="hl">+125</td><td>296</td><td>465</td><td class="hl">+169</td><td>5000</td></tr>
+<tr><td>161129.SZ</td><td>229</td><td>364</td><td class="hl">+135</td><td>230</td><td>381</td><td class="hl">+151</td><td>5000</td></tr>
+<tr><td>513040.SH</td><td>219</td><td>396</td><td class="hl">+177</td><td>218</td><td>384</td><td class="hl">+166</td><td>5000</td></tr>
+<tr><td>513310.SH</td><td>398</td><td>569</td><td class="hl">+171</td><td>212</td><td>334</td><td class="hl">+122</td><td>5000</td></tr>
+<tr><td>518880.SH</td><td>293</td><td>511</td><td class="hl">+218</td><td>315</td><td>529</td><td class="hl">+214</td><td>5000</td></tr></tbody></table>
+</div>
+
+<div class="card"><h2>修复后新捕获的真实底（LOW）样例 — BAR 自身创低但收盘回落</h2>
+<table><thead><tr><th>标的</th><th>交易日</th><th>bar#</th><th>H</th><th>L(创低)</th><th>C(回落)</th><th>前窗最低</th></tr></thead>
+<tbody><tr><td>159985.SZ</td><td>2026-06-26</td><td>#40</td><td>2.000</td><td>1.999</td><td>2.000</td><td>2.000</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-26</td><td>#46</td><td>1.998</td><td>1.996</td><td>1.997</td><td>1.997</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-26</td><td>#47</td><td>1.999</td><td>1.995</td><td>1.998</td><td>1.996</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-26</td><td>#78</td><td>1.999</td><td>1.997</td><td>1.999</td><td>1.998</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-26</td><td>#79</td><td>1.999</td><td>1.996</td><td>1.998</td><td>1.997</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-26</td><td>#153</td><td>2.004</td><td>2.003</td><td>2.004</td><td>2.004</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-26</td><td>#196</td><td>2.006</td><td>2.003</td><td>2.005</td><td>2.005</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#16</td><td>2.002</td><td>1.999</td><td>2.000</td><td>2.000</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#43</td><td>1.999</td><td>1.997</td><td>1.998</td><td>1.998</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#55</td><td>1.998</td><td>1.996</td><td>1.997</td><td>1.997</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#108</td><td>2.001</td><td>2.000</td><td>2.001</td><td>2.001</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#154</td><td>1.998</td><td>1.996</td><td>1.997</td><td>1.997</td></tr></tbody></table>
+</div>
+
+<div class="card"><h2>修复后新捕获的真实顶（HIGH）样例 — BAR 自身创高但收盘回落</h2>
+<table><thead><tr><th>标的</th><th>交易日</th><th>bar#</th><th>H(创高)</th><th>L</th><th>C(回落)</th><th>前窗最高</th></tr></thead>
+<tbody><tr><td>159985.SZ</td><td>2026-06-26</td><td>#123</td><td>2.002</td><td>2.000</td><td>2.001</td><td>2.001</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-26</td><td>#124</td><td>2.003</td><td>2.001</td><td>2.002</td><td>2.002</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-26</td><td>#160</td><td>2.008</td><td>2.006</td><td>2.007</td><td>2.007</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#66</td><td>2.001</td><td>2.000</td><td>2.000</td><td>2.000</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#137</td><td>2.002</td><td>2.001</td><td>2.001</td><td>2.001</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#140</td><td>2.003</td><td>2.000</td><td>2.002</td><td>2.002</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#141</td><td>2.004</td><td>2.002</td><td>2.002</td><td>2.003</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#172</td><td>1.998</td><td>1.996</td><td>1.996</td><td>1.997</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#180</td><td>1.999</td><td>1.997</td><td>1.997</td><td>1.998</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#196</td><td>2.002</td><td>2.000</td><td>2.001</td><td>2.001</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#204</td><td>2.003</td><td>2.002</td><td>2.002</td><td>2.002</td></tr>
+<tr><td>159985.SZ</td><td>2026-06-29</td><td>#225</td><td>2.004</td><td>2.002</td><td>2.003</td><td>2.003</td></tr></tbody></table>
+</div>
+
+<div class="card"><h2>结论（数据说话）</h2><ul class="concl"><li>真实 1m 数据全量扫描（窗口 W=15）：修复后新捕获的&lt;b&gt;真实底&lt;/b&gt; 826 个、&lt;b&gt;真实顶&lt;/b&gt; 822 个——这些 bar 的 BAR 自身创了窗内极值，但收盘价回落，旧逻辑（收盘价比极值）结构性漏判，修复后全部抓回。</li>
+<li>无回归：旧逻辑捕获而修复后丢失的数量 = 0（正常极值两种逻辑都捕，见合成单测 normal 行）。</li>
+<li>放量结论：漏顶漏底 bug 在 floor 逃逸通道上是&lt;b&gt;真实存在且可量化&lt;/b&gt;的，修复有实际增量信号。</li></ul></div>
+
+<div class="card" style="font-size:12px;color:#8a8f99">
+<p>⚠️ 以上内容由 AI 基于公开信息整理生成，仅供参考，不构成任何投资建议或个股推荐。投资有风险，决策需谨慎。</p>
+</div>
+</div></body></html>
