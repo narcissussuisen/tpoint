@@ -65,13 +65,13 @@ code{background:#2a3140;padding:1px 5px;border-radius:4px;font-family:Consolas,m
 </div>
 
 <div class="card">
-<h2>4. 发现的问题与处置</h2>
+<h2>4. 发现的问题与处置（2026-08-02 已全部处理）</h2>
 <table>
-<tr><th>#</th><th>问题</th><th>严重度</th><th>处置</th></tr>
-<tr><td>1</td><td>state.json 残留 688347.SH 计数键（已从 watchlist 移除）</td><td class="warn">低</td><td>不影响运行（monitor 只读当前 watchlist 键），建议下次维护时清理</td></tr>
-<tr><td>2</td><td>git 工作区有 208 项历史未提交变更（backtest 目录清理等）</td><td class="warn">低</td><td>生产运行文件已单独提交为基线（aa2307d）；其余为历史研究产物，不影响部署，可后续整理</td></tr>
-<tr><td>3</td><td>launch_watchdog.py 使用 DETACHED_PROCESS(0x8)（与 MEMORY 铁律矛盾）</td><td class="warn">低</td><td>当前未使用（watchdog 已运行，登录自启走 HKCU Run）；watchdog v3.1 spawn 已合规（0x200|0x08000000）</td></tr>
-<tr><td>4</td><td>161129/513310 B 信号低频（全量 66 天各仅 12 个）</td><td class="warn">观察项</td><td>ATR+mpr 过滤后的预期行为；513310 保留率 37% 踩线，需实盘观察（见 MEMORY 待办）</td></tr>
+<tr><th>#</th><th>问题</th><th>严重度</th><th>处置结果</th></tr>
+<tr><td>1</td><td>state.json 残留 688347.SH 计数键（已从 watchlist 移除）</td><td class="warn">低</td><td class="ok">✅ <b>已清理</b>：删除 17 个 688347 键（含 _stale_ 标记），备份 state.json.bak_20260802；588000 无残留</td></tr>
+<tr><td>2</td><td>git 工作区 208 项历史未提交变更</td><td class="warn">低</td><td class="ok">✅ <b>已整理</b>：6 批提交归档（工具脚本31+docs4 / 回测JSON11+报告24 / 删除历史脚本64 / 修改文件9 / 剩余报告14）；.gitignore 新增产物规则（pptx_media/sina_5m/tick_cache/push_audit/图表/日志/临时目录）；工作区现 0 未跟踪/0 修改/0 删除</td></tr>
+<tr><td>3</td><td>launch_watchdog.py 使用 DETACHED_PROCESS(0x8)（与 MEMORY 铁律矛盾）</td><td class="warn">低</td><td class="ok">✅ <b>已修复</b>：creationflags 0x8|0x200 → 0x200|0x08000000（与 watchdog v3.1 spawn 一致），commit a663c89</td></tr>
+<tr><td>4</td><td>161129/513310 B 信号低频观察项</td><td class="warn">观察项</td><td class="ok">✅ <b>已归档</b>：MEMORY.md 待办持续跟踪（513310 保留率 37% 踩线，若实盘信号长期过稀考虑降级仅 mpr）</td></tr>
 </table>
 </div>
 
@@ -93,6 +93,7 @@ code{background:#2a3140;padding:1px 5px;border-radius:4px;font-family:Consolas,m
 <ul>
 <li>9 项自检全部通过（冒烟 2 + 回归 2 + 一致性 2 + 性能可用性 3）</li>
 <li>生产行为与新代码一致：阶段 C（mpr_b60）/ A+（atr0.25）per-symbol 生效，阶段 B/D 新增旋钮默认关（不改变信号）</li>
+<li><b class="ok">验收发现 4 项问题已全部处置（2026-08-02）</b>：state.json 残留清理 / git 208项归档 / launch_watchdog flags 修复 / 513310 观察项归档</li>
 <li>回滚预案（如有需要）：<code>git revert aa2307d</code> 或切回 <code>a54020c</code>；watchdog 重启即生效</li>
 <li>周一开盘 09:25 后：确认 monitor 日志出现 <code>PROCESS_START</code> + 信号正常推送，即完成最终生效确认</li>
 </ul>
