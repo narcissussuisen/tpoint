@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tpoint 零信号诊断报告 · 2026-07-24</title>
+<style>
+  :root{--bg:#0f1115;--card:#1a1d24;--ink:#e6e8ec;--mut:#9aa3b2;--red:#ff5c5c;--grn:#36d399;--yel:#f5c451;--blu:#5b9dff;--line:#2a2f3a;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.6;padding:28px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--mut);font-size:13px;margin-bottom:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:14px 0}
+  .card h2{font-size:16px;margin:0 0 10px;color:var(--blu)}
+  .verdict{font-size:15px;font-weight:600}
+  .tag{display:inline-block;padding:2px 9px;border-radius:6px;font-size:12px;font-weight:600;margin-right:6px}
+  .t-bug{background:rgba(255,92,92,.15);color:var(--red);border:1px solid rgba(255,92,92,.4)}
+  .t-ok{background:rgba(54,211,153,.15);color:var(--grn);border:1px solid rgba(54,211,153,.4)}
+  .t-warn{background:rgba(245,196,81,.15);color:var(--yel);border:1px solid rgba(245,196,81,.4)}
+  code{background:#0c0e12;padding:1px 6px;border-radius:5px;font-size:12.5px;color:#ffd9a0;font-family:"SF Mono",Consolas,monospace}
+  pre{background:#0c0e12;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;font-size:12px;color:#cfe3ff;line-height:1.5}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600}
+  .ok{color:var(--grn)} .bad{color:var(--red)} .mut{color:var(--mut)}
+  .chain{font-family:"SF Mono",Consolas,monospace;font-size:12.5px;color:#cfe3ff;background:#0c0e12;border:1px solid var(--line);border-radius:8px;padding:14px;white-space:pre}
+  .arrow{color:var(--blu)}
+  ul{margin:8px 0;padding-left:20px} li{margin:5px 0}
+  .kv{font-size:13px} .kv b{color:var(--ink)}
+  .foot{color:var(--mut);font-size:12px;margin-top:18px}
+</style>
+</head>
+<body>
+<h1>tpoint 零信号诊断报告</h1>
+<div class="sub">生成时间 2026-07-24 11:20 · 项目 Claw/tpoint · 运行态 monitor（旧代码，缺 code_version）</div>
+
+<div class="card">
+  <h2>一、结论（一句话）</h2>
+  <p class="verdict"><span class="tag t-bug">根因 BUG</span>watchlist 热重载把"新加入"标的的 <code>STATE[sym]['PC']</code> 清零，而当日 <code>refresh_daily()</code> 不会再跑 → 被恢复进来的 <b>161129 / 513310 的 PC 恒为 0</b> → <code>detect_for</code> 在 <code>if pc&lt;=0: return</code> 提前空返回，全天零信号。</p>
+  <p class="kv"><span class="tag t-warn">叠加问题</span>运行中 monitor 是<b>旧代码</b>（metrics 无 <code>code_version</code> 字段，落后于 <code>f730f58</code>），即使 688347 的 PC 保留着有效值，今天也未出信号——运行态与磁盘代码不一致，存在更广泛的静默。需重启 monitor 加载当前磁盘代码（<code>fd26203</code>）方可当日恢复。</p>
+  <p class="kv"><span class="tag t-ok">已排除</span>发送链路（飞书 webhook）健康：<code>emit_signal→push_batch→_push_retry→requests.post</code> 07-23 仍能成功推送（见 push_audit.jsonl）。本次非"发送阻塞/延迟"，而是"上游检测判定为空"。</p>
+</div>
+
+<div class="card">
+  <h2>二、信号发送调用链路（当前代码）</h2>
+  <div class="chain">run() 主循环 (core/monitor.py)
+ └─ <span class="arrow">→</span> compute(sym)           # 拉 mootdx 1m bar + compute_miji_indicators（受 _data_lock 互斥）
+ └─ <span class="arrow">→</span> _handle_staleness()    # 新鲜度校验，陈旧源剔除
+ └─ <span class="arrow">→</span> detect_for(sym,...)    # ← 信号检测入口
+       ├─ pc = STATE[sym]['PC']; if pc&lt;=0: return []   # ★ 零信号闸门（PC=0 直接返回空）
+       ├─ 持仓中：硬止损 / 反向平仓 / 移动止损 / 时间止损
+       └─ 空仓：check_b_trigger / check_s_trigger（floor 门控 + 均线引力 + MACD背离）
+ └─ <span class="arrow">→</span> _risk_gate()          # 顶层风控闸门（HALT_BUY/FORCE_SELL）
+ └─ <span class="arrow">→</span> emit_signal(s,sym)    # 构造飞书卡片
+ └─ <span class="arrow">→</span> push_batch(batch)     # MIN_PUSH_INTERVAL=5s 节流
+       └─ _push_retry → requests.post(WEBHOOK_URL)     # 飞书信号群 1d241455-...
+          └─ 失败入队 push_pending.jsonl，下轮 _drain_pending 补发</div>
+  <p class="kv">链路在 <code>detect_for</code> 即中断（返回空 <code>batch</code>），故 <code>emit_signal</code> 与飞书推送从未被调用——这与日志只见 <code>本轮无信号</code>、从未见 <code>本轮信号</code> 完全吻合。</p>
+</div>
+
+<div class="card">
+  <h2>三、状态日志 / 指标证据</h2>
+  <table>
+    <tr><th>来源</th><th>观测</th><th>含义</th></tr>
+    <tr><td><code>data/metrics.json</code></td><td>status=running, errors=0, scan=0.555s, symbols=3, signals=0；<b>无 code_version 字段</b></td><td>monitor 存活、扫描健康、三标的都在扫；但运行态是旧代码</td></tr>
+    <tr><td><code>monitor_console.log</code> 尾段</td><td>每 ~15s 一条 <code>🔄 [HH:MM:SS] 本轮无信号 (3标的扫描完成)</code>（10:57→11:12 持续）</td><td>扫描正常，但每轮检测结果为空</td></tr>
+    <tr><td><code>monitor_console.log:19466</code></td><td><code>📋 watchlist 移除: 513310.SH, 161129.SZ</code></td><td>10:09 告警风暴临时移除两标的</td></tr>
+    <tr><td><code>monitor_console.log:19533</code></td><td><code>📋 watchlist 新增: 中韩半导体ETF华泰柏瑞(513310.SH), 原油LOF易方达(161129.SZ)</code></td><td>10:30 恢复 → 触发 PC 清零 bug</td></tr>
+    <tr><td><code>data/push_audit.jsonl</code></td><td>最后成功推送 <code>2026-07-23 10:42:09</code>；07-24 全天 0 条</td><td>发送链路本身可用，只是今天没信号可推</td></tr>
+    <tr><td><code>data/signal.txt</code></td><td><code>[2026-07-24]</code> 段落为空</td><td>今天未生成任何信号</td></tr>
+    <tr><td>实时探针（注入正确 PC）</td><td>161129 @10:44 触发 S；688347 @09:34/10:39/11:11 触发 S/X/B；513310 无</td><td>数据通路正常，正确 PC 下本应出信号 → 印证 PC=0 是阻塞点</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>四、异常捕获记录</h2>
+  <p class="kv"><b>运行态 monitor（monitor.py）今日无异常</b>：日志尾段无 <code>compute exception</code> / <code>process exception</code> / <code>v9扫描崩溃</code>，<code>metrics.errors=0</code>。即检测不是"抛异常失败"，而是"条件不满足返回空"。</p>
+  <p class="kv"><b>历史残留（非本次原因）</b>：<code>monitor_console.log</code> ~1720 行起有 40+ 条 <code>Traceback</code>，均来自 <code>monitor_v9.py</code> 的 <code>ImportError: cannot import name 'stars' from 'v9_indicators'</code>。该模块已损坏（与运行态 monitor.py 无关，属历史遗留），建议后续清理或修复 <code>v9_indicators.stars</code> 导入，避免误用。</p>
+</div>
+
+<div class="card">
+  <h2>五、修复方案</h2>
+  <ul>
+    <li><span class="tag t-ok">已修（磁盘）</span> <code>core/monitor.py</code> 热重载逻辑：新增标的不再 <code>STATE[s]={'PC':0}</code>，改为立即 <code>refresh_daily(s)</code> 回填昨收（已 <code>py_compile</code> 通过）。<b>防止未来热重载再次清零 PC。</b></li>
+    <li><span class="tag t-warn">需人工</span> <b>重启 monitor</b>（宿主机管理员，结束 Session 0 的 pid 6528 旧进程，由 V9Launch.bat / run_monitor.bat 重新拉起）。重启后加载 <code>fd26203</code> 代码并重新 <code>refresh_daily</code> 填 PC → 当日信号即可恢复。注：WorkBuddy 侧无法 kill Session 0 进程，需你在宿主机操作。</li>
+    <li><span class="tag t-ok">可选</span> 给 watchlist 加 <code>suspended_until</code>/<code>status</code>（fd26203 已支持）后，停牌标的走过滤而非"移除+恢复"，可彻底避免本次"清零 PC"路径。</li>
+  </ul>
+</div>
+
+<div class="foot">诊断依据：data/metrics.json、logs/monitor_console.log、data/push_audit.jsonl、data/state.json、core/monitor.py（L844-845 / L1232-1240 / L1243-1244 / L268-291）。实时探针使用 monitor 自身 compute+detect_for，已用完即删。</div>
+</body>
+</html>

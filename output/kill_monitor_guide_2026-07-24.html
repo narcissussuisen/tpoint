@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tpoint 进程重启教程 — 只杀进程、不重启电脑</title>
+<style>
+  :root{ --bg:#0d1117; --card:#161b22; --bd:#30363d; --fg:#e6edf3; --mut:#8b949e;
+         --grn:#3fb950; --red:#f85149; --yel:#d29922; --blue:#58a6ff; --pur:#bc8cff; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.6;padding:24px}
+  .wrap{max-width:880px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--mut);font-size:13px;margin-bottom:20px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:14px 0}
+  h2{font-size:16px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+  .tag{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600}
+  .t-rec{background:rgba(63,185,80,.15);color:var(--grn);border:1px solid rgba(63,185,80,.4)}
+  .t-warn{background:rgba(210,153,34,.15);color:var(--yel);border:1px solid rgba(210,153,34,.4)}
+  .t-no{background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.4)}
+  pre{background:#0b0f14;border:1px solid var(--bd);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:12.5px;color:#c9d1d9;margin:8px 0}
+  code{background:#0b0f14;padding:1px 6px;border-radius:5px;font-size:12.5px;color:#a5d6ff}
+  .step{display:flex;gap:10px;margin:8px 0;align-items:flex-start}
+  .num{flex:0 0 24px;height:24px;background:var(--blue);color:#04121f;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+  .k{color:var(--grn);font-weight:600}
+  .x{color:var(--red);font-weight:600}
+  .m{color:var(--mut)}
+  ul{margin:6px 0;padding-left:20px}
+  li{margin:4px 0}
+  .pill{display:inline-block;font-size:11px;color:var(--mut);border:1px solid var(--bd);border-radius:6px;padding:1px 7px;margin:2px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🛠️ tpoint 进程重启教程</h1>
+  <div class="sub">核心思想：<b>只杀 python 进程，不杀 bat 窗口</b> — 守护脚本 <code>run_*.bat</code> 的 <code>:loop</code> 会在 5~30 秒内自动用<b>最新磁盘代码</b>重拉。永远不必重启电脑。</div>
+
+  <div class="card">
+    <h2>📐 原理（先看一眼，少走弯路）</h2>
+    <ul>
+      <li>登录自启 <code>V9Launch.bat</code> 用 <code>start /MIN cmd /c run_monitor.bat</code> 拉起一个叫 <b>v9_monitor</b> 的最小化窗口。</li>
+      <li><code>run_monitor.bat</code> 里有 <code>:loop</code>：每 30s 检查 <code>data/.monitor.pid</code> 对应的进程是否还活着（且命令行含 <code>monitor.py</code>）。活着就跳过，<b>死了就重拉</b>。</li>
+      <li>所以你只要让 <b>monitor.py 那个 python 进程死掉</b>，父 bat 检测到后会自动重启它 —— 新代码就这么加载了。</li>
+      <li><span class="pill">类比</span> 这跟 Linux 的 <code>systemd restart</code> 一个道理，只是用 bat 的 <code>:loop</code> 当守护进程。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2><span class="tag t-rec">最推荐</span> 方法一：用 <code>.monitor.pid</code> 杀（最稳，不踩权限坑）</h2>
+    <p class="m">monitor 启动时把 PID 写进 <code>data/.monitor.pid</code>。直接读出来 <code>Stop-Process</code>。这条路<strong>完全不依赖 CommandLine 可见性</strong>，所以没有 WMI 权限坑。</p>
+    <pre># 一行搞定
+Stop-Process -Id (Get-Content "C:\Users\YZP\WorkBuddy\Claw\tpoint\data\.monitor.pid") -Force</pre>
+    <p class="m">或更直白的三步版（先看进程再杀，适合多 python 进程场景）：</p>
+    <pre># 1) 先看 python 进程（带启动时间，方便辨认哪个是 monitor）
+Get-Process python -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime -AutoSize
+
+# 2) 读 PID 文件、杀
+$pid = Get-Content "C:\Users\YZP\WorkBuddy\Claw\tpoint\data\.monitor.pid"
+Stop-Process -Id $pid -Force</pre>
+  </div>
+
+  <div class="card">
+    <h2><span class="tag t-warn">备选</span> 方法二：按命令行匹配（需管理员）</h2>
+    <p class="m">如果 PID 文件丢失/损坏，可按命令行匹配。但 Win10/11 默认<strong>非管理员会话下 <code>Win32_Process.CommandLine</code> 返回 NULL</strong>，会导致静默不过滤。<span class="x">必须右键 → "以管理员身份运行" PowerShell</span>才靠谱。</p>
+    <pre>Get-CimInstance Win32_Process -Filter "Name='python.exe'" | `
+  Where-Object { $_.CommandLine -like '*monitor.py*' } | `
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }</pre>
+    <p class="m">否则你会看到"啥也没发生、也没报错"——这就是 CommandLine 被 NULL 过滤掉的征兆，改回方法一即可。</p>
+  </div>
+
+  <div class="card">
+    <h2>✅ 验证是否复活（30 秒后做）</h2>
+    <div class="step"><div class="num">1</div><div>PID 变成<b>新数字</b>：<code>type "C:\Users\YZP\WorkBuddy\Claw\tpoint\data\.monitor.pid"</code></div></div>
+    <div class="step"><div class="num">2</div><div>控制台出现新启动标记：<br><code>powershell -Command "Get-Content 'C:\Users\YZP\WorkBuddy\Claw\tpoint\logs\monitor_console.log' -Tail 6"</code><br>应看到 <span class="k">v9 启动</span> / <span class="k">预热成功（数据源连通）</span> 之类的新时间戳行。</div></div>
+    <div class="step"><div class="num">3</div><div>或直接查进程在不在：<br><code>Get-CimInstance Win32_Process -Filter "Name='python.exe'" | ?{$_.CommandLine -like '*monitor.py*'} | select ProcessId,CommandLine</code></div></div>
+  </div>
+
+  <div class="card">
+    <h2>🔁 兄弟进程（engine / selfcheck / vr_risk）同理</h2>
+    <p class="m">它们各自由 <code>run_engine.bat</code> 等守护，<b>都有 <code>:loop</code></b>，杀对应 python 进程即可自动重拉：</p>
+    <pre># 重启 alert_engine（推送引擎）
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" | ?{$_.CommandLine -like '*alert_engine.py*'} | %{Stop-Process -Id $_.ProcessId -Force}
+
+# 重启 selfcheck（盘前自检）
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" | ?{$_.CommandLine -like '*selfcheck*'} | %{Stop-Process -Id $_.ProcessId -Force}</pre>
+    <p class="m"><span class="pill">提示</span> 你这次的改动全在 <code>monitor.py</code>，<b>通常只需杀 monitor</b>；只有改了出场推送相关（emit 等也同在 monitor.py）也只杀 monitor。engine 一般不需要动。</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="tag t-no">千万别做</span> 三件事</h2>
+    <ul>
+      <li><span class="x">✗ <code>taskkill /T</code> 树杀</span>：会把 <code>run_monitor.bat</code> 那个 cmd 窗口一起杀掉，<code>:loop</code> 没了 → 没人重拉 → 真空，只能登出重登或重启。</li>
+      <li><span class="x">✗ 手动关闭 "v9_monitor" 最小化窗口</span>：那正是 <code>:loop</code> 宿主，关了同上，失去自动重启能力。</li>
+      <li><span class="x">✗ 为了加载新代码而重启电脑</span>：完全没必要，按上面杀进程 30 秒搞定，比重启快一个数量级。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>💡 常见问题</h2>
+    <ul>
+      <li><b>杀完多久复活？</b> monitor ≈30s（<code>run_monitor.bat</code> 的 <code>timeout /t 30</code>），engine ≈5s。想更快可改对应 bat 里的秒数（可选）。</li>
+      <li><b>新代码一定能加载吗？</b> 能。重拉是重新 <code>python core\monitor.py</code>，从磁盘重新 import，所以你改完存盘后杀进程即生效。</li>
+      <li><b>杀完会丢信号吗？</b> 仅重启那 30s 窗口内不产生新信号；进程起来后下一轮立即补刷 PC 并恢复。属于预期内的短暂空窗，不是故障。</li>
+      <li><b>PID 文件是旧的怎么办？</b> 不用管。<code>run_monitor.bat</code> 会同时用 <code>Get-CimInstance</code> 校验命令行，PID 失效/复用都会判定为"已死"而重拉。</li>
+      <li><b>WorkBuddy 里能远程杀吗？</b> 不能。monitor 是宿主机会话（Session 0）进程，需在宿主机本地 PowerShell/CMD 执行上面的命令。</li>
+      <li><b>方法二命令贴上去"啥也没发生"？</b> 八成是 <code>Win32_Process.CommandLine</code> 返回 NULL 的权限坑。改用方法一（PID 文件），或者用"以管理员身份运行"打开 PowerShell 再贴方法二。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>⚡ 一句话速记</h2>
+    <p style="font-size:15px;margin:0"><span class="k">改完代码 → 打开 PowerShell → 粘贴方法一那条命令 → 等 30 秒 → 看控制台"预热成功" → 完事。</span> 比重启电脑省 2 分钟。</p>
+  </div>
+</div>
+</body>
+</html>

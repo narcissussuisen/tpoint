@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>tpoint 因子消融矩阵 + FLOOR 网格 · 2026-08-01</title>
+<style>
+:root{--bg:#11151c;--card:#1a2029;--ink:#d5dae2;--sub:#8a93a6;--line:#2a3140;
+--pos:#7ee2a8;--neg:#ff8b8b;--warn:#f5c26b;--accent:#9ec9ff}
+body{background:var(--bg);color:var(--ink);font-family:Segoe UI,Microsoft YaHei,sans-serif;padding:24px;max-width:1200px;margin:auto}
+h1{color:#fff;font-size:20px} h2{color:var(--accent);font-size:15px;margin-top:30px}
+.card{background:var(--card);border-radius:12px;padding:18px;margin-top:12px}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{padding:7px 9px;text-align:left;border-bottom:1px solid var(--line);font-size:12.5px}
+th{color:var(--sub);font-weight:500}
+.pos{color:var(--pos)} .neg{color:var(--neg)} .warn{color:var(--warn)}
+.sub{color:var(--sub);font-size:11px}
+.c1{font-weight:600;color:#fff} .cfg{font-size:10.5px;color:var(--sub)}
+.agg{font-weight:600;color:var(--accent)}
+.sum{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}
+.sum div{background:#232b38;border-radius:8px;padding:10px 16px}
+.sum b{font-size:20px;display:block;color:#fff}
+.note{background:#232b38;border-radius:8px;padding:12px 16px;margin-top:12px;font-size:12.5px;line-height:1.7}
+.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;margin-left:6px}
+.b-pos{background:#1a3a2a;color:#7ee2a8} .b-neg{background:#3a1a1a;color:#ff8b8b}
+</style></head><body>
+<h1>tpoint 因子消融矩阵 + FLOOR 网格 · 2026-08-01</h1>
+<div class="card">
+  <h2>一、结论速览（8 标的 × 146 天 · 万一费率 · MACD_GATE_MODE=floor · 净收益口径）</h2>
+  <p class="sub">边际 = 去掉/加入某通道后笔级加权指标变化。正=通道有益（保留），负=通道有害（考虑调整）。</p>
+  <table>
+    <tr><th>通道</th><th>笔数</th><th>净胜率Δ</th><th>盈亏比Δ</th><th>净收益Δ</th><th>解读</th></tr>
+    <tr><td>基线 prod（v9.2.2 floor）</td><td>2510</td><td>47.4%</td><td>0.96</td><td class="neg">-144.22%</td><td class="sub">基准</td></tr><tr><td>地板/天花板通道（prod−no_floor）</td><td>244</td><td>1.7%</td><td>-0.06</td><td class="neg">-6.3%</td><td class="sub">负=地板通道有害（m门控下）</td></tr><tr><td>MACD 门控边际（prod−floor_only）</td><td>1216</td><td>-4.7%</td><td>0.0</td><td class="neg">-167.58%</td><td class="sub">负=加入m门控有害</td></tr><tr><td>早盘引力（prod−no_g_early）</td><td>295</td><td>1.4%</td><td>-0.03</td><td class="neg">-12.23%</td><td class="sub">负=去掉早盘g有害(g有益)</td></tr><tr><td>vol 参与放行（vol_gate−prod）</td><td>549</td><td>-0.7%</td><td>0.04</td><td class="neg">-1.64%</td><td class="sub">vol真实边际</td></tr><tr><td>纯引力假设（g_only−prod）</td><td>-292</td><td>7.7%</td><td>-0.24</td><td class="pos">21.01%</td><td class="sub">gate=off 全时段g</td></tr><tr><td>纯vol假设（v_only−prod）</td><td>-752</td><td>-0.8%</td><td>-0.04</td><td class="pos">25.81%</td><td class="sub">strict+vol 无g/m</td></tr><tr><td>全开+地板（gvm_floor−prod）</td><td>549</td><td>-0.7%</td><td>0.04</td><td class="neg">-1.64%</td><td class="sub">g+v+m 全参与</td></tr><tr><td>纯地板/天花板（none，无因子打分）</td><td>948</td><td>50.5%</td><td>1.05</td><td class="pos">42.1%</td><td class="sub">参考：floor通道单独能力</td></tr>
+  </table>
+  <div class="sum">
+    <div><b>2026-08-01</b>生成</div>
+    <div><b>8</b>标的</div>
+    <div><b>9</b>组合</div>
+    <div><b>6</b>floor档</div>
+  </div>
+</div>
+<div class="card">
+  <h2>二、消融矩阵逐组合 × 逐标的（胜率% / 净收益%）</h2>
+  <table>
+    <tr><th>组合</th><th>配置</th><th>688146.SH</th><th>600206.SH</th><th>688347.SH</th><th>600584.SH</th><th>688766.SH</th><th>161129.SZ</th><th>513310.SH</th><th>688111.SH</th><th>笔级加权</th></tr>
+    <tr><td class="c1">prod</td><td class="cfg">enable=[True, False, True] vol=False vig=False gate=floor</td><td>47.1%<br><span class="sub">16.01%</span></td><td>49.4%<br><span class="sub">-26.84%</span></td><td>48.5%<br><span class="sub">-0.48%</span></td><td>57.7%<br><span class="sub">9.01%</span></td><td>46.5%<br><span class="sub">-14.6%</span></td><td>46.8%<br><span class="sub">-7.46%</span></td><td>49.1%<br><span class="sub">-41.71%</span></td><td>42.9%<br><span class="sub">-78.15%</span></td><td class="agg">47.4%<br><span class="sub">-144.22%</span></td></tr><tr><td class="c1">no_floor</td><td class="cfg">enable=[True, False, True] vol=False vig=False gate=strict</td><td>46.8%<br><span class="sub">26.25%</span></td><td>47.5%<br><span class="sub">-24.68%</span></td><td>45.7%<br><span class="sub">-15.06%</span></td><td>55.4%<br><span class="sub">7.3%</span></td><td>45.7%<br><span class="sub">10.29%</span></td><td>43.9%<br><span class="sub">-8.2%</span></td><td>43.2%<br><span class="sub">-52.56%</span></td><td>42.2%<br><span class="sub">-81.26%</span></td><td class="agg">45.7%<br><span class="sub">-137.92%</span></td></tr><tr><td class="c1">floor_only</td><td class="cfg">enable=[True, False, False] vol=False vig=False gate=floor</td><td>52.8%<br><span class="sub">39.16%</span></td><td>52.7%<br><span class="sub">-41.81%</span></td><td>56.0%<br><span class="sub">49.57%</span></td><td>50.0%<br><span class="sub">7.31%</span></td><td>49.5%<br><span class="sub">-1.21%</span></td><td>55.6%<br><span class="sub">4.06%</span></td><td>45.8%<br><span class="sub">-13.67%</span></td><td>50.0%<br><span class="sub">-20.05%</span></td><td class="agg">52.1%<br><span class="sub">23.36%</span></td></tr><tr><td class="c1">no_g_early</td><td class="cfg">enable=[False, False, True] vol=False vig=False gate=floor</td><td>47.1%<br><span class="sub">-4.65%</span></td><td>48.3%<br><span class="sub">-23.37%</span></td><td>45.9%<br><span class="sub">16.41%</span></td><td>53.4%<br><span class="sub">0.21%</span></td><td>47.6%<br><span class="sub">10.78%</span></td><td>39.6%<br><span class="sub">-18.7%</span></td><td>49.6%<br><span class="sub">-39.14%</span></td><td>38.6%<br><span class="sub">-73.53%</span></td><td class="agg">46.0%<br><span class="sub">-131.99%</span></td></tr><tr><td class="c1">vol_gate</td><td class="cfg">enable=[True, True, True] vol=True vig=True gate=floor</td><td>46.7%<br><span class="sub">11.83%</span></td><td>50.3%<br><span class="sub">-19.05%</span></td><td>48.6%<br><span class="sub">6.53%</span></td><td>53.3%<br><span class="sub">4.5%</span></td><td>45.9%<br><span class="sub">-15.57%</span></td><td>39.1%<br><span class="sub">-8.43%</span></td><td>48.1%<br><span class="sub">-54.5%</span></td><td>43.0%<br><span class="sub">-71.17%</span></td><td class="agg">46.7%<br><span class="sub">-145.86%</span></td></tr><tr><td class="c1">g_only</td><td class="cfg">enable=[True, False, False] vol=False vig=False gate=off</td><td>56.4%<br><span class="sub">29.7%</span></td><td>57.5%<br><span class="sub">-38.54%</span></td><td>60.0%<br><span class="sub">21.77%</span></td><td>50.8%<br><span class="sub">-3.6%</span></td><td>54.0%<br><span class="sub">7.34%</span></td><td>42.2%<br><span class="sub">-31.92%</span></td><td>53.1%<br><span class="sub">-49.16%</span></td><td>53.7%<br><span class="sub">-58.8%</span></td><td class="agg">55.1%<br><span class="sub">-123.21%</span></td></tr><tr><td class="c1">v_only</td><td class="cfg">enable=[False, True, False] vol=True vig=True gate=strict</td><td>50.2%<br><span class="sub">-11.8%</span></td><td>46.9%<br><span class="sub">-16.33%</span></td><td>48.7%<br><span class="sub">7.01%</span></td><td>48.1%<br><span class="sub">0.16%</span></td><td>49.0%<br><span class="sub">14.41%</span></td><td>35.7%<br><span class="sub">-22.15%</span></td><td>50.5%<br><span class="sub">-39.98%</span></td><td>39.6%<br><span class="sub">-49.73%</span></td><td class="agg">46.6%<br><span class="sub">-118.41%</span></td></tr><tr><td class="c1">gvm_floor</td><td class="cfg">enable=[True, True, True] vol=True vig=True gate=floor</td><td>46.7%<br><span class="sub">11.83%</span></td><td>50.3%<br><span class="sub">-19.05%</span></td><td>48.6%<br><span class="sub">6.53%</span></td><td>53.3%<br><span class="sub">4.5%</span></td><td>45.9%<br><span class="sub">-15.57%</span></td><td>39.1%<br><span class="sub">-8.43%</span></td><td>48.1%<br><span class="sub">-54.5%</span></td><td>43.0%<br><span class="sub">-71.17%</span></td><td class="agg">46.7%<br><span class="sub">-145.86%</span></td></tr><tr><td class="c1">none</td><td class="cfg">enable=[False, False, False] vol=False vig=False gate=floor</td><td>52.9%<br><span class="sub">23.41%</span></td><td>54.5%<br><span class="sub">-18.43%</span></td><td>51.4%<br><span class="sub">55.7%</span></td><td>44.7%<br><span class="sub">-3.05%</span></td><td>51.6%<br><span class="sub">11.23%</span></td><td>50.0%<br><span class="sub">-6.84%</span></td><td>46.4%<br><span class="sub">-12.49%</span></td><td>40.0%<br><span class="sub">-7.43%</span></td><td class="agg">50.5%<br><span class="sub">42.1%</span></td></tr>
+  </table>
+</div>
+<div class="card">
+  <h2>三、FLOOR_DEV_PCT 网格（prod 组合 · 笔级加权）</h2>
+  <table>
+    <tr><th>FLOOR_DEV_PCT</th><th>总笔数</th><th>净胜率</th><th>盈亏比</th><th>总净收益</th></tr>
+    <tr><td>1.0</td><td>2648</td><td>47.4%</td><td>0</td><td>-163.28%</td></tr><tr><td>1.25</td><td>2567</td><td>46.9%</td><td>0</td><td>-169.94%</td></tr><tr><td>1.5</td><td>2510</td><td>47.4%</td><td>0</td><td>-144.22%</td></tr><tr><td>2.0</td><td>2420</td><td>46.4%</td><td>0</td><td>-150.3%</td></tr><tr><td>2.5</td><td>2377</td><td>46.0%</td><td>0</td><td>-147.58%</td></tr><tr><td>3.0</td><td>2348</td><td>46.3%</td><td>0</td><td>-134.47%</td></tr>
+  </table>
+</div>
+<div class="card">
+  <h2>四、方法声明</h2>
+  <div class="note">
+    <b>口径</b>：F盘 tickflow 1m 历史库；引擎 core.miji_alpha.detect_miji_signals（生产同源）；
+    成本 cost_for_symbol（万一佣金不免五 / ETF 无印花税 / 北交所千0.575）；出场 = PROD_CONFIG
+    （仅移动止损 act0.4/trail0.6 + S信号出场）；ret_pct 为扣双边成本净收益，win_rate 为净胜率。<br>
+    <b>消融开关</b>：enable 三元组 (gravity, vol_div, macd_div) 关某因子 → 该因子恒为 0；
+    vol_in_gate=True 时 vol 参与门控放行（生产仅记录共振分数不参与放行）；
+    gate 显式指定 floor/strict/off。<br>
+    <b>样本</b>：688146/600206/688347/688766/688111 各 143 天，161129/513310 各 65 天，600584 20 天。
+    未做样本外切分（如需 --oos 重跑）。<br>
+    <b>已知限制</b>：simulate_day 单仓位模型 + SIGNAL_GAP=8 强约束，冗余信号只影响候选池不影响成交路径，
+    信号数差异可能被成交路径稀释（详见结论解读）。
+  </div>
+</div>
+</body></html>

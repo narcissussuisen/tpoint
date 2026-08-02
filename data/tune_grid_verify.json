@@ -1,0 +1,287 @@
+{
+  "generated_at": "2026-08-02 08:23:03",
+  "phase": "verify",
+  "watchlist": [
+    "513310.SH",
+    "161129.SZ",
+    "600570.SH",
+    "300058.SZ",
+    "688111.SH"
+  ],
+  "baseline_name": "baseline",
+  "config": {
+    "use_stop": false,
+    "use_time": false,
+    "use_trailing": true,
+    "trail_activate_pct": 0.4,
+    "trail_pct": 0.6,
+    "s_signal_exit": true
+  },
+  "combos": [
+    {
+      "name": "baseline",
+      "label": "基线 mhd0.15",
+      "mhd": 0.15,
+      "atr": null,
+      "vwap": 0.6,
+      "morning": 0.0,
+      "rsi": null,
+      "pool": {
+        "n_ok": 5,
+        "n_all": 5,
+        "med_win": 48.3,
+        "med_pl": 0.79,
+        "med_win_fixed": 48.3,
+        "med_pl_fixed": 0.79,
+        "total_trips": 668,
+        "total_sigs": 2364,
+        "total_b": 1339,
+        "total_s": 1025
+      },
+      "per_symbol": {
+        "513310.SH": {
+          "total": 59,
+          "win_rate": 45.8,
+          "pl_ratio": 0.79,
+          "ann_ret_pct": -45.09,
+          "max_drawdown_pct": 14.45,
+          "n_b": 122,
+          "n_s": 84,
+          "days": 66,
+          "gross_win_rate": 47.5
+        },
+        "161129.SZ": {
+          "total": 81,
+          "win_rate": 55.6,
+          "pl_ratio": 0.89,
+          "ann_ret_pct": 10.9,
+          "max_drawdown_pct": 10.52,
+          "n_b": 140,
+          "n_s": 91,
+          "days": 66,
+          "gross_win_rate": 55.6
+        },
+        "600570.SH": {
+          "total": 104,
+          "win_rate": 51.0,
+          "pl_ratio": 0.61,
+          "ann_ret_pct": -39.64,
+          "max_drawdown_pct": 23.72,
+          "n_b": 194,
+          "n_s": 186,
+          "days": 124,
+          "gross_win_rate": 57.7
+        },
+        "300058.SZ": {
+          "total": 209,
+          "win_rate": 48.3,
+          "pl_ratio": 0.89,
+          "ann_ret_pct": -22.61,
+          "max_drawdown_pct": 32.32,
+          "n_b": 470,
+          "n_s": 371,
+          "days": 145,
+          "gross_win_rate": 53.6
+        },
+        "688111.SH": {
+          "total": 215,
+          "win_rate": 47.4,
+          "pl_ratio": 0.77,
+          "ann_ret_pct": -31.73,
+          "max_drawdown_pct": 37.49,
+          "n_b": 413,
+          "n_s": 293,
+          "days": 145,
+          "gross_win_rate": 54.4
+        }
+      }
+    },
+    {
+      "name": "vwap_065",
+      "label": "mhd0.15+VWAP0.65",
+      "mhd": 0.15,
+      "atr": null,
+      "vwap": 0.65,
+      "morning": 0.0,
+      "rsi": null,
+      "pool": {
+        "n_ok": 5,
+        "n_all": 5,
+        "med_win": 47.8,
+        "med_pl": 0.79,
+        "med_win_fixed": 47.8,
+        "med_pl_fixed": 0.79,
+        "total_trips": 659,
+        "total_sigs": 2354,
+        "total_b": 1325,
+        "total_s": 1029
+      },
+      "per_symbol": {
+        "513310.SH": {
+          "total": 59,
+          "win_rate": 45.8,
+          "pl_ratio": 0.79,
+          "ann_ret_pct": -45.09,
+          "max_drawdown_pct": 14.45,
+          "n_b": 122,
+          "n_s": 84,
+          "days": 66,
+          "gross_win_rate": 47.5
+        },
+        "161129.SZ": {
+          "total": 79,
+          "win_rate": 54.4,
+          "pl_ratio": 0.87,
+          "ann_ret_pct": 2.45,
+          "max_drawdown_pct": 11.1,
+          "n_b": 138,
+          "n_s": 91,
+          "days": 66,
+          "gross_win_rate": 54.4
+        },
+        "600570.SH": {
+          "total": 103,
+          "win_rate": 50.5,
+          "pl_ratio": 0.57,
+          "ann_ret_pct": -43.42,
+          "max_drawdown_pct": 21.81,
+          "n_b": 191,
+          "n_s": 186,
+          "days": 124,
+          "gross_win_rate": 57.3
+        },
+        "300058.SZ": {
+          "total": 207,
+          "win_rate": 47.8,
+          "pl_ratio": 0.87,
+          "ann_ret_pct": -25.74,
+          "max_drawdown_pct": 34.51,
+          "n_b": 467,
+          "n_s": 372,
+          "days": 145,
+          "gross_win_rate": 53.1
+        },
+        "688111.SH": {
+          "total": 211,
+          "win_rate": 46.4,
+          "pl_ratio": 0.76,
+          "ann_ret_pct": -35.65,
+          "max_drawdown_pct": 39.43,
+          "n_b": 407,
+          "n_s": 296,
+          "days": 145,
+          "gross_win_rate": 53.1
+        }
+      }
+    },
+    {
+      "name": "atr_025",
+      "label": "mhd0.15+ATR0.25",
+      "mhd": 0.15,
+      "atr": 0.25,
+      "vwap": 0.6,
+      "morning": 0.0,
+      "rsi": null,
+      "pool": {
+        "med_win_fixed": 53.1,
+        "med_pl_fixed": 0.78,
+        "med_win": 53.1,
+        "n_ok": 5,
+        "n_all": 5,
+        "total_trips": 468
+      },
+      "per_symbol": {
+        "161129.SZ": {
+          "total": 53,
+          "win_rate": 60.4,
+          "pl_ratio": 0.8,
+          "n_b": 79,
+          "n_s": 93
+        },
+        "513310.SH": {
+          "total": 43,
+          "win_rate": 48.8,
+          "pl_ratio": 0.78,
+          "n_b": 80,
+          "n_s": 84
+        },
+        "600570.SH": {
+          "total": 69,
+          "win_rate": 56.5,
+          "pl_ratio": 0.65,
+          "n_b": 98,
+          "n_s": 187
+        },
+        "300058.SZ": {
+          "total": 175,
+          "win_rate": 49.7,
+          "pl_ratio": 0.79,
+          "n_b": 312,
+          "n_s": 371
+        },
+        "688111.SH": {
+          "total": 128,
+          "win_rate": 53.1,
+          "pl_ratio": 0.63,
+          "n_b": 195,
+          "n_s": 294
+        }
+      }
+    },
+    {
+      "name": "rsi_030",
+      "label": "mhd0.15+RSI<30",
+      "mhd": 0.15,
+      "atr": null,
+      "vwap": 0.6,
+      "morning": 0.0,
+      "rsi": 30,
+      "pool": {
+        "med_win_fixed": 44.8,
+        "med_pl_fixed": 0.74,
+        "med_win": 44.85,
+        "n_ok": 4,
+        "n_all": 5,
+        "total_trips": 170
+      },
+      "per_symbol": {
+        "161129.SZ": {
+          "total": 29,
+          "win_rate": 44.8,
+          "pl_ratio": 0.74,
+          "n_b": 45,
+          "n_s": 91
+        },
+        "513310.SH": {
+          "total": 35,
+          "win_rate": 54.3,
+          "pl_ratio": 0.72,
+          "n_b": 45,
+          "n_s": 84
+        },
+        "600570.SH": {
+          "total": 18,
+          "win_rate": 44.4,
+          "pl_ratio": 0.88,
+          "n_b": 30,
+          "n_s": 186
+        },
+        "300058.SZ": {
+          "total": 39,
+          "win_rate": 43.6,
+          "pl_ratio": 1.37,
+          "n_b": 52,
+          "n_s": 371
+        },
+        "688111.SH": {
+          "total": 49,
+          "win_rate": 44.9,
+          "pl_ratio": 0.73,
+          "n_b": 70,
+          "n_s": 293
+        }
+      }
+    }
+  ],
+  "note": "complete: baseline+vwap_065+atr_025+rsi_030"
+}

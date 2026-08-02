@@ -1,0 +1,56 @@
+{
+  "date": "2026-07-31",
+  "days": 15,
+  "generated_at": "2026-07-31 23:51:44",
+  "note": "1m/5m/1h 方向为 1m 序列聚合近似，仅供人工参考，不参与 1m 信号触发；1h 方向需 ≥10 交易日数据",
+  "symbols": {
+    "161129.SZ": {
+      "1m": -1,
+      "5m": -1,
+      "1h": 1,
+      "label": "1m 空头↓ / 5m 空头↓ / 1h 多头↑",
+      "day_chg_pct": 0.0,
+      "n_1m_total": 3132,
+      "n_5m_agg": 627,
+      "n_1h_agg": 53,
+      "span_days": 15,
+      "source": "tick_cache(15日)"
+    },
+    "513310.SH": {
+      "1m": -1,
+      "5m": -1,
+      "1h": -1,
+      "label": "1m 空头↓ / 5m 空头↓ / 1h 空头↓",
+      "day_chg_pct": 0.0,
+      "n_1m_total": 3138,
+      "n_5m_agg": 628,
+      "n_1h_agg": 53,
+      "span_days": 15,
+      "source": "tick_cache(15日)"
+    },
+    "688111.SH": {
+      "1m": 1,
+      "5m": -1,
+      "1h": 0,
+      "label": "1m 多头↑ / 5m 空头↓ / 1h 数据不足",
+      "day_chg_pct": 9.19,
+      "n_1m_total": 800,
+      "n_5m_agg": 160,
+      "n_1h_agg": 14,
+      "span_days": 4,
+      "source": "mootdx"
+    },
+    "588000.SH": {
+      "1m": -1,
+      "5m": -1,
+      "1h": 0,
+      "label": "1m 空头↓ / 5m 空头↓ / 1h 数据不足",
+      "day_chg_pct": -3.79,
+      "n_1m_total": 800,
+      "n_5m_agg": 160,
+      "n_1h_agg": 14,
+      "span_days": 4,
+      "source": "mootdx"
+    }
+  }
+}

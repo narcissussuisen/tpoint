@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tpoint × 卡方 回测差异归因 · 2026-08-01</title>
+<style>
+:root {
+  --bg:#0f1419; --panel:#1a222c; --panel2:#141b24; --line:#2b3644;
+  --txt:#dbe4ee; --dim:#8b98a8; --red:#ff5f5f; --green:#3ddc84;
+  --orange:#ffab40; --blue:#4da3ff; --purple:#b07bff; --cyan:#38d6d0;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--bg); color:var(--txt);
+  font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  line-height:1.6; padding:28px 20px 60px; }
+.wrap { max-width:1100px; margin:0 auto; }
+h1 { font-size:26px; margin-bottom:4px; }
+.sub { color:var(--dim); font-size:13px; margin-bottom:24px; }
+h2 { font-size:19px; margin:36px 0 14px; padding-left:10px; border-left:4px solid var(--blue); }
+h3 { font-size:15px; margin:18px 0 8px; color:var(--cyan); }
+.card { background:var(--panel); border:1px solid var(--line);
+  border-radius:10px; padding:18px 20px; margin-bottom:14px; }
+.kpi-row { display:flex; gap:12px; flex-wrap:wrap; margin:10px 0 4px; }
+.kpi { flex:1; min-width:150px; background:var(--panel2);
+  border:1px solid var(--line); border-radius:8px; padding:12px 14px; }
+.kpi .v { font-size:22px; font-weight:700; }
+.kpi .k { font-size:12px; color:var(--dim); margin-top:2px; }
+.v-red { color:var(--red); } .v-green { color:var(--green); }
+.v-orange { color:var(--orange); } .v-blue { color:var(--blue); }
+.v-purple { color:var(--purple); } .v-cyan { color:var(--cyan); }
+.v-dim { color:var(--dim); }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th,td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+th { background:var(--panel2); color:var(--cyan); font-weight:600; white-space:nowrap; }
+td.dim { white-space:nowrap; font-weight:600; color:var(--blue); }
+.ev { color:var(--dim); font-size:11px; margin-top:4px; font-family:Consolas,monospace; }
+.badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:700; }
+.g-p0 { background:rgba(255,95,95,.15); color:var(--red); border:1px solid var(--red); }
+.g-p1 { background:rgba(255,171,64,.15); color:var(--orange); border:1px solid var(--orange); }
+.g-p2 { background:rgba(77,163,255,.15); color:var(--blue); border:1px solid var(--blue); }
+.callout { background:rgba(255,171,64,.08); border:1px solid rgba(255,171,64,.35);
+  border-radius:8px; padding:12px 16px; font-size:13px; margin:10px 0; }
+.callout.warn { background:rgba(255,95,95,.08); border-color:rgba(255,95,95,.4); }
+.callout.ok { background:rgba(61,220,132,.07); border-color:rgba(61,220,132,.35); }
+.footer { color:var(--dim); font-size:11.5px; margin-top:30px;
+  border-top:1px solid var(--line); padding-top:12px; }
+.mono { font-family:Consolas,monospace; font-size:11.5px; color:var(--cyan); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>🔬 tpoint × 卡方 T0 回测差异归因分析</h1>
+<div class="sub">2026-08-01 · 用户请求：以卡方系统为参照基准，分析 tpoint 回测与卡方显著差异的原因（费率/滑点/撮合/数据源），列出可改进方向并给出优化建议</div>
+
+<div class="card">
+<h3>核心结论</h3>
+<div class="kpi-row">
+  <div class="kpi"><div class="v v-red">0/8</div><div class="k">标的达标（60%胜率/1.6盈亏比）</div></div>
+  <div class="kpi"><div class="v v-orange">54.9%</div><div class="k">毛胜率中位（零成本零滑点）</div></div>
+  <div class="kpi"><div class="v v-red">1/8</div><div class="k">零成本下仍过 60% 线</div></div>
+  <div class="kpi"><div class="v v-blue">D5 主因</div><div class="k">策略信号质量（非成本/撮合）</div></div>
+</div>
+<div class="callout warn" style="margin-top:12px">
+  ⚠️ <b>归因主结论（基于实证）</b>：8/8 未达标的根因<b>不是</b>成本口径，也不是撮合模型——
+  把成本、滑点全部归零（毛胜率），8 只中也只有 1 只（600584 60.3%）勉强过 60% 线，中位仅 54.9%。
+  <b>信号本身的质量不足</b>（floor 抄底信号在单边下跌日连续触发、均值回归失效）才是主因。
+  费率/滑点/撮合/数据源四维合计最多解释 2~14pp，无法解释毛胜率即不达线的事实。
+</div>
+<div class="callout ok">
+  ✅ <b>关键对照</b>：卡方 xlsx 全市场 5002 只回测的 20 日胜率中位也仅 61%、≥60% 只占 54.2%——
+  卡方不是"信号引擎对任意标的都灵"，而是<b>靠标的筛选从 5002 只里挑出 40 只高胜率标的</b>。
+  tpoint 只有 8 只（持仓+候选）且 7 只毛胜率&lt;60%，缺的正是<b>筛选能力</b>——
+  与用户"没有回测验证的筛选器前不加监控标的"的决策方向完全一致，方向正确。
+</div>
+</div>
+
+<h2>一、五维差异归因总表</h2>
+<div class="card" style="overflow-x:auto">
+<table>
+<tr><th>维度</th><th>卡方系统（参照）</th><th>tpoint 现状</th><th>影响方向</th><th>量化影响（实测）</th><th>评级</th></tr>
+<tr>
+  <td class="dim">D1 交易费率</td>
+  <td>双边佣金万3.5+印花万5.641 ≈ 双边 0.126%</td>
+  <td>用户实际万一不免五+印花万5.641+2bps滑点 ≈ 双边 0.116%</td>
+  <td>tpoint 更有利</td>
+  <td>若改用卡方费率（万3.5），胜率再降 1.3~5.0pp——<b>方向反转</b>，成本不是 tpoint 落后的原因</td>
+  <td><span class="badge g-p2">P2 非主因</span></td>
+</tr>
+<tr>
+  <td class="dim">D2 滑点模型</td>
+  <td>程序化毫秒级执行，滑点极小（推测 &lt;1bps）</td>
+  <td>回测假设 2bps/边；实盘人工执行实际滑点更大</td>
+  <td>tpoint 回测偏乐观</td>
+  <td>0→10bps 胜率降 2~14pp（688111 最敏感）；0→5bps 降 1~6pp。即使 0 滑点毛胜率也仅中位 54.9%</td>
+  <td><span class="badge g-p1">P1 执行层差距</span></td>
+</tr>
+<tr>
+  <td class="dim">D3 撮合逻辑</td>
+  <td>tick级/秒级撮合，成交价≈信号价</td>
+  <td>1m bar 收盘价成交；信号 bar 内触发（15s 轮询）</td>
+  <td>实测双向噪音</td>
+  <td>改下一bar开盘成交：胜率 −3~+4pp 随机波动，<b>非系统性前视偏差</b>；真实差距在人工执行延迟（分钟级 vs 毫秒级）无法在回测建模</td>
+  <td><span class="badge g-p2">P2 非主因</span></td>
+</tr>
+<tr>
+  <td class="dim">D4 数据源差异</td>
+  <td>机构级 tick 全市场 5002 只全历史</td>
+  <td>F盘复权价（15位小数）+mootdx 免费源；8 只有数据（145天）</td>
+  <td>覆盖受限，价格精度偏差</td>
+  <td>复权等比缩放不影响收益率比值；覆盖 8/4149 是<b>广度</b>问题（缺 588000/688048/688008）</td>
+  <td><span class="badge g-p1">P1 覆盖不足</span></td>
+</tr>
+<tr>
+  <td class="dim">D5 策略架构</td>
+  <td>5因子预测（动量6/12月+行业+情绪+波动率+流动性）+双周期（短10min+长1h）+标的筛选（成交额≥50亿/换手5-15%/振幅5-20%）</td>
+  <td>3因子量价（VWAP引力+MACD背离+价格地板floor）+1m单周期+持仓驱动 watchlist</td>
+  <td><b>主因</b>：信号无行情状态过滤</td>
+  <td>毛胜率（0成本）即 47.6%~60.3%、中位 54.9%；单边下跌日 floor 抄底连续触发（688146 07-03 单日 11 个 B 全为引力+地板）</td>
+  <td><span class="badge g-p0">P0 主因</span></td>
+</tr>
+</table>
+</div>
+
+<h2>二、主回测结果（用户实际费率 · miji+floor 引擎）</h2>
+<div class="card" style="overflow-x:auto">
+<table>
+<tr><th>标的</th><th>笔数</th><th>毛胜率</th><th>净胜率</th><th>盈亏比</th><th>年化</th><th>最大回撤</th></tr>
+<tr><td class="dim">161129.SZ</td><td>124</td><td>47.6%</td><td>46.8%</td><td>0.97</td><td>-14.84%</td><td>15.47%</td></tr><tr><td class="dim">513310.SH</td><td>114</td><td>50.0%</td><td>49.1%</td><td>0.5</td><td>-60.5%</td><td>35.64%</td></tr><tr><td class="dim">600206.SH</td><td>354</td><td>57.1%</td><td>49.4%</td><td>0.84</td><td>-18.32%</td><td>25.95%</td></tr><tr><td class="dim">600584.SH</td><td>78</td><td>60.3%</td><td>57.7%</td><td>0.88</td><td>26.53%</td><td>18.27%</td></tr><tr><td class="dim">688111.SH</td><td>364</td><td>51.9%</td><td>42.9%</td><td>0.66</td><td>-41.45%</td><td>58.21%</td></tr><tr><td class="dim">688146.SH</td><td>459</td><td>54.9%</td><td>47.1%</td><td>1.21</td><td>4.47%</td><td>33.88%</td></tr><tr><td class="dim">688347.SH</td><td>497</td><td>55.3%</td><td>48.5%</td><td>1.06</td><td>-1.98%</td><td>33.52%</td></tr><tr><td class="dim">688766.SH</td><td>520</td><td>54.0%</td><td>46.5%</td><td>1.08</td><td>-9.03%</td><td>31.47%</td></tr>
+</table>
+<div class="ev" style="margin-top:8px">成本模型：万一佣金(不免五) + 印花万5.641(仅个股) + 2bps滑点；ETF/LOF 无印花税。毛→净落差即成本侵蚀（5~9pp）。</div>
+</div>
+
+<h2>三、费率×滑点敏感性（同一批 trips 重算，量化 D1+D2）</h2>
+<div class="card" style="overflow-x:auto">
+<table>
+<tr><th>标的</th><th>无成本(毛)</th><th>tpoint万一<br>+2bps</th><th>tpoint万一<br>+0bps</th><th>tpoint万一<br>+5bps</th><th>tpoint万一<br>+10bps</th><th>卡方万3.5<br>+0bps</th><th>卡方万3.5<br>+2bps</th></tr>
+<tr><td class="dim">161129.SZ</td><td>47.6%</td><td>44.4%</td><td>45.2%</td><td>42.7%</td><td>39.5%</td><td>44.4%</td><td>42.7%</td></tr><tr><td class="dim">513310.SH</td><td>50.0%</td><td>46.5%</td><td>48.2%</td><td>43.9%</td><td>37.7%</td><td>46.5%</td><td>43.9%</td></tr><tr><td class="dim">600206.SH</td><td>57.1%</td><td>49.4%</td><td>52.0%</td><td>44.4%</td><td>39.3%</td><td>48.9%</td><td>44.9%</td></tr><tr><td class="dim">600584.SH</td><td>60.3%</td><td>57.7%</td><td>57.7%</td><td>56.4%</td><td>50.0%</td><td>57.7%</td><td>56.4%</td></tr><tr><td class="dim">688111.SH</td><td>51.9%</td><td>42.9%</td><td>46.2%</td><td>37.1%</td><td>32.1%</td><td>42.6%</td><td>37.9%</td></tr><tr><td class="dim">688146.SH</td><td>54.9%</td><td>47.1%</td><td>49.7%</td><td>44.2%</td><td>38.6%</td><td>46.4%</td><td>44.2%</td></tr><tr><td class="dim">688347.SH</td><td>55.3%</td><td>48.5%</td><td>50.5%</td><td>45.1%</td><td>40.0%</td><td>48.1%</td><td>45.5%</td></tr><tr><td class="dim">688766.SH</td><td>54.0%</td><td>46.5%</td><td>49.8%</td><td>44.2%</td><td>40.2%</td><td>46.3%</td><td>44.6%</td></tr>
+</table>
+<div class="callout" style="margin-top:10px">
+  📌 <b>读法</b>：同一信号序列只换成本参数。①「无成本→tpoint万一+2bps」= 当前口径的成本侵蚀（2.6~9.0pp）；
+  ②「tpoint万一+2bps→卡方万3.5+2bps」= 若用卡方更高费率，胜率再降 1.3~5.0pp（<b>方向反转，卡方口径对 tpoint 更不利</b>）；
+  ③ 即使最乐观的「无成本」列，也仅 600584（60.3%）过 60% 线——<b>成本不是 8/8 未达标的原因</b>。
+</div>
+</div>
+
+<h2>四、撮合逻辑对比（D3：收盘价成交 vs 下一bar开盘价成交）</h2>
+<div class="card" style="overflow-x:auto">
+<table>
+<tr><th>标的</th><th>收盘价成交<br>（当前回测）</th><th>下一bar开盘成交<br>（信号确认后）</th><th>差异</th></tr>
+<tr><td class="dim">161129.SZ</td><td>46.8%</td><td>51.6%</td><td class="v-green">+4.8pp</td></tr><tr><td class="dim">513310.SH</td><td>49.1%</td><td>44.6%</td><td class="v-red">-4.5pp</td></tr><tr><td class="dim">600206.SH</td><td>49.4%</td><td>49.6%</td><td class="v-green">+0.2pp</td></tr><tr><td class="dim">600584.SH</td><td>57.7%</td><td>57.9%</td><td class="v-green">+0.2pp</td></tr><tr><td class="dim">688111.SH</td><td>42.9%</td><td>41.9%</td><td class="v-red">-1.0pp</td></tr><tr><td class="dim">688146.SH</td><td>47.1%</td><td>50.0%</td><td class="v-green">+2.9pp</td></tr><tr><td class="dim">688347.SH</td><td>48.5%</td><td>50.0%</td><td class="v-green">+1.5pp</td></tr><tr><td class="dim">688766.SH</td><td>46.5%</td><td>49.0%</td><td class="v-green">+2.5pp</td></tr>
+</table>
+<div class="callout ok" style="margin-top:10px">
+  ✅ <b>实证结论（修正）</b>：改为下一 bar 开盘价成交后，胜率 −3~+4pp 随机波动，<b>没有出现系统性下降</b>——
+  说明当前回测的"收盘价成交"并未显著虚高胜率（跳空方向双向抵消）。真正的执行差距是<b>实盘人工执行延迟</b>：
+  信号推送（秒级）→ 人工看盘决策（秒~分钟）→ 手动下单（秒~分钟）→ 成交（滑点），这条链的滑点远超回测 2bps 假设。
+  卡方为程序化毫秒级委托（客户案例全天 22 笔），这是 tpoint 与卡方在<b>执行层</b>最实质的差异，但回测层面已无法进一步建模。
+</div>
+</div>
+
+<h2>五、数据源差异（D4）</h2>
+<div class="card">
+<table>
+<tr><th>项目</th><th>卡方</th><th>tpoint</th></tr>
+<tr><td class="dim">行情级别</td><td>机构级 tick/秒级（5002只全市场）</td><td>mootdx 免费源 1m（3-4天）+ F盘历史库 1m（145天）</td></tr>
+<tr><td class="dim">价格精度</td><td>真实成交价（2位小数）</td><td>F盘数据为<b>复权价（15位小数）</b>——复权等比缩放不影响收益率比值，但绝对价位与真实价有偏差；mootdx 免费源为真实价</td></tr>
+<tr><td class="dim">覆盖范围</td><td>5002 只 × 全历史</td><td>8 只有数据（145天）；588000/688048/688008 缺 1m</td></tr>
+<tr><td class="dim">除权除息</td><td>专业复权处理</td><td>F盘复权价在除权日连续，免费源有跳空风险——回测未覆盖除权除息测试</td></tr>
+</table>
+<div class="callout ok" style="margin-top:10px">
+  ✅ <b>结论</b>：数据源差异主要影响<b>覆盖广度</b>与<b>绝对价位精度</b>，对收益率比值的策略排序影响有限。
+</div>
+</div>
+
+<h2>六、可改进方向与优化建议（参考卡方实现）</h2>
+<div class="card">
+<table>
+<tr><th>优先级</th><th>改进项</th><th>参考卡方做法</th><th>tpoint 落地建议</th></tr>
+<tr>
+  <td><span class="badge g-p0">P0</span></td>
+  <td class="dim">行情状态过滤（解决单边下跌日连续触发）</td>
+  <td>5因子模型含<b>波动率+流动性</b>因子；标的筛选限「震荡市/高振幅/高流动性」（PPT S5-6: 高波高换手收益最好）</td>
+  <td>加<b>日级趋势闸门</b>：当日价格&lt;MA20 且收盘&lt;开盘（单边下跌日）→ 禁用 floor 地板抄底信号，只保留 MACD 背离；或 VWAP_DEV 带宽按 ATR 自适应放大；振幅&gt;8% 时暂停引力类信号（已列 P2-1）</td>
+</tr>
+<tr>
+  <td><span class="badge g-p0">P0</span></td>
+  <td class="dim">标的筛选器落地（达标才进池）</td>
+  <td>三条件筛选（成交额≥50亿/换手5-15%/振幅5-20%）→ 40只名单；xlsx 5002只回测 + Level 星级</td>
+  <td>market_screener.py 已修单位 bug（amount 字段），7/40 三条件全过；补拉缺 1m 数据（588000/688048/688008）后用 backtest_screener 验证，达标才并入 watchlist——<b>卡方靠筛选获胜的结论支撑此路线</b></td>
+</tr>
+<tr>
+  <td><span class="badge g-p1">P1</span></td>
+  <td class="dim">执行滑点管理（拉近与卡方执行层差距）</td>
+  <td>程序化毫秒级委托（永鼎股份全天22笔）</td>
+  <td>① 飞书信号卡片加「限时执行」提示（信号确认后 3-5 秒内决策）；② 给信号标注「执行价参考区间」（当前 bar 实时价±滑点预算）；③ 远期评估条件单/券商 API 对接（用户已拍板保持人工，列为远期）</td>
+</tr>
+<tr>
+  <td><span class="badge g-p1">P1</span></td>
+  <td class="dim">数据覆盖扩充</td>
+  <td>5002只全市场</td>
+  <td>F盘库已有 4149 只；补拉缺 3 只标的 1m；建立每日增量累积任务（mootdx 每日收盘补当日 1m → F盘库），滚出更长历史（当前 145 天窗口偏短）</td>
+</tr>
+<tr>
+  <td><span class="badge g-p2">P2</span></td>
+  <td class="dim">绩效统计对齐卡方</td>
+  <td>xlsx 17列（20日/5日/当日收益、开仓率、胜率、Level星级）</td>
+  <td>aggregate_metrics 已扩展（年化/回撤/夏普/毛净胜率对照）；补开仓率、滚动 20日/5日窗口、Level 星级——<b>实现"筛选后验证"的完整闭环</b></td>
+</tr>
+<tr>
+  <td><span class="badge g-p2">P2</span></td>
+  <td class="dim">双周期方向参考</td>
+  <td>短10min+长1h 双周期（PPT S14-16）</td>
+  <td>5m/1h 周期信号作为飞书卡片「大方向标注」，不融合进 1m 信号（避免 v9.3.0 证伪覆辙）</td>
+</tr>
+</table>
+</div>
+
+<div class="footer">
+生成：2026-08-01 · 数据：F盘 keyfactor 1m 库（复权价）+ backtest_screener（miji+floor 引擎）+ 敏感性/撮合实测 · 脚本 build_gap_v2_analysis.py
+</div>
+</div>
+</body>
+</html>
