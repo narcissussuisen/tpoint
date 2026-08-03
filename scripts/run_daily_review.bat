@@ -29,3 +29,8 @@ if errorlevel 1 echo [%DATE% %TIME%] [WARN] fdisk_update non-zero >> "%ROOT%\log
 "%PY_EXE%" "%ROOT%\scripts\prod_vs_bt_reconcile.py" --date %D% >> "%ROOT%\logs\daily_review.log" 2>&1
 if errorlevel 1 echo [%DATE% %TIME%] [WARN] reconcile non-zero >> "%ROOT%\logs\daily_review.log"
 echo [%DATE% %TIME%] === done (fdisk+reconcile) === >> "%ROOT%\logs\daily_review.log"
+REM --- 2026-08-03 新增：步骤7 对账HTML生成+推送（对账JSON可读性差，改HTML文件形式发送） ---
+"%PY_EXE%" "%ROOT%\scripts\build_reconcile_html.py" %D% >> "%ROOT%\logs\daily_review.log" 2>&1
+if errorlevel 1 echo [%DATE% %TIME%] [WARN] reconcile_html non-zero >> "%ROOT%\logs\daily_review.log"
+"%PY_EXE%" "%PUSH_PY%" "%ROOT%\output\reconcile_%D%.html" "%WEBHOOK%" "tpoint 每日对账 %D%" >> "%ROOT%\logs\daily_review.log" 2>&1
+echo [%DATE% %TIME%] === done (reconcile html pushed) === >> "%ROOT%\logs\daily_review.log"

@@ -17,12 +17,13 @@ from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed  # 保留导入(备用), 但数据拉取已改为串行见下
 import threading
 from datasource import MootdxDataSource as TickFlow
-from miji_alpha import compute_miji_indicators, check_b_trigger, check_s_trigger
+from miji_alpha import (compute_miji_indicators, check_b_trigger, check_s_trigger,
+                        check_miji_trigger)
 from indicators import stars, K1
 # 出场管理：接 exit_manager 的移动止损/硬止损/S信号出场（P0 待办）
 from exit_manager import make_config
-# watchlist 归一化 + 停牌过滤（2026-08-02 自 main fd26203 移植：status/suspended_until 字段，扫描前过滤停牌标的）
-from watchlist import normalize_entry, is_suspended, active_symbols, market_open
+# ML 信号打分：39 特征单一实现（core/ml_features，模块2.2）
+from ml_features import FEAT_ALL, build_feature_row as ml_build_feature_row
 
 # ========== 路径配置化（跨平台，无需硬编码绝对路径） ==========
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -89,6 +90,140 @@ PUSH_PENDING_FILE = os.path.join(BASE_DIR, 'data', 'push_pending.jsonl')
 EXIT_CFG = make_config(use_stop=False, use_time=False, use_trailing=True,
                        trail_activate_pct=0.4, trail_pct=0.6, s_signal_exit=True)
 # 如需调参（如开硬止损/时间止损），改这里或经 config.json 的 exit_config 传入
+
+# ========== ML 信号打分（模块2.3，2026-08-02 接入） ==========
+# 进程内推理：XGB 模型加载进 monitor 同进程（lazy 加载 + mtime 热重载 + fail-open）。
+# 融合规则（信号后置打分）：对已产生的 B/S 信号点算 39 特征 → ML 概率 p：
+#   - 该标的未启用 ml_enable → 不参与（原信号原样，零影响）
+#   - p >= ML_T_HI  → 仓位放大 1.5x（strength_size 乘子）
+#   - p <  ML_T_LO  → 过滤该信号（不入场）
+#   - 其他/异常   → 原信号原样放行（fail-open，ML 异常不阻塞现有信号）
+ML_T_HI = float(os.environ.get('TP_ML_T_HI', '0.60'))
+ML_T_LO = float(os.environ.get('TP_ML_T_LO', '0.45'))
+ML_SIZE_MULT = float(os.environ.get('TP_ML_SIZE_MULT', '1.5'))
+# 影子模式：ML 打分只记录不推送（config/monitor_config.json 全局 ml_shadow 或 env TP_ML_SHADOW）
+SHADOW_MODE = os.environ.get('TP_ML_SHADOW', '') not in ('', '0', 'false', 'False')
+ML_SHADOW_FILE = os.environ.get('TP_ML_SHADOW_FILE',
+                                os.path.join(BASE_DIR, 'data', 'ml_shadow.jsonl'))
+_ML_RUNTIME = {'models': {}, 'mtimes': {}, 'last_check': 0.0, 'infer_ms_total': 0.0,
+               'infer_cnt': 0, 'err_cnt': 0, 'filtered': 0, 'boosted': 0}
+
+
+def _per_symbol_ml_cfg(sym):
+    """返回该标的 ML 配置 {ml_enable, ml_model, ml_ver}；未配置→空 dict。"""
+    c = PER_SYMBOL_CFG.get(sym) or {}
+    return c
+
+
+def _ml_ctx_from_snapshot(snap):
+    """用 check_miji_trigger 返回的 snapshot 精确 factors 构造 FEAT_CTX（与训练同源）。
+
+    训练侧（ml_build_dataset）ctx = s['factors']（gravity/vol_div/macd_div）+ resonance_score（三因子+1计数）。
+    早期近似（'MACD' in detail / VWAP 偏离方向）会造成 train-serve skew，已废弃；
+    snapshot 的 factors 与 detect_miji_signals 同源（同一 g/v/m 计算），resonance 用 b_score/s_score。
+    """
+    if not snap:
+        return {'g_factor': 0.0, 'v_factor': 0.0, 'm_factor': 0.0, 'resonance': 0.0}
+    return {
+        'g_factor': float(snap.get('gravity', 0)),
+        'v_factor': float(snap.get('vol_div', 0)),
+        'm_factor': float(snap.get('macd_div', 0)),
+        'resonance': float(snap.get('b_score', 0) or snap.get('s_score', 0)),
+    }
+
+
+def _load_ml_model(sig_type, model_path):
+    """加载 XGB 模型（lazy + 按 mtime 热重载）。返回模型或 None（fail-open）。"""
+    if not model_path or not os.path.isfile(model_path):
+        return None
+    try:
+        mtime = os.path.getmtime(model_path)
+        if sig_type in _ML_RUNTIME['models'] and _ML_RUNTIME['mtimes'].get(sig_type) == mtime:
+            return _ML_RUNTIME['models'][sig_type]
+        import xgboost as xgb
+        m = xgb.XGBClassifier()
+        m.load_model(model_path)
+        # 特征顺序校验：模型内 feature_names 若存在且 != FEAT_ALL 顺序 → 拒绝加载（防错位）
+        bn = m.get_booster().feature_names
+        if bn and list(bn) != FEAT_ALL:
+            print(f"  ⚠️ ML 模型特征序不符（{len(bn)} vs {len(FEAT_ALL)}），拒绝加载")
+            return None
+        _ML_RUNTIME['models'][sig_type] = m
+        _ML_RUNTIME['mtimes'][sig_type] = mtime
+        return m
+    except Exception as e:
+        print(f"  ⚠️ ML 模型加载失败({sig_type}): {e}")
+        return None
+
+
+def score_signal(sym, sig_type, data, i, pc, sub, ctx, ml_cfg, shadow=False):
+    """信号后置打分：39 特征 → ML 概率。返回 (action, p, infer_ms) 或 None。
+
+    action: 'boost'（p>=T_HI 放大）/ 'filter'（p<T_LO 过滤）/ 'keep'（原样）
+    返回 None = 未启用 ML（不参与，完全零影响）；返回 ('keep', None, 0) = 启用但模型缺失/异常（fail-open）。
+    """
+    # 未启用（含 None 配置）→ 直接返回，不打印告警、不计数（零影响原则）
+    if not ml_cfg or not ml_cfg.get('ml_enable'):
+        return None
+    import time as _t
+    t0 = _t.perf_counter()
+    try:
+        ver = ml_cfg.get('ml_model') or ml_cfg.get('ml_ver')
+        base = os.path.join(BASE_DIR, 'output', 'ml_models')
+        if ver:
+            mp = os.path.join(base, f'{ver}_{sig_type.lower()}.json')
+        else:
+            mp = None
+        model = _load_ml_model(sig_type, mp)
+        if model is None:
+            return ('keep', None, 0)
+        row = ml_build_feature_row(data, pc, i, sub, ctx)
+        if row is None:
+            return ('keep', None, 0)
+        p = float(model.predict_proba(row.reshape(1, -1).astype(np.float32))[0, 1])
+        if p >= ML_T_HI:
+            action = 'boost'
+        elif p < ML_T_LO:
+            action = 'filter'
+        else:
+            action = 'keep'
+        _ML_RUNTIME['infer_ms_total'] += (_t.perf_counter() - t0) * 1000
+        _ML_RUNTIME['infer_cnt'] += 1
+        if action == 'filter':
+            _ML_RUNTIME['filtered'] += 1
+        elif action == 'boost':
+            _ML_RUNTIME['boosted'] += 1
+        if shadow:
+            _log_ml_shadow(sym, sig_type, i, p, action, ver)
+            # 影子模式：记录打分但不干预信号（返回 keep 而非真实 action）
+            return ('keep', p, round((_t.perf_counter() - t0) * 1000, 3))
+        return (action, p, round((_t.perf_counter() - t0) * 1000, 3))
+    except Exception as e:
+        _ML_RUNTIME['err_cnt'] += 1
+        print(f"  ⚠️ ML 打分异常({sym} {sig_type}@{i}): {e}")
+        return ('keep', None, 0)
+
+
+def _log_ml_shadow(sym, sig_type, i, p, action, ver):
+    """影子模式：ML 打分只记录不推送（data/ml_shadow.jsonl）。"""
+    try:
+        import json as _json
+        rec = {'ts': time.time(), 'sym': sym, 'sig_type': sig_type, 'idx': i,
+               'p': p, 'action': action, 'ml_ver': ver or ''}
+        with open(ML_SHADOW_FILE, 'a', encoding='utf-8') as fh:
+            fh.write(_json.dumps(rec, ensure_ascii=False) + '\n')
+    except Exception:
+        pass
+
+
+def _ml_metrics():
+    """汇总 ML 运行时指标（供 write_metrics 扩展）。"""
+    r = _ML_RUNTIME
+    return {
+        'ml_infer_cnt': r['infer_cnt'], 'ml_err_cnt': r['err_cnt'],
+        'ml_filtered': r['filtered'], 'ml_boosted': r['boosted'],
+        'ml_infer_ms_avg': round(r['infer_ms_total'] / r['infer_cnt'], 3) if r['infer_cnt'] else 0,
+    }
 
 # ========== 跨平台文件锁（Windows 用 msvcrt，Unix 用 fcntl） ==========
 if os.name == 'nt':
@@ -194,49 +329,29 @@ def load_targets():
 # 监控标的加载：唯一数据源 = data/watchlist.json
 # 2026-07-21 移除硬编码 5 持仓兜底：所有标的必须从此文件动态读取，
 # 避免启动时读失败→整日扫描错误标的(实证: 10:28 161129 未被监控)。
-# 2026-08-02 移植 fd26203：归一化标的结构（含停牌状态）{code: {name, status, suspended_until}}，
-# monitor 扫描前用 active_symbols(WATCH_ENTRIES) 过滤停牌标的。
-WATCH_ENTRIES = {}
-
 def _load_watchlist():
-    """读取 data/watchlist.json → 返回 {sym: name}（归一化名字），同时刷新全局 WATCH_ENTRIES。
-    兼容旧格式 {sym: name} 与新格式 {sym: {name,status,suspended_until}}。
-    文件缺失/空/损坏返回 None（由调用方延迟重试）。"""
-    global WATCH_ENTRIES
+    """从 data/watchlist.json 读取监控标的 {sym: name}。文件不存在或为空则报错退出。"""
     try:
         if os.path.exists(WATCHLIST_FILE):
             with open(WATCHLIST_FILE, encoding='utf-8') as f:
-                raw = json.load(f)
-        else:
-            raw = {}
+                wl = json.load(f)
+            if wl and isinstance(wl, dict) and len(wl) > 0:
+                return wl
     except Exception as e:
         print(f"❌ 读取 watchlist.json 失败: {e}")
-        return None
-    if not isinstance(raw, dict) or len(raw) == 0:
-        print("❌ watchlist.json 不存在、为空或格式错误。无法确定监控标的，monitor 无法启动。")
-        print(f"   请在 {WATCHLIST_FILE} 中配置至少一个标的（如 {json.dumps({'161129.SZ': '原油LOF易方达'}, ensure_ascii=False)}）")
-        return None
-    targets = {}
-    entries = {}
-    for code, val in raw.items():
-        e = normalize_entry(code, val)
-        targets[code] = e['name']
-        entries[code] = e
-    WATCH_ENTRIES = entries
-    return targets
+    print("❌ watchlist.json 不存在、为空或格式错误。无法确定监控标的，monitor 无法启动。")
+    print(f"   请在 {WATCHLIST_FILE} 中配置至少一个标的（如 {json.dumps({'161129.SZ': '原油LOF易方达'}, ensure_ascii=False)}）")
+    return None
 
 TARGETS = _load_watchlist()
 if not TARGETS:
     # 延迟到 run() 启动时再次尝试（可能用户还没来得及写好配置）
     print("⚠️ 启动时未加载到标的，将在 run() 循环中周期重试 watchlist.json")
 else:
-    _has_susp = any(is_suspended(e) for e in WATCH_ENTRIES.values())
-    print(f"📋 监控标的来自 watchlist.json: {', '.join(TARGETS.values())}"
-          + ("（含停牌过滤）" if _has_susp else ""))
+    print(f"📋 监控标的来自 watchlist.json: {', '.join(TARGETS.values())}")
 
 _EXCLUDE = {'920222.BJ', '920222.SZ'}
 TARGETS = {k: v for k, v in TARGETS.items() if k not in _EXCLUDE}
-WATCH_ENTRIES = {k: v for k, v in WATCH_ENTRIES.items() if k not in _EXCLUDE}
 
 # ========== per-symbol 监控参数（方案A，2026-08-02） ==========
 # 独立于 watchlist.json（保持 {sym: name} 结构不变，不破坏热重载/对比逻辑）。
@@ -350,8 +465,9 @@ def _audit_push(sym, typ, price, code, msg, ok):
         }
         with open(PUSH_AUDIT_FILE, 'a', encoding='utf-8') as f:
             f.write(json.dumps(row, ensure_ascii=False) + '\n')
-    except Exception:
-        pass
+    except Exception as e:
+        # 2026-08-03 修复：audit 静默吞异常曾致 09:35 后整日断流且无法定位，改为打印告警
+        print(f"  ⚠️ push_audit 写入失败: {e}")
 
 def _push_once(url, payload):
     """单次 POST，返回 (ok, code, msg)。"""
@@ -564,7 +680,7 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
     ]
     msg = '\n'.join(lines)
     print(msg)
-    with open(SIGNAL_FILE, 'a') as f:
+    with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
         f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n{msg}\n\n")
     return msg
 
@@ -649,9 +765,45 @@ def emit_card(s, sym=None, sim=False):
         },
     }
 
+def _append_signal_txt(s):
+    """写 signal.txt（与 emit() 同文本格式，不 print 不推送）。
+    2026-08-03 修复：CARD_MODE=True 后 emit() 不再被调用，signal.txt 自 07-24 永久断流，
+    致复盘/对账缺失实盘明细源。此 helper 在 emit_signal 中统一补写，三源(state/audit/signal.txt)对齐。
+    s = 13/14 元组（同 emit_card 入参）。"""
+    try:
+        sig_type, price, chg, level_val, level_type, rsi, temp, vol_r, name, tag, exit_reason, day_chg, bar_tt = s[:13]
+        pos_pct = s[13] if len(s) >= 14 else POS_PCT
+        k_tag = f' [K:{bar_tt[11:16]}]' if bar_tt and len(str(bar_tt)) >= 16 else ''
+        chg_sign = '+' if (chg or 0) >= 0 else ''
+        if sig_type == 'X':
+            reason = f" [{exit_reason}]" if exit_reason else ''
+            day_sign = '+' if (day_chg or 0) >= 0 else ''
+            day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
+            lines = [
+                f"🔵 {name} EXIT{reason} {pos_pct}成{(' ' + tag) if tag else ''}{k_tag}",
+                f"现价 {price:.2f}（当日 {day_str} / 持仓 {chg_sign}{chg:.1f}%）",
+                f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}",
+            ]
+        else:
+            emoji = '🟢' if sig_type == 'B' else '🔴'
+            op_type = 'BUY' if sig_type == 'B' else 'SELL'
+            star = stars(sig_type, temp, vol_r)
+            lines = [
+                f"{emoji} {name} {op_type} {pos_pct}成 {star}{(' ' + tag) if tag else ''}{k_tag}",
+                f"现价 {price:.2f}（{chg_sign}{chg:.1f}%）",
+                f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}",
+            ]
+        with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
+            f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n" + '\n'.join(lines) + "\n\n")
+    except Exception as e:
+        print(f"  ⚠️ signal.txt 写入失败: {e}")
+
 def emit_signal(s, sym=None, sim=False):
-    """dispatch：CARD_MODE→卡片，否则纯文本 fallback。返回 msg_or_card。sym 用于卡片标题(标的代码)。"""
+    """dispatch：CARD_MODE→卡片，否则纯文本 fallback。返回 msg_or_card。sym 用于卡片标题(标的代码)。
+    2026-08-03：卡片模式下 emit() 不被调用，signal.txt 在此补写（SIM 除外防污染实盘流水）。"""
     if CARD_MODE:
+        if not sim:
+            _append_signal_txt(s)
         return emit_card(s, sim=sim)
     return emit(*s)
 
@@ -685,7 +837,7 @@ def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
         _fd, _tmp = _tf.mkstemp(suffix='.tmp', dir=_dir, prefix='metrics_')
         try:
             with os.fdopen(_fd, 'w', encoding='utf-8') as f:
-                json.dump({
+                _m = {
                     'ts': time.time(),
                     'scan_duration_s': round(duration_s, 3),
                     'signals': signals,
@@ -696,7 +848,10 @@ def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
                     # data_lag_s 规则，避免午休"行情延迟/数据源中断"误报。切勿改为保留旧值！
                     'last_bar_ts': last_bar_ts if last_bar_ts else None,
                     'status': 'running',
-                }, f)
+                }
+                # [模块2.3] ML 推理指标（infer_cnt/err/过滤/放大/均耗）
+                _m['ml'] = _ml_metrics()
+                json.dump(_m, f)
             os.replace(_tmp, METRICS_FILE)  # 原子替换（同目录）
         except Exception:
             # 写 tmp 失败时清理临时文件
@@ -914,7 +1069,28 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
             continue
         # 买入 / 开多（或加多 / 平空回补）
         if tb:
+            # [模块2.3] ML 信号后置打分（B 侧；fail-open：异常/未启用→keep）
+            # ctx：FEAT_CTX 用 check_miji_trigger 的 snapshot 精确 factors（与训练同源，
+            #   避免早期 'MACD' in detail 近似的 train-serve skew）。
+            ml_cfg = _per_symbol_ml_cfg(sym)
+            ml_res = None
+            if ml_cfg.get('ml_enable'):
+                try:
+                    _snap = check_miji_trigger(data, i, macd_gate_mode='floor',
+                                               min_hist_diff=float(_env_or('TP_MHD_THRESHOLD', '0.15')),
+                                               atr_min_pct=atr_min_pct,
+                                               mpr_enable=mpr_enable, mpr_periods=mpr_periods)[4]
+                except Exception:
+                    _snap = None
+                ctx = _ml_ctx_from_snapshot(_snap)
+                ml_res = score_signal(sym, 'B', data, i, pc, df, ctx, ml_cfg,
+                                      shadow=SHADOW_MODE)
+                if ml_res and ml_res[0] == 'filter':
+                    st[bar_key] = now
+                    continue
             s_pct = strength_size((c[i] - vwap[i]) / vwap[i] * 100.0, 'MACD' in (rb or ''))
+            if ml_res and ml_res[0] == 'boost':
+                s_pct = min(s_pct * ML_SIZE_MULT, MAX_SIZE_PCT)
             last_b = st.get(f'_cooldown_{sym}_B', -9999)
             if s_pct > 0 and (i - last_b) >= COLDOWN_BARS and b_count < MAX_B_DAILY:
                 st[f'_cooldown_{sym}_B'] = i
@@ -947,7 +1123,26 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                             pos = None
         # 卖出 / 开空（或加空 / 平多），对称；涨停 regime 抑制开空（A2）
         if ts:
+            # [模块2.3] ML 信号后置打分（S 侧；fail-open）
+            ml_cfg_s = _per_symbol_ml_cfg(sym)
+            ml_res_s = None
+            if ml_cfg_s.get('ml_enable'):
+                try:
+                    _snap_s = check_miji_trigger(data, i, macd_gate_mode='floor',
+                                                 min_hist_diff=float(_env_or('TP_MHD_THRESHOLD', '0.15')),
+                                                 atr_min_pct=atr_min_pct,
+                                                 mpr_enable=mpr_enable, mpr_periods=mpr_periods)[4]
+                except Exception:
+                    _snap_s = None
+                ctx_s = _ml_ctx_from_snapshot(_snap_s)
+                ml_res_s = score_signal(sym, 'S', data, i, pc, df, ctx_s, ml_cfg_s,
+                                        shadow=SHADOW_MODE)
+                if ml_res_s and ml_res_s[0] == 'filter':
+                    st[bar_key] = now
+                    continue
             s_pct = strength_size((c[i] - vwap[i]) / vwap[i] * 100.0, 'MACD' in (rs or ''))
+            if ml_res_s and ml_res_s[0] == 'boost':
+                s_pct = min(s_pct * ML_SIZE_MULT, MAX_SIZE_PCT)
             last_s = st.get(f'_cooldown_{sym}_S', -9999)
             if s_pct > 0 and (i - last_s) >= COLDOWN_BARS and s_count < MAX_S_DAILY and not near_limit_up:
                 st[f'_cooldown_{sym}_S'] = i
@@ -1265,6 +1460,19 @@ def run():
 
         # 热重载 per-symbol 参数（monitor_config.json；方案A，改配置无需重启）
         _load_per_symbol_cfg()
+        # [模块2.3] 影子模式动态开关：config/monitor_config.json 全局 ml_shadow（每轮生效）
+        try:
+            _gcfg_path = os.path.join(BASE_DIR, 'config', 'monitor_config.json')
+            if os.path.exists(_gcfg_path):
+                with open(_gcfg_path, encoding='utf-8') as _gcfg_f:
+                    _gcfg = json.load(_gcfg_f)
+                global SHADOW_MODE
+                if 'ml_shadow' in _gcfg:
+                    _v = _gcfg.get('ml_shadow')
+                    # 兼容 JSON boolean（true/false）与字符串（'true'/'false'/'1'/'0'）
+                    SHADOW_MODE = bool(_v) if isinstance(_v, bool) else str(_v).lower() not in ('', '0', 'false', 'none')
+        except Exception:
+            pass
 
         if st.get('_daily_refreshed_date') != today_str:
             refresh_daily()
@@ -1315,13 +1523,6 @@ def run():
         batch = []
         audit_meta = []  # 与 batch 一一对应，用于推送审计日志
         loop_start = time.time(); err_count = 0; max_bar_ts = 0.0; outer_err = False
-        # 停牌标的过滤：扫描前剔除 status=suspended 且期限未到的标的
-        # （不拉数据→不计 err_count、不累加 miss、不推数据源中断告警）。suspended_until 过期自动复牌。
-        try:
-            active = active_symbols(WATCH_ENTRIES, now)
-        except Exception as _e:
-            print(f"  [warning] active_symbols 异常, 本轮回退全量扫描: {_e}")
-            active = list(TARGETS.keys())
         # 先补发上一轮失败的推送（频限11232等），再扫描新信号——根治"失败即丢推"
         try:
             _drain_pending()
@@ -1334,9 +1535,9 @@ def run():
             #     实际 socket 操作是串行的。若后续标的增多导致锁竞争明显，
             #     可直接改 max_workers=1（纯串行）消除线程创建开销。
             sym_data = {}
-            max_workers = min(5, len(active))
+            max_workers = min(5, len(TARGETS))
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_sym = {executor.submit(compute, sym): sym for sym in active}
+                future_to_sym = {executor.submit(compute, sym): sym for sym in TARGETS}
                 for future in as_completed(future_to_sym):
                     sym = future_to_sym[future]
                     name = TARGETS[sym]
@@ -1353,25 +1554,21 @@ def run():
             # 静默零信号检测：本轮未取到 bar 的标的计数（堵"数据中断静默吞信号"）
             if sym_data:
                 st['_tf_unhealthy'] = False
-            # 停牌标的：直接清零 miss 并清去抖锁，不参与缺数计数/告警（治本：停牌≠数据源中断）
             for sym in TARGETS:
-                if sym not in active:
-                    st[f'_miss_{sym}'] = 0
-                    st.pop(f'alerted_miss_{sym}', None)
-            # 仅真实开盘时段累计缺数；盘前09:25-09:30/午休无数据属正常，不计数(避免盘前误报)
-            for sym in active:
                 if sym in sym_data:
                     st[f'_miss_{sym}'] = 0
                     st.pop(f'alerted_miss_{sym}', None)  # 数据恢复 → 清除去抖锁
-                elif market_open(now):
+                else:
                     st[f'_miss_{sym}'] = st.get(f'_miss_{sym}', 0) + 1
             # 告警（仅交易时段 + 过开盘宽限期，去抖避免刷屏）
             def _in_grace(tt):
                 g = ALERT_GRACE_MIN
-                return (t.replace(hour=9, minute=30) <= tt < t.replace(hour=9, minute=30 + g)) or \
+                # 集合竞价 9:15-9:25 无分钟K → 正常；开盘宽限 9:30-9:30+g；午休恢复 13:00-13:05
+                return (t.replace(hour=9, minute=15) <= tt < t.replace(hour=9, minute=30)) or \
+                       (t.replace(hour=9, minute=30) <= tt < t.replace(hour=9, minute=30 + g)) or \
                        (t.replace(hour=13, minute=0) <= tt < t.replace(hour=13, minute=5))
             if not _in_grace(now.time()):
-                for sym in active:
+                for sym in TARGETS:
                     m = st.get(f'_miss_{sym}', 0)
                     key_a = f'alerted_miss_{sym}'
                     if m >= ALERT_MISS_ROUNDS and not st.get(key_a):
@@ -1385,9 +1582,8 @@ def run():
                         print(f"  🚨 已推送静默零信号告警 {nm}({sym}) miss={m}")
 
             # 2) 顺序处理信号：避免共享状态 st 竞争
-            #    遍历 active（与拉取一致）：停牌标的无数据，语义上直接不参与信号处理
             override_action = _load_risk_override()  # 模式② 顶层风控闸门（每轮读一次）
-            for sym, name in ((s, TARGETS[s]) for s in active):
+            for sym, name in TARGETS.items():
                     data = sym_data.get(sym)
                     if not data:
                         continue
@@ -1406,7 +1602,7 @@ def run():
                             # 最近几分钟刚产生的真实信号（07-31 09:33 金山S@253.89 被吞案例）。
                             # 改为 (now-3min)：只跳过 3 分钟前的历史 bar（重建持仓状态用），
                             # 3 分钟内刚发生的信号走"时间戳白名单"正常推送。
-                            target_t = (now - datetime.timedelta(minutes=3)).strftime('%H:%M')
+                            target_t = (now - timedelta(minutes=3)).strftime('%H:%M')
                             df = data['df']; n = data['n']
                             for idx in range(n):
                                 if str(df['trade_time'].iloc[idx])[11:16] >= target_t:
@@ -1431,7 +1627,7 @@ def run():
                             # [轮次2-2 迭代] 时间比较改用 datetime 对象（此前字符串比较在跨日边界
                             # 23:58 重启→00:01 会失效：'23:58' < '00:01' 判断错误）。now 为 CST aware，
                             # 信号时间戳为本地 naive → 比较前统一去 tzinfo（同一时区，安全）。
-                            recent_cutoff = now.replace(tzinfo=None) - datetime.timedelta(minutes=3)
+                            recent_cutoff = now.replace(tzinfo=None) - timedelta(minutes=3)
                             recent_sigs = []
                             replay_sigs = []
                             for s in sigs:
@@ -1466,9 +1662,9 @@ def run():
                 push_batch(batch, audit_meta=audit_meta)
             save_state(st)
             write_metrics(time.time() - loop_start, len(batch),
-                          err_count + (1 if outer_err else 0), max_bar_ts, len(active))
+                          err_count + (1 if outer_err else 0), max_bar_ts, len(TARGETS))
             if not batch:
-                print(f"  🔄 [{now.strftime('%H:%M:%S')}] 本轮无信号 ({len(active)}标的扫描完成)")
+                print(f"  🔄 [{now.strftime('%H:%M:%S')}] 本轮无信号 ({len(TARGETS)}标的扫描完成)")
         except Exception as e:
             outer_err = True
             print(f"💥 [{now.strftime('%H:%M:%S')}] v9扫描崩溃: {e}")
