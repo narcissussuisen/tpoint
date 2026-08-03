@@ -11,9 +11,9 @@ set PYTHONIOENCODING=utf-8
 set PYTHONUNBUFFERED=1
 set PYTHONPATH=%ROOT%\venv\Lib\site-packages;%ROOT%\venv\Lib;%ROOT%
 set PY_EXE=C:\Users\YZP\.workbuddy\binaries\python\versions\3.13.12\python.exe
-set PUSH_PY=C:\Users\YZP\WorkBuddy\Claw\research\push_feishu_html.py
+set PUSH_PY=F:\Users\YZP\WorkBuddy\Claw\research\push_feishu_html.py
 set WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/849577f5-6c79-498e-92bd-0721af6f9622
-for /f "usebackq" %%i in (`"%PY_EXE%" -c "import datetime;print(datetime.date.today().strftime('%%Y-%%m-%%d'))"`) do set D=%%i
+for /f "usebackq" %%i in (`%PY_EXE% %ROOT%\scripts\_today.py`) do set D=%%i
 echo [%DATE% %TIME%] === tpoint daily review %D% === >> "%ROOT%\logs\daily_review.log"
 "%PY_EXE%" "%ROOT%\scripts\daily_signal_review.py" --date %D% >> "%ROOT%\logs\daily_review.log" 2>&1
 if errorlevel 1 echo [%DATE% %TIME%] [WARN] recompute non-zero >> "%ROOT%\logs\daily_review.log"
