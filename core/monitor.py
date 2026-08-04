@@ -17,10 +17,13 @@ from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed  # 保留导入(备用), 但数据拉取已改为串行见下
 import threading
 from datasource import MootdxDataSource as TickFlow
-from miji_alpha import compute_miji_indicators, check_b_trigger, check_s_trigger
+from miji_alpha import (compute_miji_indicators, check_b_trigger, check_s_trigger,
+                        check_miji_trigger)
 from indicators import stars, K1
 # 出场管理：接 exit_manager 的移动止损/硬止损/S信号出场（P0 待办）
 from exit_manager import make_config
+# ML 信号打分：39 特征单一实现（core/ml_features，模块2.2）
+from ml_features import FEAT_ALL, build_feature_row as ml_build_feature_row
 
 # ========== 路径配置化（跨平台，无需硬编码绝对路径） ==========
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -87,6 +90,140 @@ PUSH_PENDING_FILE = os.path.join(BASE_DIR, 'data', 'push_pending.jsonl')
 EXIT_CFG = make_config(use_stop=False, use_time=False, use_trailing=True,
                        trail_activate_pct=0.4, trail_pct=0.6, s_signal_exit=True)
 # 如需调参（如开硬止损/时间止损），改这里或经 config.json 的 exit_config 传入
+
+# ========== ML 信号打分（模块2.3，2026-08-02 接入） ==========
+# 进程内推理：XGB 模型加载进 monitor 同进程（lazy 加载 + mtime 热重载 + fail-open）。
+# 融合规则（信号后置打分）：对已产生的 B/S 信号点算 39 特征 → ML 概率 p：
+#   - 该标的未启用 ml_enable → 不参与（原信号原样，零影响）
+#   - p >= ML_T_HI  → 仓位放大 1.5x（strength_size 乘子）
+#   - p <  ML_T_LO  → 过滤该信号（不入场）
+#   - 其他/异常   → 原信号原样放行（fail-open，ML 异常不阻塞现有信号）
+ML_T_HI = float(os.environ.get('TP_ML_T_HI', '0.60'))
+ML_T_LO = float(os.environ.get('TP_ML_T_LO', '0.45'))
+ML_SIZE_MULT = float(os.environ.get('TP_ML_SIZE_MULT', '1.5'))
+# 影子模式：ML 打分只记录不推送（config/monitor_config.json 全局 ml_shadow 或 env TP_ML_SHADOW）
+SHADOW_MODE = os.environ.get('TP_ML_SHADOW', '') not in ('', '0', 'false', 'False')
+ML_SHADOW_FILE = os.environ.get('TP_ML_SHADOW_FILE',
+                                os.path.join(BASE_DIR, 'data', 'ml_shadow.jsonl'))
+_ML_RUNTIME = {'models': {}, 'mtimes': {}, 'last_check': 0.0, 'infer_ms_total': 0.0,
+               'infer_cnt': 0, 'err_cnt': 0, 'filtered': 0, 'boosted': 0}
+
+
+def _per_symbol_ml_cfg(sym):
+    """返回该标的 ML 配置 {ml_enable, ml_model, ml_ver}；未配置→空 dict。"""
+    c = PER_SYMBOL_CFG.get(sym) or {}
+    return c
+
+
+def _ml_ctx_from_snapshot(snap):
+    """用 check_miji_trigger 返回的 snapshot 精确 factors 构造 FEAT_CTX（与训练同源）。
+
+    训练侧（ml_build_dataset）ctx = s['factors']（gravity/vol_div/macd_div）+ resonance_score（三因子+1计数）。
+    早期近似（'MACD' in detail / VWAP 偏离方向）会造成 train-serve skew，已废弃；
+    snapshot 的 factors 与 detect_miji_signals 同源（同一 g/v/m 计算），resonance 用 b_score/s_score。
+    """
+    if not snap:
+        return {'g_factor': 0.0, 'v_factor': 0.0, 'm_factor': 0.0, 'resonance': 0.0}
+    return {
+        'g_factor': float(snap.get('gravity', 0)),
+        'v_factor': float(snap.get('vol_div', 0)),
+        'm_factor': float(snap.get('macd_div', 0)),
+        'resonance': float(snap.get('b_score', 0) or snap.get('s_score', 0)),
+    }
+
+
+def _load_ml_model(sig_type, model_path):
+    """加载 XGB 模型（lazy + 按 mtime 热重载）。返回模型或 None（fail-open）。"""
+    if not model_path or not os.path.isfile(model_path):
+        return None
+    try:
+        mtime = os.path.getmtime(model_path)
+        if sig_type in _ML_RUNTIME['models'] and _ML_RUNTIME['mtimes'].get(sig_type) == mtime:
+            return _ML_RUNTIME['models'][sig_type]
+        import xgboost as xgb
+        m = xgb.XGBClassifier()
+        m.load_model(model_path)
+        # 特征顺序校验：模型内 feature_names 若存在且 != FEAT_ALL 顺序 → 拒绝加载（防错位）
+        bn = m.get_booster().feature_names
+        if bn and list(bn) != FEAT_ALL:
+            print(f"  ⚠️ ML 模型特征序不符（{len(bn)} vs {len(FEAT_ALL)}），拒绝加载")
+            return None
+        _ML_RUNTIME['models'][sig_type] = m
+        _ML_RUNTIME['mtimes'][sig_type] = mtime
+        return m
+    except Exception as e:
+        print(f"  ⚠️ ML 模型加载失败({sig_type}): {e}")
+        return None
+
+
+def score_signal(sym, sig_type, data, i, pc, sub, ctx, ml_cfg, shadow=False):
+    """信号后置打分：39 特征 → ML 概率。返回 (action, p, infer_ms) 或 None。
+
+    action: 'boost'（p>=T_HI 放大）/ 'filter'（p<T_LO 过滤）/ 'keep'（原样）
+    返回 None = 未启用 ML（不参与，完全零影响）；返回 ('keep', None, 0) = 启用但模型缺失/异常（fail-open）。
+    """
+    # 未启用（含 None 配置）→ 直接返回，不打印告警、不计数（零影响原则）
+    if not ml_cfg or not ml_cfg.get('ml_enable'):
+        return None
+    import time as _t
+    t0 = _t.perf_counter()
+    try:
+        ver = ml_cfg.get('ml_model') or ml_cfg.get('ml_ver')
+        base = os.path.join(BASE_DIR, 'output', 'ml_models')
+        if ver:
+            mp = os.path.join(base, f'{ver}_{sig_type.lower()}.json')
+        else:
+            mp = None
+        model = _load_ml_model(sig_type, mp)
+        if model is None:
+            return ('keep', None, 0)
+        row = ml_build_feature_row(data, pc, i, sub, ctx)
+        if row is None:
+            return ('keep', None, 0)
+        p = float(model.predict_proba(row.reshape(1, -1).astype(np.float32))[0, 1])
+        if p >= ML_T_HI:
+            action = 'boost'
+        elif p < ML_T_LO:
+            action = 'filter'
+        else:
+            action = 'keep'
+        _ML_RUNTIME['infer_ms_total'] += (_t.perf_counter() - t0) * 1000
+        _ML_RUNTIME['infer_cnt'] += 1
+        if action == 'filter':
+            _ML_RUNTIME['filtered'] += 1
+        elif action == 'boost':
+            _ML_RUNTIME['boosted'] += 1
+        if shadow:
+            _log_ml_shadow(sym, sig_type, i, p, action, ver)
+            # 影子模式：记录打分但不干预信号（返回 keep 而非真实 action）
+            return ('keep', p, round((_t.perf_counter() - t0) * 1000, 3))
+        return (action, p, round((_t.perf_counter() - t0) * 1000, 3))
+    except Exception as e:
+        _ML_RUNTIME['err_cnt'] += 1
+        print(f"  ⚠️ ML 打分异常({sym} {sig_type}@{i}): {e}")
+        return ('keep', None, 0)
+
+
+def _log_ml_shadow(sym, sig_type, i, p, action, ver):
+    """影子模式：ML 打分只记录不推送（data/ml_shadow.jsonl）。"""
+    try:
+        import json as _json
+        rec = {'ts': time.time(), 'sym': sym, 'sig_type': sig_type, 'idx': i,
+               'p': p, 'action': action, 'ml_ver': ver or ''}
+        with open(ML_SHADOW_FILE, 'a', encoding='utf-8') as fh:
+            fh.write(_json.dumps(rec, ensure_ascii=False) + '\n')
+    except Exception:
+        pass
+
+
+def _ml_metrics():
+    """汇总 ML 运行时指标（供 write_metrics 扩展）。"""
+    r = _ML_RUNTIME
+    return {
+        'ml_infer_cnt': r['infer_cnt'], 'ml_err_cnt': r['err_cnt'],
+        'ml_filtered': r['filtered'], 'ml_boosted': r['boosted'],
+        'ml_infer_ms_avg': round(r['infer_ms_total'] / r['infer_cnt'], 3) if r['infer_cnt'] else 0,
+    }
 
 # ========== 跨平台文件锁（Windows 用 msvcrt，Unix 用 fcntl） ==========
 if os.name == 'nt':
@@ -317,19 +454,76 @@ def now_ts():
 _last_push_ts = 0
 MIN_PUSH_INTERVAL = 5
 
+# ---------------------------------------------------------------------------
+# 写后缓冲（write-behind buffer）：落盘被拒（外部锁/EDR hook CRT _wopen）时不丢记录。
+# 2026-08-04 实盘事故：09:25-10:00 data/ 落盘 PermissionError，_audit_push/_append_signal_txt
+# 无降级无缓冲 → 早盘5笔真实推送（飞书200）三源全丢，对账 live 明细严重失真。
+# 修复：open() → ctypes CreateFileW 追加降级 → 内存缓冲 + %TEMP% 溢出文件；
+# 主循环每轮 _flush_write_buffer() 回写，恢复后打印补写条数。
+_WBUF = []            # [(path, text)] 待回写
+_WBUF_SPILLED = False # 是否已溢出到 TEMP（避免重复打印）
+
+
+def _write_append_reliable(path, text):
+    """追加写：open() 失败 → ctypes CreateFileW(FILE_APPEND_DATA) 降级（绕过 CRT _wopen EDR hook）。"""
+    try:
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(text)
+        return
+    except Exception:
+        _ctypes_write_text(path, text, append=True)  # 定义在下方 save_state 前，调用时可用
+
+
+def _buffered_append(path, text, label):
+    """可靠追加；彻底失败 → 内存缓冲 + TEMP 溢出，绝不丢记录。"""
+    global _WBUF_SPILLED
+    try:
+        _write_append_reliable(path, text)
+        return
+    except Exception as e:
+        _WBUF.append((path, text))
+        print(f"  ⚠️ {label} 写入失败(已入缓冲{len(_WBUF)}条): {e}")
+        try:
+            import tempfile
+            spill = os.path.join(tempfile.gettempdir(), 'tpoint_wbuf_spill.jsonl')
+            with open(spill, 'a', encoding='utf-8') as f:
+                f.write(json.dumps({'path': path, 'text': text}, ensure_ascii=False) + '\n')
+            if not _WBUF_SPILLED:
+                print(f"  📥 落盘断流：缓冲溢出至 {spill}（恢复后自动回写）")
+                _WBUF_SPILLED = True
+        except Exception as e2:
+            print(f"  ⚠️ 缓冲溢出文件也失败(仅内存): {e2}")
+
+
+def _flush_write_buffer():
+    """主循环每轮调用：回写缓冲的落盘记录（断流恢复后自愈）。返回本轮回写条数。"""
+    global _WBUF_SPILLED
+    if not _WBUF:
+        return 0
+    pending, _WBUF[:] = _WBUF[:], []
+    ok = 0
+    for path, text in pending:
+        try:
+            _write_append_reliable(path, text)
+            ok += 1
+        except Exception:
+            _WBUF.append((path, text))  # 仍失败，留待下轮
+    if ok:
+        print(f"  ✅ 落盘恢复：补写 {ok} 条审计/signal 记录（剩余缓冲 {len(_WBUF)}）")
+    if not _WBUF:
+        _WBUF_SPILLED = False
+    return ok
+
+
 def _audit_push(sym, typ, price, code, msg, ok):
     """推送审计日志 data/push_audit.jsonl：{时间,标的,类型,价格,飞书code,ok}。
     消除'日志不记标的'盲区，使未来可逐笔核对真实推送。"""
-    try:
-        row = {
-            'ts': datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S'),
-            'sym': sym, 'type': typ, 'price': price,
-            'feishu_code': code, 'feishu_msg': msg, 'ok': bool(ok),
-        }
-        with open(PUSH_AUDIT_FILE, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(row, ensure_ascii=False) + '\n')
-    except Exception:
-        pass
+    row = {
+        'ts': datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S'),
+        'sym': sym, 'type': typ, 'price': price,
+        'feishu_code': code, 'feishu_msg': msg, 'ok': bool(ok),
+    }
+    _buffered_append(PUSH_AUDIT_FILE, json.dumps(row, ensure_ascii=False) + '\n', 'push_audit')
 
 def _push_once(url, payload):
     """单次 POST，返回 (ok, code, msg)。"""
@@ -542,7 +736,7 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
     ]
     msg = '\n'.join(lines)
     print(msg)
-    with open(SIGNAL_FILE, 'a') as f:
+    with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
         f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n{msg}\n\n")
     return msg
 
@@ -627,9 +821,47 @@ def emit_card(s, sym=None, sim=False):
         },
     }
 
+def _append_signal_txt(s):
+    """写 signal.txt（与 emit() 同文本格式，不 print 不推送）。
+    2026-08-03 修复：CARD_MODE=True 后 emit() 不再被调用，signal.txt 自 07-24 永久断流，
+    致复盘/对账缺失实盘明细源。此 helper 在 emit_signal 中统一补写，三源(state/audit/signal.txt)对齐。
+    s = 13/14 元组（同 emit_card 入参）。"""
+    try:
+        sig_type, price, chg, level_val, level_type, rsi, temp, vol_r, name, tag, exit_reason, day_chg, bar_tt = s[:13]
+        pos_pct = s[13] if len(s) >= 14 else POS_PCT
+        k_tag = f' [K:{bar_tt[11:16]}]' if bar_tt and len(str(bar_tt)) >= 16 else ''
+        chg_sign = '+' if (chg or 0) >= 0 else ''
+        if sig_type == 'X':
+            reason = f" [{exit_reason}]" if exit_reason else ''
+            day_sign = '+' if (day_chg or 0) >= 0 else ''
+            day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
+            lines = [
+                f"🔵 {name} EXIT{reason} {pos_pct}成{(' ' + tag) if tag else ''}{k_tag}",
+                f"现价 {price:.2f}（当日 {day_str} / 持仓 {chg_sign}{chg:.1f}%）",
+                f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}",
+            ]
+        else:
+            emoji = '🟢' if sig_type == 'B' else '🔴'
+            op_type = 'BUY' if sig_type == 'B' else 'SELL'
+            star = stars(sig_type, temp, vol_r)
+            lines = [
+                f"{emoji} {name} {op_type} {pos_pct}成 {star}{(' ' + tag) if tag else ''}{k_tag}",
+                f"现价 {price:.2f}（{chg_sign}{chg:.1f}%）",
+                f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}",
+            ]
+    except Exception as e:
+        print(f"  ⚠️ signal.txt 文本构造失败: {e}")
+        return
+    _buffered_append(SIGNAL_FILE,
+                     f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n" + '\n'.join(lines) + "\n\n",
+                     'signal.txt')
+
 def emit_signal(s, sym=None, sim=False):
-    """dispatch：CARD_MODE→卡片，否则纯文本 fallback。返回 msg_or_card。sym 用于卡片标题(标的代码)。"""
+    """dispatch：CARD_MODE→卡片，否则纯文本 fallback。返回 msg_or_card。sym 用于卡片标题(标的代码)。
+    2026-08-03：卡片模式下 emit() 不被调用，signal.txt 在此补写（SIM 除外防污染实盘流水）。"""
     if CARD_MODE:
+        if not sim:
+            _append_signal_txt(s)
         return emit_card(s, sim=sim)
     return emit(*s)
 
@@ -648,9 +880,40 @@ def load_state():
     except:
         return {}
 
+def _ctypes_write_text(path, text, append=False):
+    """ctypes CreateFileW 直写文件：绕过 CRT _wopen 被 EDR hook 拦截（errno13）。
+    2026-08-04 盘中定位：monitor 进程 open()/os.open() 对【已存在文件】写 errno13（新文件OK、
+    logs/ OK），但 kernel32 CreateFileW 直调全部成功 → 拦截在 CRT _wopen 层（EDR hook msvcrt），
+    用 CreateFileW 可可靠绕过。append=True → OPEN_EXISTING+FILE_APPEND_DATA；否则 CREATE_ALWAYS 截断。"""
+    import ctypes
+    from ctypes import wintypes
+    k = ctypes.windll.kernel32
+    if append:
+        access, disp = 0x0004, 3        # FILE_APPEND_DATA, OPEN_EXISTING
+    else:
+        access, disp = 0x40000000, 2    # GENERIC_WRITE, CREATE_ALWAYS
+    h = k.CreateFileW(path, access, 3, None, disp, 0x80, None)
+    if h == wintypes.HANDLE(-1).value:
+        raise OSError(f'CreateFileW GLE={k.GetLastError()}')
+    try:
+        data = text.encode('utf-8')
+        n = wintypes.DWORD(0)
+        k.WriteFile(h, data, len(data), ctypes.byref(n), None)
+    finally:
+        k.CloseHandle(h)
+
+
 def save_state(s):
-    with open(STATE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(s, f)
+    # 2026-08-04 健壮性修复：state.json 写入失败（外部工具锁定/EDR拦截CRT _wopen）不应中断扫描轮。
+    # open() 失败 → ctypes CreateFileW 降级直写；再失败 → 内存态保持下轮重试（推送主链路不受影响）。
+    try:
+        with open(STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(s, f)
+    except Exception as e:
+        try:
+            _ctypes_write_text(STATE_FILE, json.dumps(s), append=False)
+        except Exception as e2:
+            print(f"  ⚠️ state.json 写入失败 open_errno={getattr(e,'errno','?')} ctypes降级也失败={e2} (内存态保持,下轮重试)")
 
 def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
     """每轮扫描末写入 metrics.json，供告警引擎(watchdog)采集。
@@ -663,7 +926,7 @@ def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
         _fd, _tmp = _tf.mkstemp(suffix='.tmp', dir=_dir, prefix='metrics_')
         try:
             with os.fdopen(_fd, 'w', encoding='utf-8') as f:
-                json.dump({
+                _m = {
                     'ts': time.time(),
                     'scan_duration_s': round(duration_s, 3),
                     'signals': signals,
@@ -674,7 +937,10 @@ def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
                     # data_lag_s 规则，避免午休"行情延迟/数据源中断"误报。切勿改为保留旧值！
                     'last_bar_ts': last_bar_ts if last_bar_ts else None,
                     'status': 'running',
-                }, f)
+                }
+                # [模块2.3] ML 推理指标（infer_cnt/err/过滤/放大/均耗）
+                _m['ml'] = _ml_metrics()
+                json.dump(_m, f)
             os.replace(_tmp, METRICS_FILE)  # 原子替换（同目录）
         except Exception:
             # 写 tmp 失败时清理临时文件
@@ -892,7 +1158,28 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
             continue
         # 买入 / 开多（或加多 / 平空回补）
         if tb:
+            # [模块2.3] ML 信号后置打分（B 侧；fail-open：异常/未启用→keep）
+            # ctx：FEAT_CTX 用 check_miji_trigger 的 snapshot 精确 factors（与训练同源，
+            #   避免早期 'MACD' in detail 近似的 train-serve skew）。
+            ml_cfg = _per_symbol_ml_cfg(sym)
+            ml_res = None
+            if ml_cfg.get('ml_enable'):
+                try:
+                    _snap = check_miji_trigger(data, i, macd_gate_mode='floor',
+                                               min_hist_diff=float(_env_or('TP_MHD_THRESHOLD', '0.15')),
+                                               atr_min_pct=atr_min_pct,
+                                               mpr_enable=mpr_enable, mpr_periods=mpr_periods)[4]
+                except Exception:
+                    _snap = None
+                ctx = _ml_ctx_from_snapshot(_snap)
+                ml_res = score_signal(sym, 'B', data, i, pc, df, ctx, ml_cfg,
+                                      shadow=SHADOW_MODE)
+                if ml_res and ml_res[0] == 'filter':
+                    st[bar_key] = now
+                    continue
             s_pct = strength_size((c[i] - vwap[i]) / vwap[i] * 100.0, 'MACD' in (rb or ''))
+            if ml_res and ml_res[0] == 'boost':
+                s_pct = min(s_pct * ML_SIZE_MULT, MAX_SIZE_PCT)
             last_b = st.get(f'_cooldown_{sym}_B', -9999)
             if s_pct > 0 and (i - last_b) >= COLDOWN_BARS and b_count < MAX_B_DAILY:
                 st[f'_cooldown_{sym}_B'] = i
@@ -925,7 +1212,26 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                             pos = None
         # 卖出 / 开空（或加空 / 平多），对称；涨停 regime 抑制开空（A2）
         if ts:
+            # [模块2.3] ML 信号后置打分（S 侧；fail-open）
+            ml_cfg_s = _per_symbol_ml_cfg(sym)
+            ml_res_s = None
+            if ml_cfg_s.get('ml_enable'):
+                try:
+                    _snap_s = check_miji_trigger(data, i, macd_gate_mode='floor',
+                                                 min_hist_diff=float(_env_or('TP_MHD_THRESHOLD', '0.15')),
+                                                 atr_min_pct=atr_min_pct,
+                                                 mpr_enable=mpr_enable, mpr_periods=mpr_periods)[4]
+                except Exception:
+                    _snap_s = None
+                ctx_s = _ml_ctx_from_snapshot(_snap_s)
+                ml_res_s = score_signal(sym, 'S', data, i, pc, df, ctx_s, ml_cfg_s,
+                                        shadow=SHADOW_MODE)
+                if ml_res_s and ml_res_s[0] == 'filter':
+                    st[bar_key] = now
+                    continue
             s_pct = strength_size((c[i] - vwap[i]) / vwap[i] * 100.0, 'MACD' in (rs or ''))
+            if ml_res_s and ml_res_s[0] == 'boost':
+                s_pct = min(s_pct * ML_SIZE_MULT, MAX_SIZE_PCT)
             last_s = st.get(f'_cooldown_{sym}_S', -9999)
             if s_pct > 0 and (i - last_s) >= COLDOWN_BARS and s_count < MAX_S_DAILY and not near_limit_up:
                 st[f'_cooldown_{sym}_S'] = i
@@ -1243,19 +1549,37 @@ def run():
 
         # 热重载 per-symbol 参数（monitor_config.json；方案A，改配置无需重启）
         _load_per_symbol_cfg()
+        # [模块2.3] 影子模式动态开关：config/monitor_config.json 全局 ml_shadow（每轮生效）
+        try:
+            _gcfg_path = os.path.join(BASE_DIR, 'config', 'monitor_config.json')
+            if os.path.exists(_gcfg_path):
+                with open(_gcfg_path, encoding='utf-8') as _gcfg_f:
+                    _gcfg = json.load(_gcfg_f)
+                global SHADOW_MODE
+                if 'ml_shadow' in _gcfg:
+                    _v = _gcfg.get('ml_shadow')
+                    # 兼容 JSON boolean（true/false）与字符串（'true'/'false'/'1'/'0'）
+                    SHADOW_MODE = bool(_v) if isinstance(_v, bool) else str(_v).lower() not in ('', '0', 'false', 'none')
+        except Exception:
+            pass
 
         if st.get('_daily_refreshed_date') != today_str:
             refresh_daily()
             st['_daily_refreshed_date'] = today_str
-            if not os.path.exists(SIGNAL_FILE):
-                with open(SIGNAL_FILE, 'w', encoding='utf-8') as f:
-                    f.write(f"[{today_str}]\n")
-            else:
-                with open(SIGNAL_FILE, 'r', encoding='utf-8', errors='replace') as f:
-                    existing = f.read()
-                if f'[{today_str}]' not in existing:
-                    with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
-                        f.write(f"\n[{today_str}]\n")
+            # 2026-08-04 健壮性修复：signal.txt 日期头写入失败（如被外部排查工具/EDR临时锁定）
+            # 不应导致整个 monitor 启动崩溃——写日志失败只跳过，监控主流程继续。
+            try:
+                if not os.path.exists(SIGNAL_FILE):
+                    with open(SIGNAL_FILE, 'w', encoding='utf-8') as f:
+                        f.write(f"[{today_str}]\n")
+                else:
+                    with open(SIGNAL_FILE, 'r', encoding='utf-8', errors='replace') as f:
+                        existing = f.read()
+                    if f'[{today_str}]' not in existing:
+                        with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
+                            f.write(f"\n[{today_str}]\n")
+            except Exception as e:
+                print(f"  ⚠️ signal.txt 日期头写入失败(不阻断启动): {e}")
             print(f"[{datetime.now(CST).strftime('%H:%M:%S')}] 📅 日K已刷新 " +
                   ', '.join(f"{TARGETS[s]}={STATE[s]['PC']:.2f}" for s in syms))
 
@@ -1298,6 +1622,11 @@ def run():
             _drain_pending()
         except Exception as _e:
             print(f"  [warning] drain_pending 异常: {_e}")
+        # 回写落盘缓冲（外部锁/EDR 断流恢复后自愈，防审计/signal.txt 丢记录）
+        try:
+            _flush_write_buffer()
+        except Exception as _e:
+            print(f"  [warning] flush_write_buffer 异常: {_e}")
         try:
             # 1) 并发拉取数据：I/O 瓶颈（Mootdx intraday 请求）
             #     ⚠️ 2026-07-20 fix: compute() 内部已加 _data_lock 互斥 mootdx socket，
@@ -1333,7 +1662,9 @@ def run():
             # 告警（仅交易时段 + 过开盘宽限期，去抖避免刷屏）
             def _in_grace(tt):
                 g = ALERT_GRACE_MIN
-                return (t.replace(hour=9, minute=30) <= tt < t.replace(hour=9, minute=30 + g)) or \
+                # 集合竞价 9:15-9:25 无分钟K → 正常；开盘宽限 9:30-9:30+g；午休恢复 13:00-13:05
+                return (t.replace(hour=9, minute=15) <= tt < t.replace(hour=9, minute=30)) or \
+                       (t.replace(hour=9, minute=30) <= tt < t.replace(hour=9, minute=30 + g)) or \
                        (t.replace(hour=13, minute=0) <= tt < t.replace(hour=13, minute=5))
             if not _in_grace(now.time()):
                 for sym in TARGETS:
@@ -1370,7 +1701,7 @@ def run():
                             # 最近几分钟刚产生的真实信号（07-31 09:33 金山S@253.89 被吞案例）。
                             # 改为 (now-3min)：只跳过 3 分钟前的历史 bar（重建持仓状态用），
                             # 3 分钟内刚发生的信号走"时间戳白名单"正常推送。
-                            target_t = (now - datetime.timedelta(minutes=3)).strftime('%H:%M')
+                            target_t = (now - timedelta(minutes=3)).strftime('%H:%M')
                             df = data['df']; n = data['n']
                             for idx in range(n):
                                 if str(df['trade_time'].iloc[idx])[11:16] >= target_t:
@@ -1395,7 +1726,7 @@ def run():
                             # [轮次2-2 迭代] 时间比较改用 datetime 对象（此前字符串比较在跨日边界
                             # 23:58 重启→00:01 会失效：'23:58' < '00:01' 判断错误）。now 为 CST aware，
                             # 信号时间戳为本地 naive → 比较前统一去 tzinfo（同一时区，安全）。
-                            recent_cutoff = now.replace(tzinfo=None) - datetime.timedelta(minutes=3)
+                            recent_cutoff = now.replace(tzinfo=None) - timedelta(minutes=3)
                             recent_sigs = []
                             replay_sigs = []
                             for s in sigs:

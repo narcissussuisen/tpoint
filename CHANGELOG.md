@@ -1,6 +1,6 @@
 # miji 版本算法说明（CHANGELOG）
 
-> 版本号规则：MAJOR.MINOR.PATCH；PATCH=同一算法框架内的修复/硬化（每个修复 +1）。
+> 版本号规则：MAJOR.MINOR.PATCH（完整规则见 `docs/versioning.md`，每次改动必须对照判断）。
 > 说明仅标注各版本**核心算法与信号语义**的差异，便于回溯。
 
 ## v9.3.0 — 生产优化版（08-02 部署线，P0-P3 落地）
@@ -154,3 +154,12 @@
   - 新增 `_warmup_tf()`：进程锁后、主循环前强制 `TickFlow()` + 建立连接 + 校验取数（对标 `_server_ok`），失败指数退避重试 3 次；全失败返回 False 并标记 `st['_tf_unhealthy']`，**不退出进程**（避免与自启冲突），交由 ② 感知。
   - `if tf is None` 软兜底保留；初始化失败一次性推 `🚨 数据源初始化失败` 告警。
 - 验证：`py_compile` 通过；单测 `_retry_with_backoff`（重试/超限抛）、`intraday` 源选择 5 场景、开盘宽限期边界 + 去抖状态机全 OK；真实 1m 重放无回归（161129 今日仍 `strict(B=2,S=1)`）。
+
+## v9.3.1（2026-08-04）每日自迭代小版本 —— 复盘报告实盘化重构 + 因子寻优引擎上线
+- 报告改为实盘推送视角五节（〇投递诊断/一round-trip有效性/二负收益根因/三实盘基线/四行情图仅实推标的/五优化空间清单），复算内容全部移出报告转后台
+- 新增 live_roundtrip_review.py（实推配对/净盈亏口径/波动段归因/优化空间生成）、factor_optimizer.py（trail+atr网格寻优）、daily_iterate.py（每日自迭代闭环+护栏热更+版本记录）、push_tpoint_review.py（动态标题单群推送）
+- review_charts.py 改 1m 分时+实推标注+仅推送标的；build_review_html.py 全部重写
+- core/monitor.py 写后缓冲（_buffered_append/ctypes降级/自愈回写，防落盘断流丢审计）；prod_vs_bt_reconcile.py live_counts 改明细优先+state_mismatch哨兵
+- 价格口径：当日同源行情用推送价（实证 bar close 会错判盈亏）；配对同分钟去重
+- 寻优首跑：4/5只 trail→0.5/0.5 候选（+3.7~12.5pp）待两段式复核；atr 维持 0.25
+- 注：core/monitor.py 同时包含 08-02/08-03 工作区遗留的 ML shadow 接入改动（一并入库）

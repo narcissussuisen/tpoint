@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-review_charts.py — 绘当日行情图并标注 tpoint 信号（复盘铁律：B▲红 / S▼绿 / X✕橙）
+review_charts.py — 绘当日 1m 分时图并标注实盘推送信号（2026-08-04 实盘化重构）
 用法: python review_charts.py [YYYY-MM-DD]
-- 信号标注来源: output/review_{date}.json 的 symbols[].rows（floor 引擎在真实 1m 上复现的 B/S/X）
-- 蜡烛: 1m 聚合 5m；红=涨(close>=open) 绿=跌（中国习惯）
+- 只画「当天有实盘推送信号」的标的（无推送不画，并清理当日残留旧图）
+- 信号标注来源: data/push_audit.jsonl 当日 ok 记录（真实推送，非复算）
+- 图: 1m 收盘价分时线；B▲红 / S▼绿 / X✕橙（中国习惯红涨绿跌）
 """
-import sys, os, json, datetime
-import numpy as np
+import sys, os, json, datetime, glob
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
 from matplotlib.lines import Line2D
 
 SCRIPTS = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +23,6 @@ OUT = os.path.join(ROOT, 'output')
 os.makedirs(OUT, exist_ok=True)
 
 TARGET = sys.argv[1] if len(sys.argv) > 1 else datetime.date.today().strftime('%Y-%m-%d')
-D8 = TARGET.replace('-', '')
 
 for f in ['Microsoft YaHei', 'SimHei', 'PingFang SC', 'Arial Unicode MS']:
     try:
@@ -36,10 +34,30 @@ plt.rcParams['axes.unicode_minus'] = False
 
 wl = json.load(open(os.path.join(ROOT, 'data', 'watchlist.json'), encoding='utf-8'))
 ds = R.MootdxDataSource()
-sigdoc = json.load(open(os.path.join(OUT, 'review_%s.json' % TARGET), encoding='utf-8'))
+
+# 当日实盘推送（唯一信号源）
+pushes = {}
+with open(os.path.join(ROOT, 'data', 'push_audit.jsonl'), encoding='utf-8') as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        if str(r.get('ts', '')).startswith(TARGET) and r.get('ok') and r.get('sym') in wl:
+            pushes.setdefault(r['sym'], []).append(r)
+
+# 清理当日无推送标的的残留旧图（防 HTML 嵌入过期图）
+for fp in glob.glob(os.path.join(OUT, 'chart_%s_*.png' % TARGET)):
+    sym_in_name = os.path.basename(fp)[len('chart_%s_' % TARGET):-4].replace('_', '.')
+    if sym_in_name not in pushes:
+        os.remove(fp)
+        print('[clean] %s（当日无实盘推送）' % os.path.basename(fp), flush=True)
 
 charts = []
-for sym in wl:
+for sym, plist in pushes.items():
     name = wl[sym]
     df = R.fetch_1m(ds, sym, TARGET)
     if df is None:
@@ -48,42 +66,32 @@ for sym in wl:
     d2 = df.copy()
     d2['tt'] = pd.to_datetime(d2['trade_time'])
     d2 = d2.set_index('tt')
-    agg = d2.resample('5min').agg({'open': 'first', 'close': 'last',
-                                   'high': 'max', 'low': 'min', 'volume': 'sum'}).dropna()
-    xlab = [t.strftime('%H:%M') for t in agg.index]
-    ai = agg.index
+    ai = d2.index
+    xlab = [t.strftime('%H:%M') for t in ai]
 
-    rows = sigdoc['symbols'].get(sym, {}).get('rows', [])
-    sig_pts = []
-    for r in rows:
-        tt = pd.to_datetime(r['time'])
+    fig, ax = plt.subplots(figsize=(13, 4.4))
+    ax.plot(range(len(ai)), d2['close'].values, color='#2d6cdf', lw=1.1, zorder=3)
+    for r in sorted(plist, key=lambda x: x['ts']):
+        tt = pd.to_datetime(r['ts'])
         idx = int(ai.get_indexer([tt], method='nearest')[0]) if len(ai) else 0
-        sig_pts.append({'xi': idx, 'price': float(r['price']), 'type': r['type']})
-
-    fig, ax = plt.subplots(figsize=(13, 4.6))
-    for i, (t, row) in enumerate(agg.iterrows()):
-        col = '#ef5350' if row['close'] >= row['open'] else '#26a69a'
-        ax.plot([i, i], [row['low'], row['high']], color=col, lw=0.7)
-        ax.add_patch(Rectangle((i - 0.32, row['open']), 0.64,
-                     (row['close'] - row['open']) or 1e-6, color=col, zorder=2))
-    for sp in sig_pts:
-        if sp['type'] == 'B':
-            ax.scatter(sp['xi'], sp['price'], marker='^', s=160, color='#ef5350',
-                       zorder=5, edgecolors='white', linewidths=0.9)
-        elif sp['type'] == 'S':
-            ax.scatter(sp['xi'], sp['price'], marker='v', s=160, color='#26a69a',
-                       zorder=5, edgecolors='white', linewidths=0.9)
+        price = float(r['price']) if r.get('price') else float(d2['close'].values[idx])
+        typ = r['type']
+        if typ == 'B':
+            ax.scatter(idx, price, marker='^', s=170, color='#ef5350', zorder=5, edgecolors='white', linewidths=0.9)
+        elif typ == 'S':
+            ax.scatter(idx, price, marker='v', s=170, color='#26a69a', zorder=5, edgecolors='white', linewidths=0.9)
         else:
-            ax.scatter(sp['xi'], sp['price'], marker='X', s=130, color='#ffa726',
-                       zorder=5, linewidths=2.0)
+            ax.scatter(idx, price, marker='X', s=140, color='#ffa726', zorder=5, linewidths=2.0)
+        ax.annotate('%s %s' % (typ, r['ts'][11:16]), (idx, price), textcoords='offset points',
+                    xytext=(6, 8 if typ == 'B' else -14), fontsize=8, color='#555')
     step = max(1, len(xlab) // 12)
     ax.set_xticks(range(0, len(xlab), step))
     ax.set_xticklabels([xlab[i] for i in range(0, len(xlab), step)], rotation=45, fontsize=8)
     ax.set_ylabel('价格', fontsize=9)
-    nb = sum(1 for r in rows if r['type'] == 'B')
-    ns = sum(1 for r in rows if r['type'] == 'S')
-    nx = sum(1 for r in rows if r['type'] == 'X')
-    ax.set_title('%s %s  %s  行情 + tpoint 信号标注  [B%d/S%d/X%d]'
+    nb = sum(1 for r in plist if r['type'] == 'B')
+    ns = sum(1 for r in plist if r['type'] == 'S')
+    nx = sum(1 for r in plist if r['type'] == 'X')
+    ax.set_title('%s %s  %s  1m 分时 + 实盘推送标注  [B%d/S%d/X%d]'
                  % (sym, name, TARGET, nb, ns, nx), fontsize=11)
     leg = [Line2D([0], [0], marker='^', color='w', markerfacecolor='#ef5350', markersize=10, label='B 买入'),
            Line2D([0], [0], marker='v', color='w', markerfacecolor='#26a69a', markersize=10, label='S 卖出/反T空'),
@@ -95,6 +103,9 @@ for sym in wl:
     fig.savefig(os.path.join(OUT, fn), dpi=110)
     plt.close(fig)
     charts.append((sym, name, fn, nb, ns, nx))
-    print('[%s] chart %s (B%d/S%d/X%d)' % (sym, fn, nb, ns, nx), flush=True)
+    print('[%s] chart %s (B%d/S%d/X%d 实盘推送)' % (sym, fn, nb, ns, nx), flush=True)
 
-print('[done]', charts)
+if not charts:
+    print('[done] 当日无实盘推送标的，不出图')
+else:
+    print('[done]', charts)
