@@ -174,3 +174,8 @@
 - two_stage_trail_review.py 首跑：stage1 tune_pool_40 全池 48.3%→53.4%（0.5/0.5，+5.1pp，n=3838）；stage2 watchlist 池级 56.2%→63.2%（+7.0pp，无单只劣化>2pp）→ PASS
 - core/monitor.py：exit_param() per-symbol 出场参数覆盖（热重载，缺省回退全局）
 - 灰度：688111 trail 0.4/0.6→0.5/0.5（3日观察期，回滚=删该字段）；其余4只维持 0.4/0.6
+
+## v9.4.2（2026-08-05 凌晨）小版本 —— 0805 迭代：R-A 零信号归因 + R-B 振荡器验证
+- ra_zero_signal_grid.py：atr×mhd×mpr 联合网格（3标的×27组合全历史）→ MHD 零影响、主闸门=mpr60+atr；无既多又准松绑点，参数不动
+- rb_oscillator_eval.py：RSI(20/80、30/70)/KDJ_J 裸反转离线验证 → 全部不及格（wr 21-42%，pl<1），振荡器不可作独立触发源
+- 收敛假设：振荡器降级为确认/过滤器（引力信号+RSI极值位置过滤），513310/600570 盈亏比<1 指向出场侧
