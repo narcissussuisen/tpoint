@@ -91,6 +91,7 @@ EXIT_CFG = make_config(use_stop=False, use_time=False, use_trailing=True,
                        trail_activate_pct=0.4, trail_pct=0.6, s_signal_exit=True)
 # 如需调参（如开硬止损/时间止损），改这里或经 config.json 的 exit_config 传入
 
+<<<<<<< HEAD
 def exit_param(sym, key):
     """per-symbol 出场参数覆盖（2026-08-04 v9.4.1：trail 两段式复核 PASS 后灰度用）。
     monitor_config.json per-symbol 加 trail_activate_pct/trail_pct 即对该标的生效（热重载）；
@@ -98,6 +99,8 @@ def exit_param(sym, key):
     v = (PER_SYMBOL_CFG.get(sym) or {}).get(key)
     return EXIT_CFG[key] if v is None else v
 
+=======
+>>>>>>> origin/release/v9.3.0
 # ========== ML 信号打分（模块2.3，2026-08-02 接入） ==========
 # 进程内推理：XGB 模型加载进 monitor 同进程（lazy 加载 + mtime 热重载 + fail-open）。
 # 融合规则（信号后置打分）：对已产生的 B/S 信号点算 39 特征 → ML 概率 p：
@@ -525,12 +528,26 @@ def _flush_write_buffer():
 def _audit_push(sym, typ, price, code, msg, ok):
     """推送审计日志 data/push_audit.jsonl：{时间,标的,类型,价格,飞书code,ok}。
     消除'日志不记标的'盲区，使未来可逐笔核对真实推送。"""
+<<<<<<< HEAD
     row = {
         'ts': datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S'),
         'sym': sym, 'type': typ, 'price': price,
         'feishu_code': code, 'feishu_msg': msg, 'ok': bool(ok),
     }
     _buffered_append(PUSH_AUDIT_FILE, json.dumps(row, ensure_ascii=False) + '\n', 'push_audit')
+=======
+    try:
+        row = {
+            'ts': datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S'),
+            'sym': sym, 'type': typ, 'price': price,
+            'feishu_code': code, 'feishu_msg': msg, 'ok': bool(ok),
+        }
+        with open(PUSH_AUDIT_FILE, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(row, ensure_ascii=False) + '\n')
+    except Exception as e:
+        # 2026-08-03 修复：audit 静默吞异常曾致 09:35 后整日断流且无法定位，改为打印告警
+        print(f"  ⚠️ push_audit 写入失败: {e}")
+>>>>>>> origin/release/v9.3.0
 
 def _push_once(url, payload):
     """单次 POST，返回 (ok, code, msg)。"""
@@ -856,12 +873,19 @@ def _append_signal_txt(s):
                 f"现价 {price:.2f}（{chg_sign}{chg:.1f}%）",
                 f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}",
             ]
+<<<<<<< HEAD
     except Exception as e:
         print(f"  ⚠️ signal.txt 文本构造失败: {e}")
         return
     _buffered_append(SIGNAL_FILE,
                      f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n" + '\n'.join(lines) + "\n\n",
                      'signal.txt')
+=======
+        with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
+            f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n" + '\n'.join(lines) + "\n\n")
+    except Exception as e:
+        print(f"  ⚠️ signal.txt 写入失败: {e}")
+>>>>>>> origin/release/v9.3.0
 
 def emit_signal(s, sym=None, sim=False):
     """dispatch：CARD_MODE→卡片，否则纯文本 fallback。返回 msg_or_card。sym 用于卡片标题(标的代码)。
