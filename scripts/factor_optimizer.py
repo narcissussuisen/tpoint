@@ -1,0 +1,186 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+r"""factor_optimizer.py — tpoint 关键因子参数网格寻优引擎（M3 · 2026-08-04 晚首跑）
+
+回应「自迭代不能只发报告」：对关键因子参数做离线网格寻优，用数据决定改不改、改多少。
+闭环（用户已批准 radiant-cascade-babbage）：
+  寻优（本脚本，周五任务B集成周跑）→ 两段式验证 → 达标自动灰度写 monitor_config.json（M4）
+
+v1 范围（watchlist 5 只验证段；tune_pool_40 调参段待 40 只池清单就位后补）：
+- 出场侧网格：trail_activate_pct {0.3,0.4,0.5} × trail_pct {0.5,0.6,0.8}（信号固定生产配置）
+- 信号侧网格：atr_min_pct {0.15,0.25,0.35}（重放 detect_for 重生成信号；出场固定 0.4/0.6）
+- 数据：F盘 tickflow 1m 全量历史（300058/600570/688111 ~124-145d；161129/513310 ~66d 薄样本加水印）
+- 目标：池级净胜率优先，盈亏比/总收益参考；成本=生产口径（万一+印花+滑点2bps/边）
+- 硬约束：候选池级净胜率不得劣于当前配置（全集口径不降）；推荐门槛 ≥+1pp 且 n_trips≥30；
+  薄样本标的（<80d）门槛 ≥+2pp
+
+CLI：python scripts/factor_optimizer.py [--syms 300058.SZ,688111.SH] [--out output/factor_opt_<today>.json]
+"""
+import os, sys, json, argparse, datetime, copy
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, 'core'))
+sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, 'scripts'))
+os.environ['MACD_GATE_MODE'] = 'floor'
+
+import monitor as M
+import daily_signal_review as R
+from exit_manager import make_config, cost_for_symbol, simulate_day, aggregate_metrics
+from backtest_screener import load_1m_csv, group_by_day, day_prev_close
+from prod_vs_bt_reconcile import recalc_rows_to_sigs
+
+F_DATA = r'F:\keyfactor_data\1m'
+WATCHLIST = os.path.join(ROOT, 'data', 'watchlist.json')
+
+TRAIL_ACT = [0.3, 0.4, 0.5]
+TRAIL_PCT = [0.5, 0.6, 0.8]
+ATR_GRID = [0.15, 0.25, 0.35]
+CUR_TRAIL = (0.4, 0.6)
+CUR_ATR = 0.25
+THIN_DAYS = 80          # 薄样本水印线
+MIN_TRIPS = 30          # 统计可靠性下限
+GATE_PP = 1.0           # 推荐门槛（厚样本）
+GATE_PP_THIN = 2.0      # 推荐门槛（薄样本）
+
+
+def sym_days(sym):
+    """F盘全历史 → [(date, data, df_day)]（data=build_data 口径）。"""
+    full = load_1m_csv(os.path.join(F_DATA, f'{sym}_1m.csv'))
+    out = []
+    for d, g in group_by_day(full):
+        pc = day_prev_close(full, d)
+        if pc is None or len(g) < 30:
+            continue
+        g = g.reset_index(drop=True)
+        out.append((d, R.build_data(g, pc), g))
+    return out
+
+
+def day_signals(sym, name, days, atr_min_pct):
+    """全部交易日的生产同源复算信号（atr_min_pct 可覆盖）。"""
+    if sym in M.PER_SYMBOL_CFG:
+        M.PER_SYMBOL_CFG[sym]['atr_min_pct'] = atr_min_pct
+    res = []
+    for d, data, df in days:
+        try:
+            rows, _ = R.replay_symbol(sym, name, data, data.get('pc') or df['close'].iloc[0])
+            tt = df['trade_time'].values if 'trade_time' in df.columns else None
+            sigs = recalc_rows_to_sigs(rows, tt, data['n'])
+            res.append((d, data, sigs))
+        except Exception:
+            continue
+    return res
+
+
+def eval_config(sig_days, trail_act, trail_pct):
+    """对 (trail_act, trail_pct) 跑 simulate_day 聚合全部 trip。"""
+    mcfg = make_config(use_stop=False, use_time=False, use_trailing=True,
+                       trail_activate_pct=trail_act, trail_pct=trail_pct, s_signal_exit=True)
+    trips = []
+    for d, data, sigs in sig_days:
+        prices = {'o': data['o'], 'h': data['h'], 'lo': data['lo'], 'c': data['c'],
+                  'atr': data['atr'], 'trend': data.get('trend'), 'n': data['n']}
+        trips.extend(simulate_day(sigs, prices, mcfg, cost=cost_for_symbol(data.get('sym', '')) if data.get('sym') else None))
+    return trips
+
+
+def metrics_of(trips):
+    m = aggregate_metrics(trips)
+    return {'n': m['total'], 'win_rate': m['win_rate'], 'pl_ratio': m['pl_ratio'],
+            'total_ret': m.get('total_ret_pct', m.get('total_ret', 0))}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--syms', default=None)
+    ap.add_argument('--out', default=None)
+    a = ap.parse_args()
+    wl = json.load(open(WATCHLIST, encoding='utf-8'))
+    syms = a.syms.split(',') if a.syms else list(wl.keys())
+
+    # simulate_day 需要 sym 决定成本：把 sym 塞进 data
+    report = {'date': datetime.date.today().strftime('%Y-%m-%d'),
+              'generated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+              'grids': {'trail_activate_pct': TRAIL_ACT, 'trail_pct': TRAIL_PCT, 'atr_min_pct': ATR_GRID},
+              'current': {'trail': CUR_TRAIL, 'atr_min_pct': CUR_ATR},
+              'symbols': {}, 'recommendations': []}
+
+    pool_cur_trips, pool_best = [], None
+    for sym in syms:
+        name = wl[sym]
+        try:
+            days = sym_days(sym)
+        except Exception as e:
+            report['symbols'][sym] = {'error': str(e)}
+            continue
+        n_days = len(days)
+        thin = n_days < THIN_DAYS
+        for d, data, g in days:
+            data['sym'] = sym
+        # 信号侧：atr 网格（每值重放一次）；出场侧：在 baseline atr 信号上跑 trail 网格
+        sig_base = day_signals(sym, name, days, CUR_ATR)
+        cells = {}
+        # baseline
+        base_trips = eval_config([(d, data, sigs) for d, data, sigs in sig_base], *CUR_TRAIL)
+        cells['current(atr0.25+trail0.4/0.6)'] = metrics_of(base_trips)
+        base_wr = cells['current(atr0.25+trail0.4/0.6)']['win_rate']
+        # trail 网格
+        trail_res = {}
+        for ta in TRAIL_ACT:
+            for tp in TRAIL_PCT:
+                if (ta, tp) == CUR_TRAIL:
+                    trail_res[f'{ta}/{tp}'] = metrics_of(base_trips)
+                    continue
+                trail_res[f'{ta}/{tp}'] = metrics_of(eval_config(sig_base, ta, tp))
+        # atr 网格（出场固定当前）
+        atr_res = {}
+        for av in ATR_GRID:
+            if av == CUR_ATR:
+                atr_res[str(av)] = metrics_of(base_trips)
+                continue
+            sig_v = day_signals(sym, name, days, av)
+            atr_res[str(av)] = metrics_of(eval_config(sig_v, *CUR_TRAIL))
+        # 恢复 config
+        if sym in M.PER_SYMBOL_CFG:
+            M.PER_SYMBOL_CFG[sym]['atr_min_pct'] = CUR_ATR
+
+        gate = GATE_PP_THIN if thin else GATE_PP
+        cands = []
+        for k, m in trail_res.items():
+            if k == f'{CUR_TRAIL[0]}/{CUR_TRAIL[1]}':
+                continue
+            if m['n'] >= MIN_TRIPS and m['win_rate'] >= base_wr + gate:
+                cands.append(('trail', k, m))
+        for k, m in atr_res.items():
+            if k == str(CUR_ATR):
+                continue
+            if m['n'] >= MIN_TRIPS and m['win_rate'] >= base_wr + gate:
+                cands.append(('atr_min_pct', k, m))
+        cands.sort(key=lambda x: -x[2]['win_rate'])
+        rec = None
+        if cands:
+            kind, val, m = cands[0]
+            rec = {'sym': sym, 'name': name, 'param': kind, 'value': val,
+                   'win_rate': m['win_rate'], 'delta_pp': round(m['win_rate'] - base_wr, 1),
+                   'n_trips': m['n'], 'baseline_wr': base_wr, 'thin': thin,
+                   'status': '待两段式tune_pool_40验证后自动灰度(M4)'}
+            report['recommendations'].append(rec)
+        report['symbols'][sym] = {
+            'name': name, 'n_days': n_days, 'thin_sample': thin,
+            'baseline': cells['current(atr0.25+trail0.4/0.6)'],
+            'trail_grid': trail_res, 'atr_grid': atr_res,
+            'recommendation': rec,
+        }
+        print(f"[{sym}] days={n_days}{'(薄样本)' if thin else ''} baseWR={base_wr}% "
+              f"rec={rec['param'] + '=' + rec['value'] + ' +' + str(rec['delta_pp']) + 'pp' if rec else '无达标候选'}")
+
+    out = a.out or os.path.join(ROOT, 'output', f"factor_opt_{report['date']}.json")
+    with open(out, 'w', encoding='utf-8') as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+    print(f'[ok] {out}')
+    print(f'推荐 {len(report["recommendations"])} 项（≥+{GATE_PP}pp 且 n≥{MIN_TRIPS}，薄样本≥+{GATE_PP_THIN}pp）')
+
+
+if __name__ == '__main__':
+    main()
