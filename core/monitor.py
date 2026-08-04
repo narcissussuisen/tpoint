@@ -91,6 +91,13 @@ EXIT_CFG = make_config(use_stop=False, use_time=False, use_trailing=True,
                        trail_activate_pct=0.4, trail_pct=0.6, s_signal_exit=True)
 # 如需调参（如开硬止损/时间止损），改这里或经 config.json 的 exit_config 传入
 
+def exit_param(sym, key):
+    """per-symbol 出场参数覆盖（2026-08-04 v9.4.1：trail 两段式复核 PASS 后灰度用）。
+    monitor_config.json per-symbol 加 trail_activate_pct/trail_pct 即对该标的生效（热重载）；
+    缺省/未配置 → 回退全局 EXIT_CFG（行为与 v9.3.x 完全一致）。"""
+    v = (PER_SYMBOL_CFG.get(sym) or {}).get(key)
+    return EXIT_CFG[key] if v is None else v
+
 # ========== ML 信号打分（模块2.3，2026-08-02 接入） ==========
 # 进程内推理：XGB 模型加载进 monitor 同进程（lazy 加载 + mtime 热重载 + fail-open）。
 # 融合规则（信号后置打分）：对已产生的 B/S 信号点算 39 特征 → ML 概率 p：
@@ -968,9 +975,9 @@ def _mk_exit(reason, name, price, pos, vwap, atr, rsi14, temp, vol_ratio, i, pc,
     day_chg = (price - pc) / pc * 100 if pc > 0 else 0.0         # 当日涨跌幅
     if reason == 'TRAIL':
         if side == 'long':
-            level_val = pos['max_fav'] * (1 - EXIT_CFG['trail_pct'] / 100.0)
+            level_val = pos['max_fav'] * (1 - pos.get('trail_pct', EXIT_CFG['trail_pct']) / 100.0)
         else:
-            level_val = pos['max_fav'] * (1 + EXIT_CFG['trail_pct'] / 100.0)
+            level_val = pos['max_fav'] * (1 + pos.get('trail_pct', EXIT_CFG['trail_pct']) / 100.0)
         level_type = '移动止损线'
     elif reason in ('S', 'B'):   # 多仓平多 / 空仓回补：按 price 相对 VWAP±K1·ATR 实际位置动态标注
         upper = vwap[i] + K1 * atr[i]
@@ -1124,19 +1131,19 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                     if tb:
                         signals.append(_mk_exit('B', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                         pos = None; exited = True
-            # 3) 移动止损（浮盈保护；多仓/空仓对称）
+            # 3) 移动止损（浮盈保护；多仓/空仓对称；v9.4.1 起 per-symbol 可覆盖）
             if not exited and EXIT_CFG['use_trailing']:
                 if side == 'long':
                     fav_ret = (pos['max_fav'] - pos['entry_price']) / pos['entry_price'] * 100
-                    if fav_ret >= EXIT_CFG['trail_activate_pct']:
-                        trail_stop = pos['max_fav'] * (1 - EXIT_CFG['trail_pct'] / 100.0)
+                    if fav_ret >= exit_param(sym, 'trail_activate_pct'):
+                        trail_stop = pos['max_fav'] * (1 - exit_param(sym, 'trail_pct') / 100.0)
                         if c[i] <= trail_stop and trail_stop > pos['stop_price']:
                             signals.append(_mk_exit('TRAIL', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                             pos = None; exited = True
                 else:
                     fav_ret = (pos['entry_price'] - pos['max_fav']) / pos['entry_price'] * 100
-                    if fav_ret >= EXIT_CFG['trail_activate_pct']:
-                        trail_stop = pos['max_fav'] * (1 + EXIT_CFG['trail_pct'] / 100.0)
+                    if fav_ret >= exit_param(sym, 'trail_activate_pct'):
+                        trail_stop = pos['max_fav'] * (1 + exit_param(sym, 'trail_pct') / 100.0)
                         if c[i] >= trail_stop and trail_stop < pos['stop_price']:
                             signals.append(_mk_exit('TRAIL', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                             pos = None; exited = True
@@ -1192,7 +1199,8 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                                     rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', s_pct))
                     pos = {'side': 'long', 'entry_price': float(c[i]), 'entry_idx': i,
                             'max_fav': float(c[i]), 'entry_reason': rb or '',
-                            'stop_price': _compute_stop_price(float(c[i]), atr, i, EXIT_CFG), 'size_pct': s_pct}
+                            'stop_price': _compute_stop_price(float(c[i]), atr, i, EXIT_CFG), 'size_pct': s_pct,
+                            'trail_pct': exit_param(sym, 'trail_pct')}
                 elif pos['side'] == 'long':   # 加仓（累加同侧）
                     add = min(s_pct, MAX_SIZE_PCT - pos['size_pct'])
                     if add > 0:
@@ -1244,7 +1252,8 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                                     rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', s_pct))
                     pos = {'side': 'short', 'entry_price': float(c[i]), 'entry_idx': i,
                             'max_fav': float(c[i]), 'entry_reason': rs or '',
-                            'stop_price': _compute_stop_price(float(c[i]), atr, i, EXIT_CFG), 'size_pct': s_pct}
+                            'stop_price': _compute_stop_price(float(c[i]), atr, i, EXIT_CFG), 'size_pct': s_pct,
+                            'trail_pct': exit_param(sym, 'trail_pct')}
                 elif pos['side'] == 'short':   # 加仓（累加同侧）
                     add = min(s_pct, MAX_SIZE_PCT - pos['size_pct'])
                     if add > 0:

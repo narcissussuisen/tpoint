@@ -168,3 +168,9 @@
 - 新增 core/settle_rules.py：T0/T1 规则模块（T1 每方向每日1次完整往返状态机；T0 原样）
 - core/monitor.py：_risk_gate 后接入 settle_rules.filter_signals，开关=_global.settle_split_enable（默认 false，生产行为与 v9.3.1 一致）
 - docs/t0_t1_split.md：差异口径（信号生成/调仓频率/成交规则）与回滚说明
+
+## v9.4.1（2026-08-04）小版本 —— T0/T1开关启用 + trail两段式PASS灰度688111
+- 用户批准启用 settle_split_enable=true（生产实测；T1三只每方向日限1次往返）
+- two_stage_trail_review.py 首跑：stage1 tune_pool_40 全池 48.3%→53.4%（0.5/0.5，+5.1pp，n=3838）；stage2 watchlist 池级 56.2%→63.2%（+7.0pp，无单只劣化>2pp）→ PASS
+- core/monitor.py：exit_param() per-symbol 出场参数覆盖（热重载，缺省回退全局）
+- 灰度：688111 trail 0.4/0.6→0.5/0.5（3日观察期，回滚=删该字段）；其余4只维持 0.4/0.6
