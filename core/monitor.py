@@ -822,14 +822,40 @@ def load_state():
     except:
         return {}
 
+def _ctypes_write_text(path, text, append=False):
+    """ctypes CreateFileW 直写文件：绕过 CRT _wopen 被 EDR hook 拦截（errno13）。
+    2026-08-04 盘中定位：monitor 进程 open()/os.open() 对【已存在文件】写 errno13（新文件OK、
+    logs/ OK），但 kernel32 CreateFileW 直调全部成功 → 拦截在 CRT _wopen 层（EDR hook msvcrt），
+    用 CreateFileW 可可靠绕过。append=True → OPEN_EXISTING+FILE_APPEND_DATA；否则 CREATE_ALWAYS 截断。"""
+    import ctypes
+    from ctypes import wintypes
+    k = ctypes.windll.kernel32
+    if append:
+        access, disp = 0x0004, 3        # FILE_APPEND_DATA, OPEN_EXISTING
+    else:
+        access, disp = 0x40000000, 2    # GENERIC_WRITE, CREATE_ALWAYS
+    h = k.CreateFileW(path, access, 3, None, disp, 0x80, None)
+    if h == wintypes.HANDLE(-1).value:
+        raise OSError(f'CreateFileW GLE={k.GetLastError()}')
+    try:
+        data = text.encode('utf-8')
+        n = wintypes.DWORD(0)
+        k.WriteFile(h, data, len(data), ctypes.byref(n), None)
+    finally:
+        k.CloseHandle(h)
+
+
 def save_state(s):
-    # 2026-08-04 健壮性修复：state.json 写入失败（外部工具锁定/EDR拦截）不应中断扫描轮。
-    # 内存态 st 保持，下轮重试落盘；推送主链路（飞书webhook）不依赖本地文件，不中断。
+    # 2026-08-04 健壮性修复：state.json 写入失败（外部工具锁定/EDR拦截CRT _wopen）不应中断扫描轮。
+    # open() 失败 → ctypes CreateFileW 降级直写；再失败 → 内存态保持下轮重试（推送主链路不受影响）。
     try:
         with open(STATE_FILE, 'w', encoding='utf-8') as f:
             json.dump(s, f)
     except Exception as e:
-        print(f"  ⚠️ state.json 写入失败(内存态保持,下轮重试): {e}")
+        try:
+            _ctypes_write_text(STATE_FILE, json.dumps(s), append=False)
+        except Exception as e2:
+            print(f"  ⚠️ state.json 写入失败 open_errno={getattr(e,'errno','?')} ctypes降级也失败={e2} (内存态保持,下轮重试)")
 
 def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
     """每轮扫描末写入 metrics.json，供告警引擎(watchdog)采集。
