@@ -1,0 +1,301 @@
+{
+  "date": "2026-08-04",
+  "generated_at": "2026-08-04 17:01:37",
+  "config": "PROD_CONFIG(trail0.4/0.6+s_exit, no stop/time) + cost_for_symbol",
+  "symbols": {
+    "161129.SZ": {
+      "name": "原油LOF易方达",
+      "pc": 1.852,
+      "data_src": "mootdx",
+      "live_counts": {
+        "B": 0,
+        "S": 0,
+        "total": 0,
+        "src": "none"
+      },
+      "live_detail_n": 0,
+      "live_pairable_n": 0,
+      "live_detail_ok": false,
+      "live_push_slip_pct": [],
+      "recalc_n_signals": 0,
+      "recalc_n_bs": 0,
+      "delta_total": 0,
+      "recalc_trips": {
+        "total": 0,
+        "win_rate": 0.0,
+        "gross_win_rate": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "pl_ratio": 0.0,
+        "total_ret": 0.0,
+        "cum_nav": 1.0,
+        "max_drawdown_pct": 0.0,
+        "sharpe": 0.0,
+        "ann_ret_pct": 0.0,
+        "avg_hold": 0,
+        "by_reason": {}
+      },
+      "live_trips": {
+        "total": 0,
+        "win_rate": 0.0,
+        "gross_win_rate": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "pl_ratio": 0.0,
+        "total_ret": 0.0,
+        "cum_nav": 1.0,
+        "max_drawdown_pct": 0.0,
+        "sharpe": 0.0,
+        "ann_ret_pct": 0.0,
+        "avg_hold": 0,
+        "by_reason": {}
+      },
+      "wr_recalc": null,
+      "wr_prod_exec": null,
+      "g1_sym": null
+    },
+    "513310.SH": {
+      "name": "中韩半导体ETF华泰柏瑞",
+      "pc": 4.41,
+      "data_src": "mootdx",
+      "live_counts": {
+        "B": 0,
+        "S": 0,
+        "total": 0,
+        "src": "none"
+      },
+      "live_detail_n": 0,
+      "live_pairable_n": 0,
+      "live_detail_ok": false,
+      "live_push_slip_pct": [],
+      "recalc_n_signals": 0,
+      "recalc_n_bs": 0,
+      "delta_total": 0,
+      "recalc_trips": {
+        "total": 0,
+        "win_rate": 0.0,
+        "gross_win_rate": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "pl_ratio": 0.0,
+        "total_ret": 0.0,
+        "cum_nav": 1.0,
+        "max_drawdown_pct": 0.0,
+        "sharpe": 0.0,
+        "ann_ret_pct": 0.0,
+        "avg_hold": 0,
+        "by_reason": {}
+      },
+      "live_trips": {
+        "total": 0,
+        "win_rate": 0.0,
+        "gross_win_rate": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "pl_ratio": 0.0,
+        "total_ret": 0.0,
+        "cum_nav": 1.0,
+        "max_drawdown_pct": 0.0,
+        "sharpe": 0.0,
+        "ann_ret_pct": 0.0,
+        "avg_hold": 0,
+        "by_reason": {}
+      },
+      "wr_recalc": null,
+      "wr_prod_exec": null,
+      "g1_sym": null
+    },
+    "300058.SZ": {
+      "name": "蓝色光标",
+      "pc": 14.72,
+      "data_src": "mootdx",
+      "live_counts": {
+        "B": 0,
+        "S": 2,
+        "total": 2,
+        "src": "audit_detail",
+        "state_mismatch": {
+          "B": 0,
+          "S": 1,
+          "total": 1
+        }
+      },
+      "live_detail_n": 2,
+      "live_pairable_n": 2,
+      "live_detail_ok": true,
+      "live_push_slip_pct": [
+        -0.465,
+        -0.316
+      ],
+      "recalc_n_signals": 3,
+      "recalc_n_bs": 2,
+      "delta_total": -1,
+      "recalc_trips": {
+        "total": 1,
+        "win_rate": 100.0,
+        "gross_win_rate": 100.0,
+        "avg_win": 2.603,
+        "avg_loss": 0.0,
+        "pl_ratio": 99.0,
+        "total_ret": 2.6,
+        "cum_nav": 1.026,
+        "max_drawdown_pct": -0.0,
+        "sharpe": 0.0,
+        "ann_ret_pct": 52751.15,
+        "avg_hold": 7.0,
+        "by_reason": {
+          "S": 1
+        }
+      },
+      "live_trips": {
+        "total": 0,
+        "win_rate": 0.0,
+        "gross_win_rate": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "pl_ratio": 0.0,
+        "total_ret": 0.0,
+        "cum_nav": 1.0,
+        "max_drawdown_pct": 0.0,
+        "sharpe": 0.0,
+        "ann_ret_pct": 0.0,
+        "avg_hold": 0,
+        "by_reason": {}
+      },
+      "wr_recalc": 100.0,
+      "wr_prod_exec": null,
+      "g1_sym": null
+    },
+    "600570.SH": {
+      "name": "恒生电子",
+      "pc": 23.18,
+      "data_src": "mootdx",
+      "live_counts": {
+        "B": 0,
+        "S": 0,
+        "total": 0,
+        "src": "none"
+      },
+      "live_detail_n": 0,
+      "live_pairable_n": 0,
+      "live_detail_ok": false,
+      "live_push_slip_pct": [],
+      "recalc_n_signals": 2,
+      "recalc_n_bs": 1,
+      "delta_total": -2,
+      "recalc_trips": {
+        "total": 1,
+        "win_rate": 0.0,
+        "gross_win_rate": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": -0.289,
+        "pl_ratio": 0.0,
+        "total_ret": -0.29,
+        "cum_nav": 0.997,
+        "max_drawdown_pct": -0.0,
+        "sharpe": 0.0,
+        "ann_ret_pct": -50.65,
+        "avg_hold": 11.0,
+        "by_reason": {
+          "TRAIL": 1
+        }
+      },
+      "live_trips": {
+        "total": 0,
+        "win_rate": 0.0,
+        "gross_win_rate": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "pl_ratio": 0.0,
+        "total_ret": 0.0,
+        "cum_nav": 1.0,
+        "max_drawdown_pct": 0.0,
+        "sharpe": 0.0,
+        "ann_ret_pct": 0.0,
+        "avg_hold": 0,
+        "by_reason": {}
+      },
+      "wr_recalc": 0.0,
+      "wr_prod_exec": null,
+      "g1_sym": null
+    },
+    "688111.SH": {
+      "name": "金山办公",
+      "pc": 274.01,
+      "data_src": "mootdx",
+      "live_counts": {
+        "B": 1,
+        "S": 1,
+        "total": 2,
+        "src": "audit_detail",
+        "state_mismatch": {
+          "B": 0,
+          "S": 0,
+          "total": 0
+        }
+      },
+      "live_detail_n": 3,
+      "live_pairable_n": 2,
+      "live_detail_ok": true,
+      "live_push_slip_pct": [
+        -0.577,
+        0.4
+      ],
+      "recalc_n_signals": 5,
+      "recalc_n_bs": 3,
+      "delta_total": -3,
+      "recalc_trips": {
+        "total": 2,
+        "win_rate": 100.0,
+        "gross_win_rate": 100.0,
+        "avg_win": 0.375,
+        "avg_loss": 0.0,
+        "pl_ratio": 99.0,
+        "total_ret": 0.75,
+        "cum_nav": 1.008,
+        "max_drawdown_pct": -0.0,
+        "sharpe": 12.51,
+        "ann_ret_pct": 148.92,
+        "avg_hold": 88.5,
+        "by_reason": {
+          "S": 1,
+          "EOD": 1
+        }
+      },
+      "live_trips": {
+        "total": 1,
+        "win_rate": 0.0,
+        "gross_win_rate": 100.0,
+        "avg_win": 0.0,
+        "avg_loss": -0.091,
+        "pl_ratio": 0.0,
+        "total_ret": -0.09,
+        "cum_nav": 0.999,
+        "max_drawdown_pct": -0.0,
+        "sharpe": 0.0,
+        "ann_ret_pct": -19.92,
+        "avg_hold": 24.0,
+        "by_reason": {
+          "TRAIL": 1
+        }
+      },
+      "wr_recalc": 100.0,
+      "wr_prod_exec": 0.0,
+      "g1_sym": 100.0
+    }
+  },
+  "pool": {
+    "wr_prod_exec": 0.0,
+    "n_live_trips": 1,
+    "wr_recalc": 75.0,
+    "n_recalc_trips": 4,
+    "g1_pp": 75.0,
+    "g2_pp": null,
+    "live_pl_ratio": 0.0,
+    "recalc_pl_ratio": 3.87,
+    "live_total_ret_pct": null,
+    "recalc_total_ret_pct": null,
+    "note": "单日<10笔噪声大，验收用滚动20交易日；"
+  },
+  "roundtrip_path": "data\\roundtrip\\2026-08-04.jsonl"
+}

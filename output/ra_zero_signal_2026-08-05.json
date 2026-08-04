@@ -1,0 +1,564 @@
+{
+  "date": "2026-08-05",
+  "grid": {
+    "atr": [
+      0.1,
+      0.15,
+      0.25
+    ],
+    "mhd": [
+      0.08,
+      0.1,
+      0.15
+    ],
+    "mpr": [
+      "off",
+      [
+        60
+      ]
+    ]
+  },
+  "current": {
+    "atr": 0.25,
+    "mhd": 0.15,
+    "mpr": [
+      60
+    ]
+  },
+  "symbols": {
+    "161129.SZ": {
+      "name": "原油LOF易方达",
+      "n_days": 69,
+      "baseline": {
+        "n_trips": 32,
+        "win_rate": 53.1,
+        "pl_ratio": 1.74,
+        "total_ret": 0,
+        "max_dd": 5.82,
+        "sharpe": 3.47,
+        "sig_per_day": 0.77
+      },
+      "cells": {
+        "atr0.1+mhd0.08+mproff": {
+          "n_trips": 68,
+          "win_rate": 44.1,
+          "pl_ratio": 1.22,
+          "total_ret": 0,
+          "max_dd": 9.67,
+          "sharpe": -0.21,
+          "sig_per_day": 1.29
+        },
+        "atr0.1+mhd0.08+mpr60": {
+          "n_trips": 44,
+          "win_rate": 54.5,
+          "pl_ratio": 1.37,
+          "total_ret": 0,
+          "max_dd": 4.37,
+          "sharpe": 2.67,
+          "sig_per_day": 0.94
+        },
+        "atr0.1+mhd0.1+mproff": {
+          "n_trips": 68,
+          "win_rate": 44.1,
+          "pl_ratio": 1.22,
+          "total_ret": 0,
+          "max_dd": 9.67,
+          "sharpe": -0.21,
+          "sig_per_day": 1.29
+        },
+        "atr0.1+mhd0.1+mpr60": {
+          "n_trips": 44,
+          "win_rate": 54.5,
+          "pl_ratio": 1.37,
+          "total_ret": 0,
+          "max_dd": 4.37,
+          "sharpe": 2.67,
+          "sig_per_day": 0.94
+        },
+        "atr0.1+mhd0.15+mproff": {
+          "n_trips": 68,
+          "win_rate": 44.1,
+          "pl_ratio": 1.22,
+          "total_ret": 0,
+          "max_dd": 9.67,
+          "sharpe": -0.21,
+          "sig_per_day": 1.29
+        },
+        "atr0.1+mhd0.15+mpr60": {
+          "n_trips": 44,
+          "win_rate": 54.5,
+          "pl_ratio": 1.37,
+          "total_ret": 0,
+          "max_dd": 4.37,
+          "sharpe": 2.67,
+          "sig_per_day": 0.94
+        },
+        "atr0.15+mhd0.08+mproff": {
+          "n_trips": 66,
+          "win_rate": 42.4,
+          "pl_ratio": 1.3,
+          "total_ret": 0,
+          "max_dd": 9.74,
+          "sharpe": -0.23,
+          "sig_per_day": 1.26
+        },
+        "atr0.15+mhd0.08+mpr60": {
+          "n_trips": 42,
+          "win_rate": 52.4,
+          "pl_ratio": 1.48,
+          "total_ret": 0,
+          "max_dd": 4.37,
+          "sharpe": 2.67,
+          "sig_per_day": 0.91
+        },
+        "atr0.15+mhd0.1+mproff": {
+          "n_trips": 66,
+          "win_rate": 42.4,
+          "pl_ratio": 1.3,
+          "total_ret": 0,
+          "max_dd": 9.74,
+          "sharpe": -0.23,
+          "sig_per_day": 1.26
+        },
+        "atr0.15+mhd0.1+mpr60": {
+          "n_trips": 42,
+          "win_rate": 52.4,
+          "pl_ratio": 1.48,
+          "total_ret": 0,
+          "max_dd": 4.37,
+          "sharpe": 2.67,
+          "sig_per_day": 0.91
+        },
+        "atr0.15+mhd0.15+mproff": {
+          "n_trips": 66,
+          "win_rate": 42.4,
+          "pl_ratio": 1.3,
+          "total_ret": 0,
+          "max_dd": 9.74,
+          "sharpe": -0.23,
+          "sig_per_day": 1.26
+        },
+        "atr0.15+mhd0.15+mpr60": {
+          "n_trips": 42,
+          "win_rate": 52.4,
+          "pl_ratio": 1.48,
+          "total_ret": 0,
+          "max_dd": 4.37,
+          "sharpe": 2.67,
+          "sig_per_day": 0.91
+        },
+        "atr0.25+mhd0.08+mproff": {
+          "n_trips": 50,
+          "win_rate": 48.0,
+          "pl_ratio": 1.18,
+          "total_ret": 0,
+          "max_dd": 10.18,
+          "sharpe": 0.48,
+          "sig_per_day": 1.03
+        },
+        "atr0.25+mhd0.08+mpr60": {
+          "n_trips": 32,
+          "win_rate": 53.1,
+          "pl_ratio": 1.74,
+          "total_ret": 0,
+          "max_dd": 5.82,
+          "sharpe": 3.47,
+          "sig_per_day": 0.77
+        },
+        "atr0.25+mhd0.1+mproff": {
+          "n_trips": 50,
+          "win_rate": 48.0,
+          "pl_ratio": 1.18,
+          "total_ret": 0,
+          "max_dd": 10.18,
+          "sharpe": 0.48,
+          "sig_per_day": 1.03
+        },
+        "atr0.25+mhd0.1+mpr60": {
+          "n_trips": 32,
+          "win_rate": 53.1,
+          "pl_ratio": 1.74,
+          "total_ret": 0,
+          "max_dd": 5.82,
+          "sharpe": 3.47,
+          "sig_per_day": 0.77
+        },
+        "atr0.25+mhd0.15+mproff": {
+          "n_trips": 50,
+          "win_rate": 48.0,
+          "pl_ratio": 1.18,
+          "total_ret": 0,
+          "max_dd": 10.18,
+          "sharpe": 0.48,
+          "sig_per_day": 1.03
+        },
+        "atr0.25+mhd0.15+mpr60": {
+          "n_trips": 32,
+          "win_rate": 53.1,
+          "pl_ratio": 1.74,
+          "total_ret": 0,
+          "max_dd": 5.82,
+          "sharpe": 3.47,
+          "sig_per_day": 0.77
+        }
+      },
+      "top_candidates": []
+    },
+    "513310.SH": {
+      "name": "中韩半导体ETF华泰柏瑞",
+      "n_days": 69,
+      "baseline": {
+        "n_trips": 25,
+        "win_rate": 56.0,
+        "pl_ratio": 0.85,
+        "total_ret": 0,
+        "max_dd": 6.12,
+        "sharpe": 0.44,
+        "sig_per_day": 0.77
+      },
+      "cells": {
+        "atr0.1+mhd0.08+mproff": {
+          "n_trips": 67,
+          "win_rate": 43.3,
+          "pl_ratio": 1.0,
+          "total_ret": 0,
+          "max_dd": 13.1,
+          "sharpe": -1.46,
+          "sig_per_day": 1.36
+        },
+        "atr0.1+mhd0.08+mpr60": {
+          "n_trips": 35,
+          "win_rate": 48.6,
+          "pl_ratio": 0.81,
+          "total_ret": 0,
+          "max_dd": 9.08,
+          "sharpe": -1.41,
+          "sig_per_day": 0.91
+        },
+        "atr0.1+mhd0.1+mproff": {
+          "n_trips": 67,
+          "win_rate": 43.3,
+          "pl_ratio": 1.0,
+          "total_ret": 0,
+          "max_dd": 13.1,
+          "sharpe": -1.46,
+          "sig_per_day": 1.36
+        },
+        "atr0.1+mhd0.1+mpr60": {
+          "n_trips": 35,
+          "win_rate": 48.6,
+          "pl_ratio": 0.81,
+          "total_ret": 0,
+          "max_dd": 9.08,
+          "sharpe": -1.41,
+          "sig_per_day": 0.91
+        },
+        "atr0.1+mhd0.15+mproff": {
+          "n_trips": 67,
+          "win_rate": 43.3,
+          "pl_ratio": 1.0,
+          "total_ret": 0,
+          "max_dd": 13.1,
+          "sharpe": -1.46,
+          "sig_per_day": 1.36
+        },
+        "atr0.1+mhd0.15+mpr60": {
+          "n_trips": 35,
+          "win_rate": 48.6,
+          "pl_ratio": 0.81,
+          "total_ret": 0,
+          "max_dd": 9.08,
+          "sharpe": -1.41,
+          "sig_per_day": 0.91
+        },
+        "atr0.15+mhd0.08+mproff": {
+          "n_trips": 65,
+          "win_rate": 43.1,
+          "pl_ratio": 1.03,
+          "total_ret": 0,
+          "max_dd": 12.68,
+          "sharpe": -1.35,
+          "sig_per_day": 1.33
+        },
+        "atr0.15+mhd0.08+mpr60": {
+          "n_trips": 34,
+          "win_rate": 50.0,
+          "pl_ratio": 0.8,
+          "total_ret": 0,
+          "max_dd": 8.64,
+          "sharpe": -1.14,
+          "sig_per_day": 0.9
+        },
+        "atr0.15+mhd0.1+mproff": {
+          "n_trips": 65,
+          "win_rate": 43.1,
+          "pl_ratio": 1.03,
+          "total_ret": 0,
+          "max_dd": 12.68,
+          "sharpe": -1.35,
+          "sig_per_day": 1.33
+        },
+        "atr0.15+mhd0.1+mpr60": {
+          "n_trips": 34,
+          "win_rate": 50.0,
+          "pl_ratio": 0.8,
+          "total_ret": 0,
+          "max_dd": 8.64,
+          "sharpe": -1.14,
+          "sig_per_day": 0.9
+        },
+        "atr0.15+mhd0.15+mproff": {
+          "n_trips": 65,
+          "win_rate": 43.1,
+          "pl_ratio": 1.03,
+          "total_ret": 0,
+          "max_dd": 12.68,
+          "sharpe": -1.35,
+          "sig_per_day": 1.33
+        },
+        "atr0.15+mhd0.15+mpr60": {
+          "n_trips": 34,
+          "win_rate": 50.0,
+          "pl_ratio": 0.8,
+          "total_ret": 0,
+          "max_dd": 8.64,
+          "sharpe": -1.14,
+          "sig_per_day": 0.9
+        },
+        "atr0.25+mhd0.08+mproff": {
+          "n_trips": 48,
+          "win_rate": 47.9,
+          "pl_ratio": 0.98,
+          "total_ret": 0,
+          "max_dd": 11.2,
+          "sharpe": -0.59,
+          "sig_per_day": 1.1
+        },
+        "atr0.25+mhd0.08+mpr60": {
+          "n_trips": 25,
+          "win_rate": 56.0,
+          "pl_ratio": 0.85,
+          "total_ret": 0,
+          "max_dd": 6.12,
+          "sharpe": 0.44,
+          "sig_per_day": 0.77
+        },
+        "atr0.25+mhd0.1+mproff": {
+          "n_trips": 48,
+          "win_rate": 47.9,
+          "pl_ratio": 0.98,
+          "total_ret": 0,
+          "max_dd": 11.2,
+          "sharpe": -0.59,
+          "sig_per_day": 1.1
+        },
+        "atr0.25+mhd0.1+mpr60": {
+          "n_trips": 25,
+          "win_rate": 56.0,
+          "pl_ratio": 0.85,
+          "total_ret": 0,
+          "max_dd": 6.12,
+          "sharpe": 0.44,
+          "sig_per_day": 0.77
+        },
+        "atr0.25+mhd0.15+mproff": {
+          "n_trips": 48,
+          "win_rate": 47.9,
+          "pl_ratio": 0.98,
+          "total_ret": 0,
+          "max_dd": 11.2,
+          "sharpe": -0.59,
+          "sig_per_day": 1.1
+        },
+        "atr0.25+mhd0.15+mpr60": {
+          "n_trips": 25,
+          "win_rate": 56.0,
+          "pl_ratio": 0.85,
+          "total_ret": 0,
+          "max_dd": 6.12,
+          "sharpe": 0.44,
+          "sig_per_day": 0.77
+        }
+      },
+      "top_candidates": []
+    },
+    "600570.SH": {
+      "name": "恒生电子",
+      "n_days": 127,
+      "baseline": {
+        "n_trips": 53,
+        "win_rate": 58.5,
+        "pl_ratio": 0.7,
+        "total_ret": 0,
+        "max_dd": 4.3,
+        "sharpe": -0.06,
+        "sig_per_day": 1.21
+      },
+      "cells": {
+        "atr0.1+mhd0.08+mproff": {
+          "n_trips": 100,
+          "win_rate": 45.0,
+          "pl_ratio": 0.67,
+          "total_ret": 0,
+          "max_dd": 21.49,
+          "sharpe": -3.15,
+          "sig_per_day": 1.56
+        },
+        "atr0.1+mhd0.08+mpr60": {
+          "n_trips": 77,
+          "win_rate": 50.6,
+          "pl_ratio": 0.72,
+          "total_ret": 0,
+          "max_dd": 10.52,
+          "sharpe": -1.67,
+          "sig_per_day": 1.4
+        },
+        "atr0.1+mhd0.1+mproff": {
+          "n_trips": 100,
+          "win_rate": 45.0,
+          "pl_ratio": 0.67,
+          "total_ret": 0,
+          "max_dd": 21.49,
+          "sharpe": -3.15,
+          "sig_per_day": 1.56
+        },
+        "atr0.1+mhd0.1+mpr60": {
+          "n_trips": 77,
+          "win_rate": 50.6,
+          "pl_ratio": 0.72,
+          "total_ret": 0,
+          "max_dd": 10.52,
+          "sharpe": -1.67,
+          "sig_per_day": 1.4
+        },
+        "atr0.1+mhd0.15+mproff": {
+          "n_trips": 100,
+          "win_rate": 45.0,
+          "pl_ratio": 0.67,
+          "total_ret": 0,
+          "max_dd": 21.49,
+          "sharpe": -3.15,
+          "sig_per_day": 1.56
+        },
+        "atr0.1+mhd0.15+mpr60": {
+          "n_trips": 77,
+          "win_rate": 50.6,
+          "pl_ratio": 0.72,
+          "total_ret": 0,
+          "max_dd": 10.52,
+          "sharpe": -1.67,
+          "sig_per_day": 1.4
+        },
+        "atr0.15+mhd0.08+mproff": {
+          "n_trips": 97,
+          "win_rate": 44.3,
+          "pl_ratio": 0.69,
+          "total_ret": 0,
+          "max_dd": 20.15,
+          "sharpe": -3.07,
+          "sig_per_day": 1.54
+        },
+        "atr0.15+mhd0.08+mpr60": {
+          "n_trips": 73,
+          "win_rate": 52.1,
+          "pl_ratio": 0.68,
+          "total_ret": 0,
+          "max_dd": 9.16,
+          "sharpe": -1.64,
+          "sig_per_day": 1.37
+        },
+        "atr0.15+mhd0.1+mproff": {
+          "n_trips": 97,
+          "win_rate": 44.3,
+          "pl_ratio": 0.69,
+          "total_ret": 0,
+          "max_dd": 20.15,
+          "sharpe": -3.07,
+          "sig_per_day": 1.54
+        },
+        "atr0.15+mhd0.1+mpr60": {
+          "n_trips": 73,
+          "win_rate": 52.1,
+          "pl_ratio": 0.68,
+          "total_ret": 0,
+          "max_dd": 9.16,
+          "sharpe": -1.64,
+          "sig_per_day": 1.37
+        },
+        "atr0.15+mhd0.15+mproff": {
+          "n_trips": 97,
+          "win_rate": 44.3,
+          "pl_ratio": 0.69,
+          "total_ret": 0,
+          "max_dd": 20.15,
+          "sharpe": -3.07,
+          "sig_per_day": 1.54
+        },
+        "atr0.15+mhd0.15+mpr60": {
+          "n_trips": 73,
+          "win_rate": 52.1,
+          "pl_ratio": 0.68,
+          "total_ret": 0,
+          "max_dd": 9.16,
+          "sharpe": -1.64,
+          "sig_per_day": 1.37
+        },
+        "atr0.25+mhd0.08+mproff": {
+          "n_trips": 70,
+          "win_rate": 50.0,
+          "pl_ratio": 0.73,
+          "total_ret": 0,
+          "max_dd": 9.96,
+          "sharpe": -1.62,
+          "sig_per_day": 1.33
+        },
+        "atr0.25+mhd0.08+mpr60": {
+          "n_trips": 53,
+          "win_rate": 58.5,
+          "pl_ratio": 0.7,
+          "total_ret": 0,
+          "max_dd": 4.3,
+          "sharpe": -0.06,
+          "sig_per_day": 1.21
+        },
+        "atr0.25+mhd0.1+mproff": {
+          "n_trips": 70,
+          "win_rate": 50.0,
+          "pl_ratio": 0.73,
+          "total_ret": 0,
+          "max_dd": 9.96,
+          "sharpe": -1.62,
+          "sig_per_day": 1.33
+        },
+        "atr0.25+mhd0.1+mpr60": {
+          "n_trips": 53,
+          "win_rate": 58.5,
+          "pl_ratio": 0.7,
+          "total_ret": 0,
+          "max_dd": 4.3,
+          "sharpe": -0.06,
+          "sig_per_day": 1.21
+        },
+        "atr0.25+mhd0.15+mproff": {
+          "n_trips": 70,
+          "win_rate": 50.0,
+          "pl_ratio": 0.73,
+          "total_ret": 0,
+          "max_dd": 9.96,
+          "sharpe": -1.62,
+          "sig_per_day": 1.33
+        },
+        "atr0.25+mhd0.15+mpr60": {
+          "n_trips": 53,
+          "win_rate": 58.5,
+          "pl_ratio": 0.7,
+          "total_ret": 0,
+          "max_dd": 4.3,
+          "sharpe": -0.06,
+          "sig_per_day": 1.21
+        }
+      },
+      "top_candidates": []
+    }
+  }
+}

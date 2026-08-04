@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>分时图 vs 回测报告 差异排查报告</title>
+<style>
+  :root { --bg:#0f1420; --panel:#1a2233; --panel2:#202a40; --text:#e8ecf4; --sub:#9aa7bd;
+          --red:#ef5350; --green:#26a69a; --orange:#ffa726; --border:#2c3850; --accent:#4fc3f7; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:"Microsoft YaHei","PingFang SC",sans-serif; padding:28px; max-width:1100px; margin:auto; }
+  h1 { font-size:22px; margin-bottom:6px; }
+  .sub { color:var(--sub); font-size:13px; margin-bottom:20px; }
+  .section { margin:22px 0; }
+  .section h2 { font-size:17px; margin-bottom:10px; border-left:4px solid var(--accent); padding-left:10px; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; margin:8px 0; }
+  th,td { padding:7px 9px; border-bottom:1px solid var(--border); text-align:left; }
+  th { background:var(--panel2); color:var(--sub); font-weight:600; }
+  code { background:#0d1320; padding:1px 6px; border-radius:4px; font-size:12px; color:#ffd54f; }
+  .verdict { display:inline-block; padding:3px 10px; border-radius:8px; font-weight:600; font-size:12px; }
+  .verdict.pass { background:rgba(38,166,154,.18); color:var(--green); }
+  .verdict.fail { background:rgba(239,83,80,.18); color:var(--red); }
+  .verdict.warn { background:rgba(255,167,38,.18); color:var(--orange); }
+  .note { background:var(--panel2); border-radius:8px; padding:12px 14px; font-size:13px; line-height:1.7; color:var(--sub); }
+  .note b { color:var(--text); }
+  .hl { color:var(--accent); font-weight:600; }
+  .diff { color:var(--red); font-weight:600; }
+  .same { color:var(--green); font-weight:600; }
+</style>
+</head>
+<body>
+
+<h1>🔍 分时图 vs 回测报告 差异排查报告</h1>
+<div class="sub">排查时间：2026-08-02 21:00 · 标的：161129.SZ 原油LOF · 数据：F盘 tickflow 1m 缓存（07-24）· 生产版本：v9.3.0</div>
+
+<div class="section">
+  <h2>一、问题概述</h2>
+  <div class="note">
+    用户反馈：最近生成的分时图（signal_chart）与之前回测报告中的结果<b>差异极大</b>，分时图效果明显差于回测数据。<br>
+    排查结论：<b>这不是单一 bug，而是「双引擎漂移」——生产引擎与隔离回测引擎的参数与功能已经分叉</b>。同一份行情数据，两个引擎输出的信号数量与买卖点完全不同。
+  </div>
+</div>
+
+<div class="section">
+  <h2>二、排查过程</h2>
+
+  <h3 style="margin:12px 0 6px;color:var(--sub)">步骤1：数据来源核对（同一份行情 ✓）</h3>
+  <table>
+    <tr><th>检查项</th><th>分时图（signal_chart）</th><th>回测报告（旧报告）</th><th>结论</th></tr>
+    <tr><td>数据源</td><td>F盘 tickflow 1m / mootdx historical_1m</td><td>F盘 tickflow 1m / mootdx</td><td class="same">同一份行情 ✓</td></tr>
+    <tr><td>粒度</td><td>1m（240 根/日）</td><td>1m（240 根/日）</td><td class="same">一致 ✓</td></tr>
+    <tr><td>复权</td><td>tickflow 前复权</td><td>tickflow 前复权</td><td class="same">一致 ✓</td></tr>
+    <tr><td>缺失/异常值</td><td>volume 有 5.88e-39 垃圾值（价格序列完整）</td><td>同源，相同垃圾值</td><td class="same">一致 ✓</td></tr>
+  </table>
+  <div class="note" style="margin-top:6px">✔ <b>数据层无差异</b>。两组图用的是同一份 1m 行情，复权口径相同（前复权），缺失/异常值处理方式相同。</div>
+
+  <h3 style="margin:16px 0 6px;color:var(--sub)">步骤2：策略逻辑核对（⚠️ 双引擎参数分叉）</h3>
+  <table>
+    <tr><th>参数</th><th>生产引擎 <code>core/miji_alpha.py</code>（分时图用）</th><th>隔离引擎 <code>backtest/keyfactor/miji_engine.py</code>（旧回测报告用）</th><th>影响</th></tr>
+    <tr><td>VWAP_DEV_BUY</td><td class="hl">0.65（P2 调参落地）</td><td class="diff">0.6（旧值）</td><td>引力触发带不同 → B 信号数不同</td></tr>
+    <tr><td>MHD 背离强度阈值</td><td class="hl">0.15（P0 落地，滤弱背离噪音）</td><td class="diff">无（恒 0，弱背离全放行）</td><td><b>旧引擎多出大量弱背离噪音信号</b></td></tr>
+    <tr><td>atr_min_pct（per-symbol）</td><td class="hl">0.25（P1 落地，5 只全启用）</td><td class="diff">无（不生效）</td><td>旧引擎低波动标的信号未被过滤</td></tr>
+    <tr><td>mpr_b60（per-symbol）</td><td class="hl">'B' + [60]（P3-1 落地）</td><td class="diff">无（不生效）</td><td>旧引擎单边下跌日抄底信号未被拦截</td></tr>
+    <tr><td>高波动守卫（×1.5）</td><td class="hl">✓（HIGH_VOL_GUARD）</td><td class="diff">✗ 无</td><td>floor 地板/天花板阈值不同</td></tr>
+    <tr><td>早盘放宽</td><td>关（实证后默认关）</td><td>无此功能</td><td>一致（都不放宽）</td></tr>
+  </table>
+
+  <h3 style="margin:16px 0 6px;color:var(--sub)">步骤3：同数据逐信号对比（决定性实验）</h3>
+  <div class="note">
+    用 <b>同一份 161129.SZ 07-24 数据</b>（F盘缓存 240 根 1m），分别跑两个引擎，结果：
+  </div>
+  <table>
+    <tr><th>信号</th><th>隔离引擎 miji_engine（旧）</th><th>生产引擎 miji_alpha（v9.3.0）</th></tr>
+    <tr><td>10:44</td><td class="diff">S @2.230（均线引力+MACD红柱缩短）</td><td>—（弱背离被 MHD=0.15 过滤）</td></tr>
+    <tr><td>10:52</td><td>S @2.280（均线引力+天花板）</td><td class="same">S @2.280 ✓</td></tr>
+    <tr><td>11:10</td><td class="diff">S @2.280（均线引力+天花板）</td><td>—（信号间隔 <8bar 被合并）</td></tr>
+    <tr><td>13:13</td><td class="diff">B @2.220（均线引力+MACD绿柱收缩）</td><td>—（弱背离被 MHD 过滤）</td></tr>
+    <tr><td>14:21</td><td class="diff">B @2.210（均线引力+地板）</td><td>—（<b>mpr_b60 拦截</b>：macd60_hist 全天为正）</td></tr>
+    <tr><td>14:44</td><td class="diff">B @2.180（均线引力+地板）</td><td>—（<b>mpr_b60 拦截</b>）</td></tr>
+    <tr><td><b>合计</b></td><td class="diff"><b>6 个信号</b>（3S + 3B）</td><td class="same"><b>1 个信号</b>（仅 S 10:52）</td></tr>
+  </table>
+  <div class="note" style="margin-top:6px">
+    ✔ <b>结论：差异从「信号检测层」就开始出现</b>。旧引擎无 MHD 弱背离过滤 → 多出 10:44/13:13 两个弱背离信号；
+    旧引擎无 mpr_b60 → 多出 14:21/14:44 两个单边下跌日的抄底信号；旧引擎无 8bar 信号合并冷却差异 → 11:10 被合并。
+    <b>这正是"分时图明显差于回测"的观感来源：旧回测图上有 6 个信号，分时图只剩 1 个——但分时图才是 v9.3.0 生产的真实行为。</b>
+  </div>
+
+  <h3 style="margin:16px 0 6px;color:var(--sub)">步骤4：出场/成本/配置核对</h3>
+  <table>
+    <tr><th>检查项</th><th>分时图（signal_chart）</th><th>回测（simulate_day）</th><th>结论</th></tr>
+    <tr><td>出场配置</td><td>monitor EXIT_CFG：仅移动止损 act0.4/trail0.6 + S 自然出场</td><td>PROD_CONFIG 同参数</td><td class="same">一致 ✓</td></tr>
+    <tr><td>成本模型</td><td>—（分时图不记账）</td><td>cost_for_symbol：ETF/LOF 无印花税</td><td class="same">一致 ✓</td></tr>
+    <tr><td>初始资金</td><td>—</td><td>等权每笔 100%</td><td class="same">口径一致 ✓</td></tr>
+    <tr><td>复权基准</td><td>前复权（tickflow）</td><td>前复权（tickflow）</td><td class="same">一致 ✓</td></tr>
+    <tr><td>时区/时间戳</td><td>东八区，bar 序号对齐</td><td>东八区</td><td class="same">一致 ✓</td></tr>
+    <tr><td>PC（昨收）取法</td><td>⚠️ <code>df['close'].iloc[0]</code>（当日首bar收盘近似）</td><td>⚠️ 前一日收盘（day_prev_close）</td><td class="diff"><b>潜在差异</b>：PC 不同 → day_chg/floor 门控可能不同</td></tr>
+  </table>
+  <div class="note" style="margin-top:6px">
+    ⚠️ <b>发现一个次要问题（PC 取法不一致）</b>：<code>signal_chart.py</code> 的 <code>plot_one()</code> 用
+    <code>df['close'].iloc[0]</code>（当日首 bar 收盘）当 PC；而 <code>daily_signal_review.py</code> / <code>backtest_screener.py</code>
+    用<code>前一交易日收盘</code>（真实昨收）。LOF 首 bar 与昨收通常几乎相等（跳空极小），影响有限；但若遇到 07-22 那种
+    +5.87% 跳空日，floor 门控的 day_chg 会被算错。这是一个<b>应统一的口径问题</b>。
+  </div>
+</div>
+
+<div class="section">
+  <h2>三、根本原因</h2>
+  <div class="note">
+    <b>核心结论：tpoint 存在两套并行的信号引擎，参数与功能已漂移分叉：</b><br><br>
+    1. <b><code>core/miji_alpha.py</code></b>（v9.3.0 生产引擎，分时图 / monitor / daily_signal_review / backtest_screener / backtest_visualize 共用）
+       —— 已落地 P0（MHD=0.15）、P1（ATR 0.25 per-symbol）、P3-1（mpr_b60 per-symbol）、P2（VWAP_DEV_BUY=0.65）、高波动守卫 ×1.5。<br>
+    2. <b><code>backtest/keyfactor/miji_engine.py</code></b>（07-22 之前建立的隔离研究引擎）
+       —— 参数停留在 v9.2.2 之前：VWAP_DEV_BUY=0.6、无 MHD 阈值、无 ATR/mpr per-symbol、无高波动守卫。
+       <b>至今仍被旧复盘/诊断脚本引用</b>（compare_strict_floor_symbol.py / early_session_0722_review.py / exec_compare_0721.py / floor_signals_today.py / _probe_pairing.py）。<br><br>
+    用户此前看过的"回测报告"若由这些旧脚本生成，其信号量天然比 v9.3.0 生产口径多（弱背离 + 无 mpr 拦截），
+    造成"分时图明显差于回测"的观感。<b>这不是算法灵敏度问题，而是版本口径不一致</b>。<br><br>
+    附带发现 miji_engine.py L520 有 bug：<code>details.append(f'MACD{m_detail}')</code> 应为 <code>parts.append(...)</code>
+    （在 check_miji_trigger 内，变量名错误，仅在 S 信号含 MACD 因子时抛 NameError）。
+  </div>
+</div>
+
+<div class="section">
+  <h2>四、修复方案</h2>
+  <table>
+    <tr><th>优先级</th><th>修复项</th><th>具体操作</th></tr>
+    <tr><td><span class="verdict fail">P0</span></td><td><b>统一 PC 取法</b></td><td><code>signal_chart.py plot_one()</code> 改为从前一日收盘取 PC（复用 daily_signal_review.get_pc 或 backtest day_prev_close 逻辑），消除跳空日 floor 门控偏差</td></tr>
+    <tr><td><span class="verdict fail">P0</span></td><td><b>废弃/归档旧引擎 miji_engine.py</b></td><td>把引用它的旧脚本（compare_strict_floor_symbol / early_session_0722_review / exec_compare_0721 / floor_signals_today / _probe_pairing）迁移到 miji_alpha，或明确标记"研究历史版不参与生产对比"；防止继续产生误导性回测报告</td></tr>
+    <tr><td><span class="verdict warn">P1</span></td><td><b>修复 miji_engine L520 bug</b></td><td><code>details.append</code> → <code>parts.append</code>（若保留该文件）</td></tr>
+    <tr><td><span class="verdict warn">P1</span></td><td><b>建立"单引擎"约束</b></td><td>在 docs/versioning.md 中写明：所有信号复算/回测/复盘必须 import <code>core.miji_alpha</code>（v9.3.0 生产同源）；<code>backtest/keyfactor/miji_engine.py</code> 仅作历史研究存档，不再用于新报告</td></tr>
+    <tr><td><span class="verdict pass">P2</span></td><td><b>报告标注引擎版本</b></td><td>backtest_visualize / daily_signal_review / signal_chart 输出 JSON/HTML 时追加 <code>engine_version: v9.3.0</code> 字段，避免未来再混淆</td></tr>
+  </table>
+  <div class="note" style="margin-top:8px">
+    <b>建议验证路径</b>：修复 PC 取法后，重跑 signal_chart 与 daily_signal_review 对比 161129 07-24/07-20，
+    二者信号应完全一致（除反T回补 X 在 simulate_day 不记账外）。
+  </div>
+</div>
+
+<div class="section">
+  <h2>五、关键判断依据汇总</h2>
+  <table>
+    <tr><th>#</th><th>判断</th><th>依据</th></tr>
+    <tr><td>1</td><td class="same">数据层一致</td><td>同源 F盘 1m / mootdx，复权相同，无缺失差异</td></tr>
+    <tr><td>2</td><td class="diff">策略层分叉</td><td>VWAP_DEV_BUY 0.6 vs 0.65；MHD 无 vs 0.15；ATR/mpr per-symbol 无 vs 有</td></tr>
+    <tr><td>3</td><td class="diff">信号数实测</td><td>同数据同日期：旧引擎 6 信号 vs 生产 1 信号</td></tr>
+    <tr><td>4</td><td class="diff">PC 取法</td><td>signal_chart 用当日首bar收盘 vs 复盘/回测用前日收盘</td></tr>
+    <tr><td>5</td><td class="diff">miji_engine L520 bug</td><td><code>details</code> 变量名错误（应为 <code>parts</code>）</td></tr>
+  </table>
+</div>
+
+</body>
+</html>

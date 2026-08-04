@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>P3-1 多周期 MACD 方向过滤回测 2026-08-02</title>
+<style>
+body{background:#11151c;color:#d5dae2;font-family:Segoe UI,Microsoft YaHei,sans-serif;padding:24px;max-width:1200px;margin:auto}
+h1{color:#fff;font-size:20px} h2{color:#9ec9ff;font-size:15px;margin-top:28px}
+.card{background:#1a2029;border-radius:12px;padding:18px;margin-top:12px}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #2a3140;font-size:13px}
+th{color:#8a93a6;font-weight:500}
+.dim{color:#7d8798;font-size:11px}
+.ok{color:#7ee787} .bad{color:#ff7b72}
+</style></head><body>
+<h1>P3-1 多周期 MACD 方向过滤 · 2026-08-02</h1>
+<div class="card">
+  <h2>方法</h2>
+  <p>大周期（60m/15m）MACD hist 方向一致过滤：B 需 hist&lt;0（顺大势抄底）、S 需 hist&gt;0（顺大势逃顶）。<br>
+     mhd 恒 0.15 / VWAP0.65 / floor 门控 / 移动止损出场 act0.4 trail0.6。<br>
+     口径：净胜率中位（固定全集）；S/B 分侧统计（不混合）。胜率=净收益&gt;0。<br>
+     注意：S 信号在 s_signal_exit 下是持仓的出场源；S 触发回合样本远少于 S 信号数（多数 S 在空仓时开出反T）。</p>
+</div>
+<div class="card">
+  <h2>40 只调参池（第一段，固定全集口径）</h2>
+  <table>
+    <tr><th>组合</th><th>全回合胜率</th><th>全笔数</th><th>B信号</th><th>S信号</th><th>S触发胜率</th><th>S触发笔数</th></tr>
+    <tr><td>基线 mhd0.15</td><td>47.55%</td><td>3883</td><td>7350</td><td>6076</td><td>83.60%</td><td>757</td></tr><tr><td>S侧 mpr60(&gt;0)</td><td>44.60%</td><td>4122</td><td>7763</td><td>1495</td><td>100.00%</td><td>244</td></tr><tr><td>S侧 mpr60+15(&gt;0)</td><td>44.40%</td><td>4122</td><td>7763</td><td>992</td><td>100.00%</td><td>194</td></tr><tr><td>B侧 mpr60(&lt;0)</td><td>52.00%</td><td>2620</td><td>3611</td><td>6153</td><td>87.75%</td><td>621</td></tr><tr><td>B侧 mpr60+15(&lt;0)</td><td>48.60%</td><td>2137</td><td>2725</td><td>6205</td><td>86.85%</td><td>521</td></tr><tr><td>B/S双 mpr60+15</td><td>48.00%</td><td>2366</td><td>3101</td><td>995</td><td>100.00%</td><td>117</td></tr>
+  </table>
+  <p class="dim">「全回合」= B 建仓的全部 round-trip（B 侧口径）；「S触发」= exit_reason=='S' 的回合（S 侧口径）。S 触发胜率在过滤后虚高（幸存者偏差，样本不足）。</p>
+</div>
+<div class="card">
+  <h2>B 侧 mpr60 逐标的（40 只，Δ 降序）</h2>
+  <p><b class="ok">提升 37 只 / 恶化 3 只 / 共 40 只</b> —— 方向一致性极高。</p>
+  <table>
+    <tr><th>标的</th><th>基线</th><th>B侧mpr60</th><th>Δ</th><th>样本保留</th></tr>
+    <tr><td>518850.SH</td><td>45笔 51.1%</td><td>28笔 67.9%</td><td>+16.8pp</td><td>62%</td></tr><tr><td>159985.SZ</td><td>56笔 48.2%</td><td>43笔 60.5%</td><td>+12.3pp</td><td>77%</td></tr><tr><td>513060.SH</td><td>55笔 38.2%</td><td>36笔 50.0%</td><td>+11.8pp</td><td>65%</td></tr><tr><td>600732.SH</td><td>160笔 41.2%</td><td>110笔 51.8%</td><td>+10.6pp</td><td>69%</td></tr><tr><td>605050.SH</td><td>126笔 46.8%</td><td>80笔 56.2%</td><td>+9.4pp</td><td>63%</td></tr><tr><td>159941.SZ</td><td>36笔 50.0%</td><td>27笔 59.3%</td><td>+9.3pp</td><td>75%</td></tr><tr><td>002948.SZ</td><td>97笔 52.6%</td><td>70笔 61.4%</td><td>+8.8pp</td><td>72%</td></tr><tr><td>603360.SH</td><td>170笔 44.7%</td><td>109笔 53.2%</td><td>+8.5pp</td><td>64%</td></tr><tr><td>002379.SZ</td><td>184笔 47.8%</td><td>116笔 56.0%</td><td>+8.2pp</td><td>63%</td></tr><tr><td>300795.SZ</td><td>125笔 41.6%</td><td>81笔 49.4%</td><td>+7.8pp</td><td>65%</td></tr><tr><td>513520.SH</td><td>48笔 47.9%</td><td>36笔 55.6%</td><td>+7.7pp</td><td>75%</td></tr><tr><td>301260.SZ</td><td>120笔 47.5%</td><td>87笔 55.2%</td><td>+7.7pp</td><td>72%</td></tr><tr><td>513030.SH</td><td>44笔 36.4%</td><td>32笔 43.8%</td><td>+7.4pp</td><td>73%</td></tr><tr><td>513550.SH</td><td>43笔 37.2%</td><td>34笔 44.1%</td><td>+6.9pp</td><td>79%</td></tr><tr><td>300016.SZ</td><td>143笔 47.6%</td><td>94笔 54.3%</td><td>+6.7pp</td><td>66%</td></tr><tr><td>603353.SH</td><td>199笔 46.2%</td><td>127笔 52.8%</td><td>+6.6pp</td><td>64%</td></tr><tr><td>688128.SH</td><td>116笔 44.8%</td><td>86笔 51.2%</td><td>+6.4pp</td><td>74%</td></tr><tr><td>300052.SZ</td><td>176笔 48.9%</td><td>127笔 55.1%</td><td>+6.2pp</td><td>72%</td></tr><tr><td>159892.SZ</td><td>55笔 49.1%</td><td>38笔 55.3%</td><td>+6.2pp</td><td>69%</td></tr><tr><td>513660.SH</td><td>43笔 48.8%</td><td>31笔 54.8%</td><td>+6.0pp</td><td>72%</td></tr><tr><td>165513.SZ</td><td>55笔 27.3%</td><td>21笔 33.3%</td><td>+6.0pp</td><td>38%</td></tr><tr><td>300341.SZ</td><td>141笔 39.7%</td><td>97笔 45.4%</td><td>+5.7pp</td><td>69%</td></tr><tr><td>161226.SZ</td><td>43笔 55.8%</td><td>31笔 61.3%</td><td>+5.5pp</td><td>72%</td></tr><tr><td>159605.SZ</td><td>50笔 36.0%</td><td>37笔 40.5%</td><td>+4.5pp</td><td>74%</td></tr><tr><td>160416.SZ</td><td>57笔 29.8%</td><td>35笔 34.3%</td><td>+4.5pp</td><td>61%</td></tr><tr><td>300568.SZ</td><td>165笔 49.1%</td><td>133笔 53.4%</td><td>+4.3pp</td><td>81%</td></tr><tr><td>518800.SH</td><td>46笔 47.8%</td><td>33笔 51.5%</td><td>+3.7pp</td><td>72%</td></tr><tr><td>164701.SZ</td><td>47笔 40.4%</td><td>25笔 44.0%</td><td>+3.6pp</td><td>53%</td></tr><tr><td>000703.SZ</td><td>170笔 51.8%</td><td>122笔 54.9%</td><td>+3.1pp</td><td>72%</td></tr><tr><td>605286.SH</td><td>169笔 49.1%</td><td>119笔 52.1%</td><td>+3.0pp</td><td>70%</td></tr><tr><td>002936.SZ</td><td>76笔 25.0%</td><td>43笔 27.9%</td><td>+2.9pp</td><td>57%</td></tr><tr><td>688223.SH</td><td>175笔 39.4%</td><td>123笔 42.3%</td><td>+2.9pp</td><td>70%</td></tr><tr><td>001238.SZ</td><td>138笔 37.7%</td><td>79笔 40.5%</td><td>+2.8pp</td><td>57%</td></tr><tr><td>688758.SH</td><td>144笔 51.4%</td><td>97笔 53.6%</td><td>+2.2pp</td><td>67%</td></tr><tr><td>600706.SH</td><td>134笔 47.8%</td><td>84笔 50.0%</td><td>+2.2pp</td><td>63%</td></tr><tr><td>513100.SH</td><td>40笔 50.0%</td><td>27笔 51.9%</td><td>+1.9pp</td><td>68%</td></tr><tr><td>164824.SZ</td><td>47笔 55.3%</td><td>23笔 56.5%</td><td>+1.2pp</td><td>49%</td></tr><tr><td>159937.SZ</td><td>43笔 48.8%</td><td>31笔 45.2%</td><td>-3.6pp</td><td>72%</td></tr><tr><td>513010.SH</td><td>58笔 46.6%</td><td>41笔 41.5%</td><td>-5.1pp</td><td>71%</td></tr><tr><td>513080.SH</td><td>44笔 31.8%</td><td>27笔 25.9%</td><td>-5.9pp</td><td>61%</td></tr>
+  </table>
+</div>
+<div class="card">
+  <h2>watchlist 5 只独立验证（第二段，不做二次调参）</h2>
+  <table>
+    <tr><th>标的</th><th>基线 mhd0.15</th><th>S侧 mpr60(&gt;0)</th><th>S侧 mpr60+15(&gt;0)</th><th>B侧 mpr60(&lt;0)</th><th>B侧 mpr60+15(&lt;0)</th><th>B/S双 mpr60+15</th></tr>
+    <tr><td>161129.SZ</td><td>79笔 54.4%<br><span class="dim">S触发:92.9%(14) B信号:138 S信号:91</span></td><td>82笔 51.2%<br><span class="dim">S触发:100.0%(5) B信号:143 S信号:21</span></td><td>82笔 51.2%<br><span class="dim">S触发:100.0%(5) B信号:143 S信号:13</span></td><td>57笔 57.9%<br><span class="dim">S触发:90.9%(11) B信号:73 S信号:91</span></td><td>47笔 59.6%<br><span class="dim">S触发:90.9%(11) B信号:56 S信号:91</span></td><td>50笔 54.0%<br><span class="dim">S触发:100.0%(3) B信号:61 S信号:13</span></td></tr><tr><td>513310.SH</td><td>59笔 45.8%<br><span class="dim">S触发:100.0%(3) B信号:122 S信号:84</span></td><td>60笔 45.0%<br><span class="dim">S触发:100.0%(1) B信号:123 S信号:28</span></td><td>60笔 45.0%<br><span class="dim">S触发:100.0%(1) B信号:123 S信号:19</span></td><td>31笔 48.4%<br><span class="dim">S触发:100.0%(1) B信号:48 S信号:84</span></td><td>26笔 50.0%<br><span class="dim">S触发:100.0%(1) B信号:38 S信号:84</span></td><td>27笔 48.1%<br><span class="dim">S触发:0.0%(0) B信号:39 S信号:19</span></td></tr><tr><td>300058.SZ</td><td>207笔 47.8%<br><span class="dim">S触发:95.2%(21) B信号:467 S信号:372</span></td><td>217笔 47.9%<br><span class="dim">S触发:100.0%(12) B信号:492 S信号:133</span></td><td>217笔 47.9%<br><span class="dim">S触发:100.0%(8) B信号:492 S信号:81</span></td><td>137笔 48.9%<br><span class="dim">S触发:94.4%(18) B信号:199 S信号:375</span></td><td>102笔 46.1%<br><span class="dim">S触发:93.3%(15) B信号:129 S信号:379</span></td><td>118笔 45.8%<br><span class="dim">S触发:100.0%(6) B信号:153 S信号:81</span></td></tr><tr><td>600570.SH</td><td>103笔 50.5%<br><span class="dim">S触发:93.3%(30) B信号:191 S信号:186</span></td><td>105笔 45.7%<br><span class="dim">S触发:83.3%(6) B信号:200 S信号:34</span></td><td>105笔 45.7%<br><span class="dim">S触发:75.0%(4) B信号:200 S信号:25</span></td><td>79笔 50.6%<br><span class="dim">S触发:95.7%(23) B信号:110 S信号:189</span></td><td>69笔 50.7%<br><span class="dim">S触发:95.2%(21) B信号:94 S信号:189</span></td><td>71笔 45.1%<br><span class="dim">S触发:100.0%(1) B信号:102 S信号:26</span></td></tr><tr><td>688111.SH</td><td>211笔 46.4%<br><span class="dim">S触发:70.8%(65) B信号:407 S信号:296</span></td><td>216笔 45.4%<br><span class="dim">S触发:53.1%(32) B信号:421 S信号:91</span></td><td>216笔 44.4%<br><span class="dim">S触发:50.0%(28) B信号:421 S信号:65</span></td><td>133笔 51.9%<br><span class="dim">S触发:83.3%(48) B信号:184 S信号:301</span></td><td>115笔 48.7%<br><span class="dim">S触发:84.6%(39) B信号:149 S信号:304</span></td><td>124笔 46.0%<br><span class="dim">S触发:66.7%(18) B信号:163 S信号:66</span></td></tr>
+  </table>
+</div>
+<div class="card">
+  <h2>结论与生产建议（2026-08-02 两段式验证）</h2>
+  <table>
+    <tr><th>组合</th><th>调参池 40 只</th><th>watchlist 5 只</th><th>判定</th></tr>
+    <tr>
+      <td><b>B侧 mpr60</b>（B 需 60m hist&lt;0）</td>
+      <td>47.55→52.00%（+4.45pp），<b>37/40 提升</b>，保留 67%</td>
+      <td>47.80→50.60%（+2.8pp），<b>5/5 全提升无退化</b>（688111 +5.5pp / 513310 +2.6pp / 161129 +3.5pp）</td>
+      <td class="ok">✅ <b>方向真实且稳健</b>——两段一致提升、无单只退化。样本损失 1/3 需权衡，但胜率增益大于样本损失。</td>
+    </tr>
+    <tr>
+      <td>B侧 mpr60+15</td>
+      <td>+1.05pp，保留 55%</td>
+      <td>300058 -1.7pp、600570 +0.2pp（退化）</td>
+      <td class="bad">❌ 双周期过严，边际无增益</td>
+    </tr>
+    <tr>
+      <td>S侧 mpr60 / 60+15</td>
+      <td>S 信号 -75%/-84%，S触发胜率虚高 100%（幸存者偏差）</td>
+      <td>600570 -4.8pp、161129 -3.2pp（退化）</td>
+      <td class="bad">❌ S 触发样本太少，方向过滤伤 S 出场质量</td>
+    </tr>
+    <tr>
+      <td>B/S 双侧 60+15</td>
+      <td>+0.45pp，保留 61%</td>
+      <td>600570 -5.4pp 严重退化</td>
+      <td class="bad">❌ 双侧组合不可取</td>
+    </tr>
+  </table>
+  <h2 style="margin-top:18px">建议</h2>
+  <ul>
+    <li><b>B 侧 mpr60 值得接入</b>：多周期 60m MACD hist&lt;0 作为 B 信号的顺大势门控（只在"大周期仍在下行"时抄底，避开 V 型反转日接飞刀）。这是首个通过两段式验证的入场结构性改进。</li>
+    <li><b>S 侧 mpr 放弃</b>（当前 s_signal_exit 架构下 S 触发样本太少）；S 侧改进留待阶段 D（S 信号专项：vwap_dev_ceil + atr_min_pct_s）。</li>
+    <li>接入方式：monitor 的 B 判定走 check_miji_trigger 传 <code>mpr_enable='B'</code>，或 env <code>TP_MPR_ENABLE</code>；默认关，验证实盘后再开。</li>
+    <li>样本保留 67% 说明 mpr 会砍掉约 1/3 B 信号——实际监控中信号频率会下降，需用户确认可接受。</li>
+  </ul>
+</div>
+</body></html>

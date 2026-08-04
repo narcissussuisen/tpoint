@@ -1,0 +1,524 @@
+{
+  "date": "2026-08-05",
+  "design": "trail0.5/0.5 + F1 RSI极值过滤 + F2 量能确认 + F3 14:30禁新开",
+  "symbols": {
+    "161129.SZ": {
+      "name": "原油LOF易方达",
+      "n_days": 69,
+      "variants": {
+        "v9.3.0_baseline": {
+          "n_trips": 32,
+          "win_rate": 50.0,
+          "pl_ratio": 1.72,
+          "total_ret": 7.31,
+          "max_dd": 6.41,
+          "sharpe": 2.78,
+          "sig_per_day": 0.77
+        },
+        "F3_尾盘禁新开": {
+          "n_trips": 31,
+          "win_rate": 51.6,
+          "pl_ratio": 1.78,
+          "total_ret": 8.43,
+          "max_dd": 5.82,
+          "sharpe": 3.27,
+          "sig_per_day": 0.68
+        },
+        "F1_RSI过滤_松45/55": {
+          "n_trips": 18,
+          "win_rate": 50.0,
+          "pl_ratio": 1.43,
+          "total_ret": 2.64,
+          "max_dd": 4.99,
+          "sharpe": 1.64,
+          "sig_per_day": 0.49
+        },
+        "F1_RSI过滤_严40/60": {
+          "n_trips": 18,
+          "win_rate": 50.0,
+          "pl_ratio": 1.43,
+          "total_ret": 2.64,
+          "max_dd": 4.99,
+          "sharpe": 1.64,
+          "sig_per_day": 0.49
+        },
+        "F2_量能确认": {
+          "n_trips": 21,
+          "win_rate": 52.4,
+          "pl_ratio": 2.97,
+          "total_ret": 9.48,
+          "max_dd": 3.05,
+          "sharpe": 6.38,
+          "sig_per_day": 0.59
+        },
+        "F1F3_松RSI+尾盘": {
+          "n_trips": 17,
+          "win_rate": 47.1,
+          "pl_ratio": 1.48,
+          "total_ret": 1.97,
+          "max_dd": 4.99,
+          "sharpe": 1.26,
+          "sig_per_day": 0.41
+        },
+        "F1F2_RSI+量能": {
+          "n_trips": 7,
+          "win_rate": 42.9,
+          "pl_ratio": 5.25,
+          "total_ret": 3.02,
+          "max_dd": 0.67,
+          "sharpe": 5.99,
+          "sig_per_day": 0.33
+        },
+        "F1F2F3_全组合": {
+          "n_trips": 7,
+          "win_rate": 42.9,
+          "pl_ratio": 5.25,
+          "total_ret": 3.02,
+          "max_dd": 0.67,
+          "sharpe": 5.99,
+          "sig_per_day": 0.26
+        },
+        "F2F3_量能+尾盘": {
+          "n_trips": 21,
+          "win_rate": 52.4,
+          "pl_ratio": 2.97,
+          "total_ret": 9.48,
+          "max_dd": 3.05,
+          "sharpe": 6.38,
+          "sig_per_day": 0.52
+        }
+      }
+    },
+    "513310.SH": {
+      "name": "中韩半导体ETF华泰柏瑞",
+      "n_days": 69,
+      "variants": {
+        "v9.3.0_baseline": {
+          "n_trips": 25,
+          "win_rate": 48.0,
+          "pl_ratio": 1.06,
+          "total_ret": -0.29,
+          "max_dd": 7.18,
+          "sharpe": -0.11,
+          "sig_per_day": 0.77
+        },
+        "F3_尾盘禁新开": {
+          "n_trips": 22,
+          "win_rate": 54.5,
+          "pl_ratio": 0.94,
+          "total_ret": 1.63,
+          "max_dd": 6.01,
+          "sharpe": 0.68,
+          "sig_per_day": 0.7
+        },
+        "F1_RSI过滤_松45/55": {
+          "n_trips": 24,
+          "win_rate": 54.2,
+          "pl_ratio": 0.81,
+          "total_ret": -0.62,
+          "max_dd": 7.72,
+          "sharpe": -0.25,
+          "sig_per_day": 0.61
+        },
+        "F1_RSI过滤_严40/60": {
+          "n_trips": 23,
+          "win_rate": 56.5,
+          "pl_ratio": 0.75,
+          "total_ret": -0.3,
+          "max_dd": 7.43,
+          "sharpe": -0.12,
+          "sig_per_day": 0.59
+        },
+        "F2_量能确认": {
+          "n_trips": 7,
+          "win_rate": 57.1,
+          "pl_ratio": 0.49,
+          "total_ret": -0.92,
+          "max_dd": 2.23,
+          "sharpe": -1.93,
+          "sig_per_day": 0.41
+        },
+        "F1F3_松RSI+尾盘": {
+          "n_trips": 21,
+          "win_rate": 52.4,
+          "pl_ratio": 0.9,
+          "total_ret": -0.11,
+          "max_dd": 6.76,
+          "sharpe": -0.05,
+          "sig_per_day": 0.54
+        },
+        "F1F2_RSI+量能": {
+          "n_trips": 6,
+          "win_rate": 50.0,
+          "pl_ratio": 0.14,
+          "total_ret": -2.23,
+          "max_dd": 2.28,
+          "sharpe": -6.24,
+          "sig_per_day": 0.35
+        },
+        "F1F2F3_全组合": {
+          "n_trips": 5,
+          "win_rate": 40.0,
+          "pl_ratio": 0.19,
+          "total_ret": -2.28,
+          "max_dd": 2.28,
+          "sharpe": -7.01,
+          "sig_per_day": 0.3
+        },
+        "F2F3_量能+尾盘": {
+          "n_trips": 6,
+          "win_rate": 50.0,
+          "pl_ratio": 0.63,
+          "total_ret": -0.97,
+          "max_dd": 2.22,
+          "sharpe": -2.17,
+          "sig_per_day": 0.36
+        }
+      }
+    },
+    "300058.SZ": {
+      "name": "蓝色光标",
+      "n_days": 148,
+      "variants": {
+        "v9.3.0_baseline": {
+          "n_trips": 129,
+          "win_rate": 57.4,
+          "pl_ratio": 0.74,
+          "total_ret": -0.76,
+          "max_dd": 17.88,
+          "sharpe": -0.06,
+          "sig_per_day": 1.89
+        },
+        "F3_尾盘禁新开": {
+          "n_trips": 128,
+          "win_rate": 57.8,
+          "pl_ratio": 0.73,
+          "total_ret": 0.35,
+          "max_dd": 16.96,
+          "sharpe": 0.03,
+          "sig_per_day": 1.87
+        },
+        "F1_RSI过滤_松45/55": {
+          "n_trips": 36,
+          "win_rate": 47.2,
+          "pl_ratio": 0.51,
+          "total_ret": -14.09,
+          "max_dd": 16.23,
+          "sharpe": -3.77,
+          "sig_per_day": 0.45
+        },
+        "F1_RSI过滤_严40/60": {
+          "n_trips": 27,
+          "win_rate": 51.9,
+          "pl_ratio": 0.63,
+          "total_ret": -4.14,
+          "max_dd": 8.45,
+          "sharpe": -1.99,
+          "sig_per_day": 0.36
+        },
+        "F2_量能确认": {
+          "n_trips": 83,
+          "win_rate": 56.6,
+          "pl_ratio": 0.76,
+          "total_ret": -0.34,
+          "max_dd": 15.73,
+          "sharpe": -0.04,
+          "sig_per_day": 1.11
+        },
+        "F1F3_松RSI+尾盘": {
+          "n_trips": 35,
+          "win_rate": 48.6,
+          "pl_ratio": 0.5,
+          "total_ret": -12.98,
+          "max_dd": 15.29,
+          "sharpe": -3.54,
+          "sig_per_day": 0.43
+        },
+        "F1F2_RSI+量能": {
+          "n_trips": 7,
+          "win_rate": 28.6,
+          "pl_ratio": 0.46,
+          "total_ret": -10.44,
+          "max_dd": 8.34,
+          "sharpe": -8.72,
+          "sig_per_day": 0.24
+        },
+        "F1F2F3_全组合": {
+          "n_trips": 7,
+          "win_rate": 28.6,
+          "pl_ratio": 0.46,
+          "total_ret": -10.44,
+          "max_dd": 8.34,
+          "sharpe": -8.72,
+          "sig_per_day": 0.23
+        },
+        "F2F3_量能+尾盘": {
+          "n_trips": 83,
+          "win_rate": 56.6,
+          "pl_ratio": 0.76,
+          "total_ret": -0.34,
+          "max_dd": 15.73,
+          "sharpe": -0.04,
+          "sig_per_day": 1.09
+        }
+      }
+    },
+    "600570.SH": {
+      "name": "恒生电子",
+      "n_days": 127,
+      "variants": {
+        "v9.3.0_baseline": {
+          "n_trips": 53,
+          "win_rate": 58.5,
+          "pl_ratio": 0.7,
+          "total_ret": -0.22,
+          "max_dd": 4.3,
+          "sharpe": -0.06,
+          "sig_per_day": 1.21
+        },
+        "F3_尾盘禁新开": {
+          "n_trips": 53,
+          "win_rate": 58.5,
+          "pl_ratio": 0.7,
+          "total_ret": -0.22,
+          "max_dd": 4.3,
+          "sharpe": -0.06,
+          "sig_per_day": 1.21
+        },
+        "F1_RSI过滤_松45/55": {
+          "n_trips": 2,
+          "win_rate": 50.0,
+          "pl_ratio": 0.4,
+          "total_ret": -0.26,
+          "max_dd": -0.0,
+          "sharpe": -4.77,
+          "sig_per_day": 0.1
+        },
+        "F1_RSI过滤_严40/60": {
+          "n_trips": 2,
+          "win_rate": 50.0,
+          "pl_ratio": 0.4,
+          "total_ret": -0.26,
+          "max_dd": -0.0,
+          "sharpe": -4.77,
+          "sig_per_day": 0.1
+        },
+        "F2_量能确认": {
+          "n_trips": 36,
+          "win_rate": 52.8,
+          "pl_ratio": 0.65,
+          "total_ret": -4.21,
+          "max_dd": 4.52,
+          "sharpe": -1.59,
+          "sig_per_day": 0.74
+        },
+        "F1F3_松RSI+尾盘": {
+          "n_trips": 2,
+          "win_rate": 50.0,
+          "pl_ratio": 0.4,
+          "total_ret": -0.26,
+          "max_dd": -0.0,
+          "sharpe": -4.77,
+          "sig_per_day": 0.1
+        },
+        "F1F2_RSI+量能": {
+          "n_trips": 2,
+          "win_rate": 50.0,
+          "pl_ratio": 0.4,
+          "total_ret": -0.26,
+          "max_dd": -0.0,
+          "sharpe": -4.77,
+          "sig_per_day": 0.09
+        },
+        "F1F2F3_全组合": {
+          "n_trips": 2,
+          "win_rate": 50.0,
+          "pl_ratio": 0.4,
+          "total_ret": -0.26,
+          "max_dd": -0.0,
+          "sharpe": -4.77,
+          "sig_per_day": 0.09
+        },
+        "F2F3_量能+尾盘": {
+          "n_trips": 36,
+          "win_rate": 52.8,
+          "pl_ratio": 0.65,
+          "total_ret": -4.21,
+          "max_dd": 4.52,
+          "sharpe": -1.59,
+          "sig_per_day": 0.74
+        }
+      }
+    },
+    "688111.SH": {
+      "name": "金山办公",
+      "n_days": 148,
+      "variants": {
+        "v9.3.0_baseline": {
+          "n_trips": 86,
+          "win_rate": 55.8,
+          "pl_ratio": 0.95,
+          "total_ret": 7.04,
+          "max_dd": 13.33,
+          "sharpe": 0.99,
+          "sig_per_day": 1.69
+        },
+        "F3_尾盘禁新开": {
+          "n_trips": 86,
+          "win_rate": 55.8,
+          "pl_ratio": 0.95,
+          "total_ret": 7.04,
+          "max_dd": 13.33,
+          "sharpe": 0.99,
+          "sig_per_day": 1.66
+        },
+        "F1_RSI过滤_松45/55": {
+          "n_trips": 9,
+          "win_rate": 22.2,
+          "pl_ratio": 0.5,
+          "total_ret": -4.93,
+          "max_dd": 5.31,
+          "sharpe": -8.22,
+          "sig_per_day": 0.33
+        },
+        "F1_RSI过滤_严40/60": {
+          "n_trips": 5,
+          "win_rate": 20.0,
+          "pl_ratio": 0.04,
+          "total_ret": -4.14,
+          "max_dd": 3.81,
+          "sharpe": -10.5,
+          "sig_per_day": 0.24
+        },
+        "F2_量能确认": {
+          "n_trips": 65,
+          "win_rate": 58.5,
+          "pl_ratio": 1.25,
+          "total_ret": 14.79,
+          "max_dd": 10.62,
+          "sharpe": 3.09,
+          "sig_per_day": 1.02
+        },
+        "F1F3_松RSI+尾盘": {
+          "n_trips": 9,
+          "win_rate": 22.2,
+          "pl_ratio": 0.5,
+          "total_ret": -4.93,
+          "max_dd": 5.31,
+          "sharpe": -8.22,
+          "sig_per_day": 0.3
+        },
+        "F1F2_RSI+量能": {
+          "n_trips": 5,
+          "win_rate": 40.0,
+          "pl_ratio": 0.76,
+          "total_ret": -0.81,
+          "max_dd": 1.29,
+          "sharpe": -4.18,
+          "sig_per_day": 0.21
+        },
+        "F1F2F3_全组合": {
+          "n_trips": 5,
+          "win_rate": 40.0,
+          "pl_ratio": 0.76,
+          "total_ret": -0.81,
+          "max_dd": 1.29,
+          "sharpe": -4.18,
+          "sig_per_day": 0.18
+        },
+        "F2F3_量能+尾盘": {
+          "n_trips": 65,
+          "win_rate": 58.5,
+          "pl_ratio": 1.25,
+          "total_ret": 14.79,
+          "max_dd": 10.62,
+          "sharpe": 3.09,
+          "sig_per_day": 0.99
+        }
+      }
+    }
+  },
+  "pool": {
+    "v9.3.0_baseline": {
+      "win_rate": 53.9,
+      "pl_ratio": 1.03,
+      "total_ret": 13.08,
+      "max_dd": 17.88,
+      "sharpe": 0.71,
+      "sig_per_day": 1.27,
+      "n_trips": 325
+    },
+    "F3_尾盘禁新开": {
+      "win_rate": 55.6,
+      "pl_ratio": 1.02,
+      "total_ret": 17.23,
+      "max_dd": 16.96,
+      "sharpe": 0.98,
+      "sig_per_day": 1.22,
+      "n_trips": 320
+    },
+    "F1_RSI过滤_松45/55": {
+      "win_rate": 44.7,
+      "pl_ratio": 0.73,
+      "total_ret": -17.26,
+      "max_dd": 16.23,
+      "sharpe": -3.07,
+      "sig_per_day": 0.4,
+      "n_trips": 89
+    },
+    "F1_RSI过滤_严40/60": {
+      "win_rate": 45.7,
+      "pl_ratio": 0.65,
+      "total_ret": -6.2,
+      "max_dd": 8.45,
+      "sharpe": -3.15,
+      "sig_per_day": 0.36,
+      "n_trips": 75
+    },
+    "F2_量能确认": {
+      "win_rate": 55.5,
+      "pl_ratio": 1.22,
+      "total_ret": 18.8,
+      "max_dd": 15.73,
+      "sharpe": 1.18,
+      "sig_per_day": 0.77,
+      "n_trips": 212
+    },
+    "F1F3_松RSI+尾盘": {
+      "win_rate": 44.1,
+      "pl_ratio": 0.76,
+      "total_ret": -16.31,
+      "max_dd": 15.29,
+      "sharpe": -3.06,
+      "sig_per_day": 0.36,
+      "n_trips": 84
+    },
+    "F1F2_RSI+量能": {
+      "win_rate": 42.3,
+      "pl_ratio": 1.4,
+      "total_ret": -10.72,
+      "max_dd": 8.34,
+      "sharpe": -3.58,
+      "sig_per_day": 0.24,
+      "n_trips": 27
+    },
+    "F1F2F3_全组合": {
+      "win_rate": 40.3,
+      "pl_ratio": 1.41,
+      "total_ret": -10.77,
+      "max_dd": 8.34,
+      "sharpe": -3.74,
+      "sig_per_day": 0.21,
+      "n_trips": 26
+    },
+    "F2F3_量能+尾盘": {
+      "win_rate": 54.1,
+      "pl_ratio": 1.25,
+      "total_ret": 18.75,
+      "max_dd": 15.73,
+      "sharpe": 1.13,
+      "sig_per_day": 0.74,
+      "n_trips": 211
+    }
+  }
+}

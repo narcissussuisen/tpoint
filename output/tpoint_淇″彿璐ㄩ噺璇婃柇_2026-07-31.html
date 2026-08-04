@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tpoint 信号质量诊断报告 2026-07-31</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #e6edf3; --dim: #8b949e; --accent: #58a6ff;
+    --red: #f85149; --green: #3fb950; --orange: #d29922; --purple: #bc8cff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; line-height: 1.6; padding: 32px 20px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 26px; margin-bottom: 6px; letter-spacing: .5px; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 24px; }
+  h2 { font-size: 19px; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 15px; margin: 18px 0 8px; color: var(--accent); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; margin-bottom: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 14px 0; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .stat .num { font-size: 26px; font-weight: 700; }
+  .stat .lbl { color: var(--dim); font-size: 12px; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+  th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+  th { background: #21262d; font-weight: 600; white-space: nowrap; }
+  .r { color: var(--red); font-weight: 600; }
+  .g { color: var(--green); font-weight: 600; }
+  .o { color: var(--orange); font-weight: 600; }
+  .p { color: var(--purple); font-weight: 600; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .tag-r { background: rgba(248,81,73,.15); color: var(--red); }
+  .tag-g { background: rgba(63,185,80,.15); color: var(--green); }
+  .tag-o { background: rgba(210,153,34,.15); color: var(--orange); }
+  .tag-b { background: rgba(88,166,255,.15); color: var(--accent); }
+  .tag-p { background: rgba(188,140,255,.15); color: var(--purple); }
+  ul, ol { padding-left: 22px; margin: 8px 0; }
+  li { margin: 4px 0; }
+  code { background: #21262d; border-radius: 4px; padding: 1px 6px; font-size: 12px; font-family: "Cascadia Code", Consolas, monospace; }
+  .alert { border-left: 4px solid var(--red); background: rgba(248,81,73,.08); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .warn { border-left: 4px solid var(--orange); background: rgba(210,153,34,.08); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .ok { border-left: 4px solid var(--green); background: rgba(63,185,80,.08); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .small { font-size: 12px; color: var(--dim); }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+  .flow .node { background: #21262d; border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px; font-size: 13px; }
+  .flow .arrow { color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>⚡ tpoint 信号质量诊断报告</h1>
+<div class="sub">诊断日期：2026-07-31（周五）｜数据源：output/review_2026-07-30.json、review_2026-07-31.json、data/state.json、data/push_audit.jsonl、logs/monitor_console.log</div>
+
+<div class="alert">
+<strong>核心结论：</strong>「信号质量差」不是单一问题，而是 <strong>4 个独立缺陷叠加</strong> —— 实盘漏推（数据源不稳定 + 首扫抑制误伤）+ 复算口径偏差（腾讯合成数据）+ 高波动行情下策略失效 + 实盘/复算对不上。其中 <strong>实盘漏推是系统性工程缺陷，最严重</strong>。
+</div>
+
+<h2>一、实盘 vs 复算：信号漏推对照</h2>
+<div class="card">
+<h3>07-31 全天信号对照（实盘推送 vs floor 引擎复算）</h3>
+<table>
+<tr><th>标的</th><th>实盘推送 (state.json)</th><th>复算信号 (review)</th><th>差异</th></tr>
+<tr><td>161129.SZ 原油LOF</td><td>B0 / S1</td><td>B2 / S1 / X2（含11:12卖出、13:07回补、13:31买入）</td><td class="r">漏推 4 条（含 1 条有效买入）</td></tr>
+<tr><td>513310.SH 中韩半导体</td><td>B0 / S0</td><td>B2 / S0 / X1（含11:06有效买入）</td><td class="r">全天漏推 3 条</td></tr>
+<tr><td>688111.SH 金山办公</td><td>B1 / S1</td><td>B1 / S1 / X1</td><td class="r">09:33 卖出被首扫抑制吞掉</td></tr>
+<tr><td>588000.SH 科创50ETF</td><td>B4 / S1</td><td>B5 / S1 / X5</td><td class="r">漏推 09:36 买入、10:18 买入等</td></tr>
+</table>
+<p class="small">实盘共推送 7 条，复算共 22 条。系统性漏推约 <strong>50%+</strong> 的复算信号。</p>
+</div>
+
+<h2>二、四大根因详解</h2>
+
+<h3>根因 1（最严重）：数据源不稳定 → 全天系统性漏推</h3>
+<div class="card">
+<div class="flow">
+<span class="node">mootdx 分钟K</span><span class="arrow">→</span><span class="node">腾讯分时兜底</span><span class="arrow">→</span><span class="node">全失败 → no intraday data</span>
+</div>
+<p>07-31 全天大量 <code>no intraday data</code> 警告。具体证据：</p>
+<ul>
+<li><strong>09:25–09:34 全 4 标的无数据</strong>（每轮都打 warning，miss=6 触发静默零信号告警）</li>
+<li><strong>161129.SZ 上午几乎全程无数据</strong>：09:30–10:19 期间每轮都 warning（上午仅 09:34 有一次「腾讯分时兜底失败 getaddrinfo failed」）</li>
+<li>513310.SH 上午 09:30 前 6 连 miss → 静默告警；<strong>上午无任何「腾讯分时兜底成功」记录</strong></li>
+<li>直到 09:35 后 588000.SH 才恢复（腾讯兜底成功 136+ 根），161129/513310 持续失联</li>
+</ul>
+<div class="warn">
+<strong>直接后果：</strong>161129.SZ 的 11:12 卖出、13:07 回补、13:31 买入、14:12 出场、14:55 买入全部漏推；513310.SH 的 11:06 买入、13:35 出场、14:43 买入全部漏推。用户盘中实际只收到 7 条信号，而引擎实际触发了 22 条。
+</div>
+<p class="small">注：现在（22:45）手动测试 4 标的腾讯分时兜底已全部成功（161129→242根、其余→267根），说明是<strong>盘中间歇性 DNS/网络抖动</strong>，收盘后已恢复。但 monitor 盘中重试机制没有把「腾讯分时失败」纳入退避重试，导致长时间失联。</p>
+</div>
+
+<h3>根因 2：首扫抑制误伤真实信号</h3>
+<div class="card">
+<p>09:34:29 日志出现：<code>⏭️ 首扫抑制 1 条历史信号(不重发) 金山办公</code></p>
+<p>这正是 09:33:00 复算出的 688111.SH <strong>卖出信号</strong>（S@253.89，复算判定有效）。</p>
+<div class="alert">
+<strong>问题：</strong>首扫抑制逻辑设计初衷是「重启后丢弃历史 bar 重扫信号，避免刷屏」——但在 09:34 重启后，<code>target_t = '09:30'</code>（now.hour=9 → 09:30），只标记 09:30 前的 bar，<strong>09:30–09:34 的历史 bar 仍会被 detect_for 重扫</strong>，产生信号后被误判为「历史信号」吞掉。而实际上这些 bar 在 5 分钟前刚产生、用户从未收到，是<strong>真实有效的信号</strong>，不是重放！
+</div>
+<p class="small">同理 07-30 的 09:44 实盘推送（B@258.69）比复算 09:35 延迟 9 分钟，说明 07-30 也存在同类延迟/重扫问题。</p>
+</div>
+
+<h3>根因 3：复算口径偏差（腾讯合成数据）</h3>
+<div class="card">
+<p>复算引擎（daily_signal_review.py）当天数据源为 mootdx，mootdx 无分钟K时降级腾讯分时。而腾讯分时接口返回的是<strong>每分钟价格点，无真实 OHLC</strong>——代码用 <code>open=前一根close</code>、<code>high/low=前后两根价格极值</code> 合成近似 K 线。</p>
+<ul>
+<li>588000.SH 09:36 复算 B@1.783 vs 实盘 09:35 B@1.788 —— <strong>价格差 0.005，时间差 1 分钟</strong>，可能源于合成 OHLC 与真实 mootdx 数据差异</li>
+<li>复算信号 22 条中 <strong>9 条有效 / 4 条失效</strong>，但用户实盘看到的 7 条信号中有效/失效分布无法对齐复算口径</li>
+</ul>
+<div class="warn"><strong>影响：</strong>复盘报告的「胜率 69.2%」是在合成数据 + 复算口径下得出的，<strong>不能直接等同于实盘体验</strong>。用户盘中实际收到的信号数量、质量与复盘报告存在系统性偏差。</div>
+</div>
+
+<h3>根因 4：高波动行情下策略失效</h3>
+<div class="card">
+<table>
+<tr><th>指标</th><th>07-31</th><th>07-30</th><th>5日基线</th><th>判定</th></tr>
+<tr><td>日均信号数</td><td class="r">22</td><td class="r">21</td><td>5.67</td><td class="r">异常（4倍）</td></tr>
+<tr><td>日均买入数</td><td class="r">10</td><td class="r">10</td><td>1.83</td><td class="r">异常（5倍）</td></tr>
+<tr><td>信号胜率</td><td class="o">69.2%</td><td>75.0%</td><td>89.31%</td><td class="o">下降 20pp</td></tr>
+<tr><td>平均日内振幅</td><td class="r">9.41%</td><td class="r">9.81%</td><td>5.6%</td><td class="r">异常（1.7倍）</td></tr>
+<tr><td>平均最大偏离VWAP</td><td>3.57%</td><td class="r">4.51%</td><td>2.82%</td><td>偏高</td></tr>
+</table>
+<p>07-30/31 连续两天振幅接近 10%（金山办公 16.06%、中韩半导体 9.35%），VWAP 引力带被瞬间击穿，<strong>「均线引力」触发后立即反向</strong>——4 条失效信号全部是这个模式（买入后最低回撤 0.15%~3.73%，均线引力被反向突破）。</p>
+<div class="ok"><strong>本质：</strong>floor 引擎的「引力回归」假设（价格向 VWAP 均值回归）在单边/暴涨暴跌行情下失效——价格不回归而是趋势延续。这不是 bug，是<strong>策略适用域边界</strong>被击穿。</div>
+</div>
+
+<h2>三、问题严重度排序</h2>
+<table>
+<tr><th>#</th><th>问题</th><th>严重度</th><th>类型</th><th>影响</th></tr>
+<tr><td>1</td><td>数据源不稳定 → 全天漏推 50%+ 信号</td><td class="r">P0 致命</td><td>工程缺陷</td><td>用户盘中少收一半信号</td></tr>
+<tr><td>2</td><td>首扫抑制误伤 09:30 后真实信号</td><td class="r">P0 致命</td><td>逻辑缺陷</td><td>重启后 5~10 分钟信号静默丢失</td></tr>
+<tr><td>3</td><td>腾讯合成数据复算口径 ≠ 实盘</td><td class="o">P1 高</td><td>口径偏差</td><td>复盘报告与实盘体验脱节</td></tr>
+<tr><td>4</td><td>高波动行情策略失效（4条失效信号）</td><td class="o">P1 高</td><td>策略边界</td><td>胜率下降 20pp</td></tr>
+</table>
+
+<h2>四、修复建议</h2>
+<div class="card">
+<ol>
+<li><strong class="r">[P0] 腾讯分时兜底失败加退避重试</strong>：在 <code>_tencent_intraday_fallback</code> 外层套 <code>_retry_with_backoff</code>（参考 mootdx 分钟K），间歇性 DNS 失败可自动恢复。同时把「腾讯分时失败」计入 monitor 每轮诊断，连续 3 轮失败触发告警（已有静默告警但无恢复通知）。</li>
+<li><strong class="r">[P0] 首扫抑制窗口收窄</strong>：首扫时 <code>target_t</code> 应取「当前时间减 3 分钟」而非固定 09:30/13:00，确保刚产生的真实信号不被误吞。或改为：首扫仅抑制 bar 时间戳早于「本次重启前最后一轮扫描时间」的信号。</li>
+<li><strong class="o">[P1] 复算引擎强制用 mootdx 当日数据</strong>：当日复算（review_YYYY-MM-DD）应只接受 mootdx 真实 1m 数据，腾讯分时兜底仅用于盘中实时（实时信号本来就是近似）；避免复盘口径被合成数据污染。</li>
+<li><strong class="o">[P1] 高波动保护</strong>：当标的日内振幅 > 8%（或 VWAP 偏离 > 3%）时，暂停「均线引力」类 B/S 触发（或放大引力带宽度），减少失效信号。可做成 config 开关。</li>
+<li><strong class="p">[P2] 实盘/复算对齐报告</strong>：复盘报告增加「实盘推送 vs 复算信号」diff 表，任何差异自动高亮，帮助持续监控漏推。</li>
+</ol>
+</div>
+
+<h2>五、待办与说明</h2>
+<div class="card">
+<ul>
+<li>PPT 文件 <code>T0震荡行情下的科技赋能(1).pptx</code> 是 <strong>0 字节空文件</strong>（22:06 创建），无法读取内容。请确认是否传输中断/保存失败，重新提供后再结合 T0 震荡语境分析。</li>
+<li>07-31 复盘报告已生成并推送（<code>output/review_2026-07-31.html</code>），自动化也已恢复。</li>
+<li>建议：优先修复 P0 两项（数据源重试 + 首扫窗口），盘中体验立竿见影。</li>
+</ul>
+</div>
+
+</div>
+</body>
+</html>

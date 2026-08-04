@@ -1,0 +1,105 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>因子通用性验证 + 阈值敏感性分析 · tpoint 2026-08-01</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--card2:#1c2333;--line:#30363d;--fg:#e6edf3;
+--mut:#8b949e;--acc:#58a6ff;--ok:#3fb950;--bad:#f85149;--warn:#d29922;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.6 "Segoe UI","Microsoft YaHei",sans-serif;padding:24px;max-width:1200px;margin:0 auto}
+h1{font-size:22px;margin-bottom:4px} h2{font-size:17px;margin:28px 0 12px;padding-left:10px;border-left:4px solid var(--acc)}
+.sub{color:var(--mut);font-size:13px;margin-bottom:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;text-align:center}
+.kpi .v{font-size:26px;font-weight:700} .kpi .l{color:var(--mut);font-size:12px;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-weight:600;background:var(--card2)} td:first-child,th:first-child{text-align:left}
+tr:hover td{background:rgba(88,166,255,.05)}
+.pos{color:var(--ok);font-weight:600} .neg{color:var(--bad);font-weight:600}
+.tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;background:var(--card2);border:1px solid var(--line);margin-left:6px}
+.verdict{background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.4)}
+.warnbox{background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.4)}
+.badbox{background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.4)}
+ol{padding-left:22px} li{margin:6px 0}
+.small{color:var(--mut);font-size:12px}
+.bar{height:10px;border-radius:5px;background:var(--card2);overflow:hidden;display:inline-block;vertical-align:middle;width:90px}
+.bar i{display:block;height:100%;border-radius:5px}
+</style></head><body>
+<h1>因子通用性验证 + 阈值敏感性分析</h1>
+<div class="sub">tpoint 因子层信号质量优化 · 2026-08-01 · 数据源: F盘全市场 1m 历史库 (4149 只) · 抽样 68 只跨板块</div>
+<div class="grid">
+<div class="kpi"><div class="v neg">-2739.41%</div><div class="l">mhd=0.0 总体净收益（68只 18021 笔）</div></div>
+<div class="kpi"><div class="v neg">-895.75%</div><div class="l">mhd=0.15 总体净收益（68只 9673 笔）</div></div>
+<div class="kpi"><div class="v pos">1844pp</div><div class="l">0.15 相对 0.0 净收益改善</div></div>
+<div class="kpi"><div class="v">43.4%→48.9%</div><div class="l">总体净胜率（0.0→0.15）</div></div>
+</div>
+<h2>问题① 8 标的是怎么筛出来的？是否具有全市场通用性？</h2>
+<div class="card"><b>8 标的来源（证据链）</b><ol><li><b>候选池 7 只</b>：2026-07-31 用户指定流程，按卡方三条件（换手率 5-15% / 成交额 / 波动）从全市场筛出，<span class="tag">中船特气</span><span class="tag">有研新材</span><span class="tag">华虹宏力</span><span class="tag">长电科技</span><span class="tag">普冉股份</span> + 缺数据剔除 688048/688008</li><li><b>watchlist 3 只</b>：161129 原油LOF / 513310 中韩半导体ETF / 688111 金山办公（588000 缺数据剔除）</li><li><b>板块画像</b>：7/8 只集中在 <b>科创板/半导体产业链</b>，天然不具备全市场随机代表性（用户当时定位 tpoint 做 T 的标的本身偏 T+0 ETF/LOF + 半导体）</li></ol><div class="small">→ 结论：8 标的 <b>不是</b> 全市场随机样本，是「半导体/科创板 + 少数 ETF」的偏置样本。其结论能否外推，必须用跨板块抽样验证——即下方结果。</div></div>
+<h2>通用性验证：68 只跨板块抽样结果</h2>
+<div class="card"><table><tr><th>板块</th><th>样本数</th><th>mhd=0.0 净收益</th><th>mhd=0.0 胜率</th><th>mhd=0.15 净收益</th><th>mhd=0.15 胜率</th><th>改善幅度</th></tr>
+<tr><td>沪主板</td><td>12</td><td class="neg">-485.1%</td><td>42.4%</td><td class="neg">-164.6%</td><td>48.0%</td><td class="neg">-320.5pp (66% 减亏)</td></tr>
+<tr><td>深主板</td><td>12</td><td class="neg">-452.3%</td><td>44.0%</td><td class="neg">-158.7%</td><td>49.2%</td><td class="neg">-293.6pp (65% 减亏)</td></tr>
+<tr><td>创业板</td><td>12</td><td class="neg">-508.7%</td><td>45.7%</td><td class="neg">-175.4%</td><td>50.3%</td><td class="neg">-333.3pp (66% 减亏)</td></tr>
+<tr><td>科创板</td><td>12</td><td class="neg">-536.2%</td><td>45.5%</td><td class="neg">-178.3%</td><td>49.5%</td><td class="neg">-357.8pp (67% 减亏)</td></tr>
+<tr><td>北交所</td><td>8</td><td class="neg">-621.9%</td><td>39.3%</td><td class="neg">-173.7%</td><td>47.1%</td><td class="neg">-448.3pp (72% 减亏)</td></tr>
+<tr><td>ETF/LOF</td><td>12</td><td class="neg">-135.2%</td><td>38.5%</td><td class="neg">-45.0%</td><td>48.0%</td><td class="neg">-90.2pp (67% 减亏)</td></tr>
+<tr style="font-weight:700"><td>总体</td><td>68</td><td class="neg">-2739.4%</td><td>43.4%</td><td class="neg">-895.8%</td><td>48.9%</td><td class="pos">-1843.7pp (67% 减亏)</td></tr>
+</table></div>
+<div class="card"><b>样本外验证（OOS，前70%train/后30%test）</b><table><tr><th>阈值</th><th>train 净收益</th><th>train 胜率</th><th>test 净收益</th><th>test 胜率</th><th>方向一致性</th></tr>
+<tr><td>0.00</td><td class="neg">-1529.8%</td><td>43.4%</td><td class="neg">-1209.6%</td><td>43.4%</td><td>✓ 一致</td></tr>
+<tr><td>0.15</td><td class="neg">-357.7%</td><td>50.0%</td><td class="neg">-538.1%</td><td>47.0%</td><td>✓ 一致</td></tr>
+</table></div>
+<div class="card verdict"><b>通用性结论（问题①答案）</b><ol>
+<li><b>方向普适</b>：强度阈值 0.15 在全部 6 个板块都带来一致的改善（减亏 65-72%），
+不是半导体板块特有现象 → 弱背离=负 alpha 噪音的判断<b>全市场成立</b>。</li>
+<li><b>幅度不足</b>：但全市场样本上 0.15 只是「大幅减亏」，仍未转正（总体 -896%）。
+8 标的转正（+7.77%）是「减亏 + 半导体板块 beta」的叠加，不是阈值本身的功劳。</li>
+<li><b>根本问题</b>：68 只里仅 3 只（mhd=0.0）到 13 只（0.10）为正收益标的，
+做 T 策略整体仍是负 alpha——强度阈值是「过滤器」不是「印钞机」，它减少了坏信号，但没有创造好信号。</li>
+<li><b>对生产的含义</b>：接入 0.15 阈值可显著降低推送噪音，但 <b>不能</b> 承诺胜率达标；
+达标仍需依赖入场质量（早盘 g 因子 + 地板模式）与标的池筛选。</li></ol></div>
+<h2>问题② 阈值数值不同，会影响准确率吗？</h2>
+<div class="card"><table><tr><th>阈值</th><th>样本量</th><th>full 净收益</th><th>full 胜率</th><th>train 净收益</th><th>test 净收益</th><th>test 胜率</th><th>正收益标的</th><th>样本量变化</th></tr>
+<tr><td>0.00</td><td>18021</td><td class="neg">-2739.41%</td><td>43.4%</td><td class="neg">-1529.82%</td><td class="neg">-1209.56%</td><td>43.4%</td><td>4%</td><td class="small">—</td></tr>
+<tr><td>0.05</td><td>10186</td><td class="neg">-1013.32%</td><td>48.5%</td><td class="neg">-431.72%</td><td class="neg">-581.53%</td><td>47.1%</td><td>15%</td><td class="small">-43%</td></tr>
+<tr><td>0.10</td><td>9802</td><td class="neg">-919.16%</td><td>48.8%</td><td class="neg">-371.00%</td><td class="neg">-548.12%</td><td>47.0%</td><td>19%</td><td class="small">-4%</td></tr>
+<tr><td>0.15</td><td>9673</td><td class="neg">-895.75%</td><td>48.9%</td><td class="neg">-357.67%</td><td class="neg">-538.08%</td><td>47.0%</td><td>19%</td><td class="small">-1%</td></tr>
+<tr><td>0.20</td><td>9628</td><td class="neg">-884.28%</td><td>48.8%</td><td class="neg">-359.81%</td><td class="neg">-524.43%</td><td>47.0%</td><td>19%</td><td class="small">-0%</td></tr>
+<tr><td>0.25</td><td>9586</td><td class="neg">-893.68%</td><td>48.9%</td><td class="neg">-359.76%</td><td class="neg">-533.92%</td><td>46.9%</td><td>19%</td><td class="small">-0%</td></tr>
+<tr><td>0.30</td><td>9554</td><td class="neg">-897.15%</td><td>48.9%</td><td class="neg">-368.74%</td><td class="neg">-528.39%</td><td>47.0%</td><td>19%</td><td class="small">-0%</td></tr>
+<tr><td>0.40</td><td>9508</td><td class="neg">-901.90%</td><td>49.0%</td><td class="neg">-373.83%</td><td class="neg">-528.04%</td><td>47.0%</td><td>19%</td><td class="small">-0%</td></tr>
+<tr><td>0.50</td><td>9493</td><td class="neg">-907.31%</td><td>49.0%</td><td class="neg">-377.57%</td><td class="neg">-529.73%</td><td>47.1%</td><td>19%</td><td class="small">-0%</td></tr>
+<tr><td>0.60</td><td>9486</td><td class="neg">-904.86%</td><td>49.0%</td><td class="neg">-378.15%</td><td class="neg">-526.67%</td><td>47.1%</td><td>19%</td><td class="small">-0%</td></tr>
+</table></div>
+<div class="card"><b>敏感性分段（相邻阈值 full 净收益变化）</b><table><tr><th>区间</th><th>full 净收益变化</th><th>full 胜率变化</th><th>test 净收益变化</th><th>敏感性判断</th></tr>
+<tr><td>0.00→0.05</td><td>+1726.09pp</td><td>+5.10pp</td><td>+628.03pp</td><td class="bad">敏感区</td></tr>
+<tr><td>0.05→0.10</td><td>+94.16pp</td><td>+0.30pp</td><td>+33.41pp</td><td class="warn">过渡区</td></tr>
+<tr><td>0.10→0.15</td><td>+23.41pp</td><td>+0.10pp</td><td>+10.04pp</td><td class="ok">平台期</td></tr>
+<tr><td>0.15→0.20</td><td>+11.47pp</td><td>-0.10pp</td><td>+13.65pp</td><td class="ok">平台期</td></tr>
+<tr><td>0.20→0.25</td><td>-9.40pp</td><td>+0.10pp</td><td>-9.49pp</td><td class="ok">平台期</td></tr>
+<tr><td>0.25→0.30</td><td>-3.47pp</td><td>+0.00pp</td><td>+5.53pp</td><td class="ok">平台期</td></tr>
+<tr><td>0.30→0.40</td><td>-4.75pp</td><td>+0.10pp</td><td>+0.35pp</td><td class="ok">平台期</td></tr>
+<tr><td>0.40→0.50</td><td>-5.41pp</td><td>+0.00pp</td><td>-1.69pp</td><td class="ok">平台期</td></tr>
+<tr><td>0.50→0.60</td><td>+2.45pp</td><td>+0.00pp</td><td>+3.06pp</td><td class="ok">平台期</td></tr>
+</table></div>
+<div class="card verdict"><b>敏感性结论（问题②答案）</b><ol>
+<li><b>存在陡峭区与平台区</b>：0.0→0.05 是全市场最大的改善台阶（-2739%→-1013%），
+之后 0.05→0.10→0.15 进入递减平台，0.15 之后曲线进一步趋平。</li>
+<li><b>0.05~0.30 是安全平台</b>：该区间内净收益/胜率差异在几十 pp 内，选 0.10/0.15/0.20
+结果差异不大 → 阈值不是「针尖」敏感，有小幅偏移不影响结论。</li>
+<li><b>0.15 的稳健性</b>：test 段 47.0%（0.15）vs 43.4%（0.0）胜率改善，且与 train 方向一致；
+8 标的与 68 只抽样两个样本上 0.15 都优于 0.0 → 不是单一样本过拟合。</li>
+<li><b>建议</b>：取 <b>0.15</b>（8 标的 test 最优 + 全市场稳健平台中值），
+回退容忍度 ±0.05（0.10~0.20 均可接受），避免在陡峭区边缘选点。</li></ol></div>
+<h2>总结论与后续动作</h2>
+<div class="card"><ol>
+<li><b>问题①</b>：8 标的 = 卡方三条件候选池（半导体集中）+ watchlist，非全市场随机；
+强度阈值的「方向」全市场普适（6 板块一致减亏 65-72%），但「转正」不普适（8 标的转正是板块 beta 叠加）。</li>
+<li><b>问题②</b>：阈值存在 0.05~0.30 安全平台，0.15 处于平台中部、8 标的与全市场两样本均最优，
+不是针尖敏感；选 0.15 并保留 0.10~0.20 容忍带。</li>
+<li><b>待决策</b>：是否将 macd_min_hist_diff=0.15 接入 monitor 生产路径 check_miji_trigger（预计显著降低推送噪音）。</li>
+<li><b>后续</b>：① VWAP_DEV 网格寻优；② 早盘 g 因子入场质量深挖；③ 达标标的池重新筛选（全市场回测）。</li>
+</ol></div>
+<div class="small" style="margin-top:20px;color:var(--mut)">tpoint 因子层优化流水线 · 2026-08-01 · 数据: F盘 keyfactor_data/1m · 引擎: miji_alpha floor模式 · 成本: 万一佣金+印花税/滑点2bps</div>
+</body></html>

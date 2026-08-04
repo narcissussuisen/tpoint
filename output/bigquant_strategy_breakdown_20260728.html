@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BigQuant 日频轮动策略 · 源码拆解与本地部署可行性</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1f2430; --mut:#5b6472; --line:#e6e9ef; --accent:#2f6df0;
+    --ok:#1a9d5a; --bad:#d23b3b; --warn:#c98a00; --codebg:#f5f7fb; --soft:#f0f3f9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 -apple-system,"Segoe UI",Roboto,"Helvetica Neue","PingFang SC","Microsoft YaHei",sans-serif;max-width:980px;margin:0 auto;padding:32px 22px 60px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:.5px}
+  h2{font-size:20px;margin:34px 0 10px;padding-left:10px;border-left:4px solid var(--accent)}
+  h3{font-size:16px;margin:22px 0 8px;color:var(--accent)}
+  .sub{color:var(--mut);font-size:13px;margin-bottom:18px}
+  code{background:var(--codebg);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#243}
+  pre{background:var(--codebg);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:600}
+  .tag{display:inline-block;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600}
+  .t-ok{background:#e6f7ee;color:var(--ok)}
+  .t-bad{background:#fdeaea;color:var(--bad)}
+  .t-warn{background:#fdf4e0;color:var(--warn)}
+  .callout{border:1px solid var(--line);border-left:4px solid var(--warn);background:#fffdf6;border-radius:8px;padding:12px 16px;margin:14px 0}
+  .callout.bad{border-left-color:var(--bad);background:#fff7f7}
+  .callout.ok{border-left-color:var(--ok);background:#f5fcf8}
+  ul{margin:8px 0 8px 4px;padding-left:20px}
+  li{margin:5px 0}
+  .kv{font-family:ui-monospace,monospace;font-size:13px}
+  .foot{margin-top:40px;border-top:1px solid var(--line);padding-top:16px;color:var(--mut);font-size:12.5px}
+  .path{background:#f0f3f9;border-radius:6px;padding:2px 8px;font-family:ui-monospace,monospace;font-size:13px}
+</style>
+</head>
+<body>
+
+<h1>BigQuant 日频轮动策略 · 源码拆解与本地部署可行性</h1>
+<div class="sub">拆解对象：<span class="kv">m2(input_features_dai) → m3(extract_data_dai) → m4(data_sort) → m1(bigtrader)</span>　|　评估基线：tpoint 现有地基（mootdx 行情 + pandas 工程 + quant-backtest-lab 回测能力）</div>
+
+<h2>一、源码完整拆解</h2>
+
+<h3>1. 数据流管线（m2 / m3 / m4）</h3>
+<ul>
+  <li><b>m2 <code>input_features_dai</code>（表达式模式）</b>：从<b>自定义表 <code>tianzhu10_f100_30_y51</code></b> 取出 <code>score</code>、<code>position</code> 两列（外加 <code>date / instrument</code>）。</li>
+  <li class="callout bad"><b>⚠️ 关键"陷阱"：m2 里那段大 SQL（return_90 / return_30 / volume rank…）是死代码。</b> 因为 <code>mode="表达式"</code>，真正生效的是 <code>expr</code> 字段（score + position），那一大段 <code>sql</code> 只是模板示例，回测时根本没跑。读图时千万别被它误导，以为策略真实信号是这些因子——它不是。</li>
+  <li><b>m3 <code>extract_data_dai</code></b>：把 m2 结果按日期窗口 <span class="kv">2025-01-01 ~ 2026-03-16</span> 抽取，<code>before_start_days=90</code> 用于前置因子预热。</li>
+  <li><b>m4 <code>data_sort</code></b>：按 <code>position</code> <b>升序</b>（<code>ascending=True</code>）、按 <code>date</code> 分组排序 → 每天内，<code>position</code> 最小的排最前。</li>
+  <li><b>m1 <code>bigtrader</code></b>：回测引擎，读取 m4 排好序的数据逐日执行。</li>
+</ul>
+
+<h3>2. 交易引擎（m1 handle_data）</h3>
+<ul>
+  <li><b>参数</b>：<code>stock_count=1</code>、<code>hold_days=1</code>、<code>max_cash_per_instrument=1</code>（单只最多 100% 仓位）、佣金 <span class="kv">买0.0003 / 卖0.0013 / 最低5元</span>、基准 <b>沪深300</b>。</li>
+  <li><b>权重</b>：<code>stock_weights=[1/log(2)]</code> 归一化 = <code>[1.0]</code> → 全部资金压在 1 只票上。</li>
+  <li><b>每日流程</b>：
+    <ul>
+      <li>取当日预测行（<code>ranker_prediction</code>）。</li>
+      <li><code>is_staging = trading_day_index &lt; 1</code>（仅第 0 天为建仓期）。</li>
+      <li><code>cash_avg = 组合净值 / 1</code>；建仓期买 = <code>min(现金, 1×cash_avg)</code>，之后 = <code>min(现金, 1.5×cash_avg)</code>。</li>
+      <li><b>卖出</b>：非建仓期，对持仓中"排名最末位"（reversed 顺序）的票 <code>order_target(0)</code> 清仓。</li>
+      <li><b>买入</b>：取排名最前 1 只（<code>position</code> 最小），按权重分配资金 <code>order_value</code> 买入，受 <code>max_cash_per_instrument</code> 约束。</li>
+    </ul>
+  </li>
+  <li><b>成交价</b>：买入用<b>开盘价</b>（<code>order_price_field_buy="open"</code>），卖出用<b>收盘价</b>（<code>order_price_field_sell="close"</code>）。</li>
+</ul>
+
+<h3>3. 策略内核（一句话）</h3>
+<div class="callout">每天在表覆盖的股票池里，挑 <code>position</code> 最小（模型判定的"最该买"）的 <b>1 只</b>票，<b>开盘买入、次日收盘卖出</b>，100% 集中持仓、日频轮动。<br><br>
+<code>position</code> 来自 <code>tianzhu10_f100_30_y51</code> 这张自定义表——它本质是<b>某个 ML / 排序模型输出的排名或打分</b>，是整条策略的 alpha 来源。<code>score</code> 字段被取了但交易里没用，真正驱动交易的是 <code>position</code>。</div>
+
+<h2>二、吃透策略：赚的是什么、坑在哪</h2>
+
+<h3>赚的是什么</h3>
+<ul>
+  <li><b>短周期截面轮动</b>：SQL 模板露出的因子是 <code>return_90</code>、<code>return_30</code>、<code>volume rank</code>（近 90/30 日收益、成交量排名），属于典型的"近期相对强弱 + 量能异动"短持信号。具体 alpha 取决于 <code>position</code> 背后的模型。</li>
+  <li><b>高换手、高集中</b>：单票满仓、日频轮动，赌的是单票 short-term edge 在小样本上的胜率/赔率叠加。</li>
+</ul>
+
+<h3>坑（也是本地化要补的）</h3>
+<table>
+  <tr><th>#</th><th>风险</th><th>说明</th></tr>
+  <tr><td>1</td><td>流动性缺失</td><td>100% 压一只票，<code>volume_limit=1</code> 只限"不超当日成交量"，没有"日均成交额/市值"下限；真实盘可能买不进/卖不出或冲击成本爆炸。</td></tr>
+  <tr><td>2</td><td>集中度极端</td><td>单票满仓，无分散、无价格止损（只有"次日清仓"这条时间止损），黑天鹅直接腰斩。</td></tr>
+  <tr><td>3</td><td>T+1 时序依赖</td><td>买开盘、卖收盘——这里卖的是"昨天买的<b>另一只</b>"，同票不同日，T+1 合规；本地复刻必须保持"昨日持仓今日卖、今日新选开盘买"的错位，不能做成同票当日买卖。</td></tr>
+  <tr><td>4</td><td>现金时序耦合</td><td>BigQuant 里买(open)/卖(close)同根 bar 的现金记账有特殊性（卖出释放现金可供同日买入）。本地用 pandas 复刻最干净的做法是显式建模"T 日收盘卖旧 → T+1 开盘买新"，避免踩隐含语义。</td></tr>
+  <tr><td>5</td><td>不复权风险</td><td>BigQuant 的 <code>cn_stock_bar1d</code> 默认前/后复权处理；本地 mootdx 返回<b>不复权</b>价，跨年回测必须自己处理除权，否则 <code>return_90</code> 之类因子会被分红拆股污染。</td></tr>
+</table>
+
+<h2>三、本地部署可行性评估（基于 tpoint 现有基础）</h2>
+
+<h3>现有"地基"（已实地核查可用）</h3>
+<ul>
+  <li>✅ <b>行情</b>：mootdx（TDX TCP 7709）可取任意 A 股日K/1m；腾讯 HTTP 兜底 → <b>全市场日线可拿</b>。</li>
+  <li>✅ <b>工程</b>：pandas / numpy + tickflow 风格接口（<code>datasource.py</code>）已对齐。</li>
+  <li>✅ <b>回测</b>：quant-backtest-lab 技能 + 自写 pandas 回测；tpoint 已有 v9 回测范式。</li>
+  <li>✅ <b>基建</b>：实盘/推送/飞书交付齐全。</li>
+</ul>
+
+<h3>三大硬缺口</h3>
+<div class="callout bad">
+<ol>
+  <li><b><code>tianzhu10_f100_30_y51</code> 自定义表拿不到</b>——这是 BigQuant 上你（或某来源）上传/训练出来的私有表，含 <code>score</code>/<code>position</code>。本地无等价物，是<b>唯一真正的阻塞点</b>。</li>
+  <li><b><code>position</code> 生成逻辑未知</b>——模板 SQL 仅露出"可能用到的因子"，但 <code>position</code> 由什么模型（LightGBM？XGBoost？）、什么标签、什么窗口产出，图里没给。且 venv <b>无 sklearn/lightgbm/xgboost</b>（已查 site-packages 确认）。</li>
+  <li><b>全市场日线回测前置工程缺失</b>：(a) 全 A 股票池枚举 + ST 过滤（对应 BigQuant 的 <code>st_status=0</code>，本地要对"ST"/风险警示做名称/标记过滤）；(b) 前复权处理；(c) 批量取数（数千只 × ~320 根日K，需管 TDX 限速与本地缓存）。</li>
+</ol>
+</div>
+
+<h3>结论矩阵：框架 100% 能本地化，alpha 不能（除非你给料）</h3>
+<table>
+  <tr><th>模块</th><th>本地可复刻？</th><th>说明</th></tr>
+  <tr><td>全 A 日线数据</td><td><span class="tag t-ok">能</span></td><td>mootdx + 自建股票池枚举 + 前复权</td></tr>
+  <tr><td>因子（return_90/30、vol rank）</td><td><span class="tag t-ok">能</span></td><td>pandas 几十行搞定</td></tr>
+  <tr><td>日频轮动引擎（买开/卖收、T+1、佣金、单名满仓）</td><td><span class="tag t-ok">能</span></td><td>比 BigQuant 模板更干净</td></tr>
+  <tr><td>回测 / 绩效 / 仪表盘</td><td><span class="tag t-ok">能</span></td><td>quant-backtest-lab + 现有基建</td></tr>
+  <tr><td><b>position 信号本身</b></td><td><span class="tag t-bad">不能</span></td><td>依赖私有表 + 未知模型</td></tr>
+</table>
+
+<h3>三条落地路径（按"你给多少料"分）</h3>
+<table>
+  <tr><th>路径</th><th>你需要给</th><th>我能做的</th><th>用时</th></tr>
+  <tr>
+    <td><b>A · 导出 CSV（最忠实）</b></td>
+    <td>把 <code>tianzhu10_f100_30_y51</code> 按日期区间导出成 <span class="kv">(date, instrument, position[, score])</span> 的 CSV</td>
+    <td>直接喂进本地回测引擎，<b>原样复刻</b>整条策略，验证真实收益/回撤/换手</td>
+    <td>半天跑通</td>
+  </tr>
+  <tr>
+    <td><b>B · 重建模型</b></td>
+    <td><code>position</code> 的特征集、标签定义、算法、训练/预测窗口</td>
+    <td>本地用 sklearn/lightgbm 重训（需先装包），用本地因子复现——但"标签是什么"必须你定</td>
+    <td>中等</td>
+  </tr>
+  <tr>
+    <td><b>C · 代理因子原型</b></td>
+    <td>无需真实信号</td>
+    <td>先用模板 SQL 露出的 return_90/30、volume rank 阈值当"伪 position"，把<b>数据→因子→选股→回测</b>整条管线在本地跑通并验证工程正确性；真是信号到位再替换</td>
+    <td>最快</td>
+  </tr>
+</table>
+
+<h2>四、若开工的工程注意点</h2>
+<ul>
+  <li><b>T+1 错位</b>：今日卖旧、明日买新，严禁同票当日 round-trip。</li>
+  <li><b>复权</b>：日线必须前复权（或调整后），否则因子失真。</li>
+  <li><b>流动性</b>：务必加"日均成交额/自由流通市值"下限，单票满仓才有可执行性。</li>
+  <li><b>取数规模</b>：全 A × 15 个月日线是批处理任务，需管 TDX 限速、断点续传、本地缓存。</li>
+  <li><b>股票池对齐</b>：自定义表覆盖的 universe 未必是全 A；回测时要和该表 <code>instrument</code> 列表对齐，否则前后不一致。</li>
+</ul>
+
+<h2>五、结论</h2>
+<div class="callout ok">
+<b>框架层可完整本地化，alpha 层（<code>tianzhu10_f100_30_y51</code> 私有表及其背后的模型）是当前唯一阻塞。</b><br>
+我能立刻把"数据→因子→日频轮动回测"管线在 tpoint 上搭起来并跑通（路径 C）；但要在本地复现它的真实收益，必须你先给 <code>position</code> 信号——要么导出那张表（A），要么给模型定义（B）。<br><br>
+你倾向哪条？我可以马上开干。
+</div>
+
+<div class="foot">
+  ⚠️ 以上内容由 AI 基于公开信息整理生成，仅供参考，不构成任何投资建议或个股推荐。投资有风险，决策需谨慎。<br>
+  生成时间：2026-07-28　|　分析基线：tpoint 项目（mootdx 行情源 / pandas 工程 / quant-backtest-lab 回测能力）
+</div>
+
+</body>
+</html>

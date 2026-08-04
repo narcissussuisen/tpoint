@@ -1,0 +1,569 @@
+{
+ "generated_at": "2026-08-02 23:48:13",
+ "model_ver": "v1.0.0-ml-20260802",
+ "thresholds": {
+  "T_HI": 0.6,
+  "T_LO": 0.45
+ },
+ "per_symbol": {
+  "161129.SZ": {
+   "symbol": "161129.SZ",
+   "name": "161129 原油LOF",
+   "n_signals": 138,
+   "n_trips": 38,
+   "signal_level": {
+    "all": {
+     "boost": {
+      "n": 26,
+      "wins": 17,
+      "win_rate_sig": 65.4
+     },
+     "filter": {
+      "n": 83,
+      "wins": 31,
+      "win_rate_sig": 37.3
+     },
+     "keep": {
+      "n": 29,
+      "wins": 18,
+      "win_rate_sig": 62.1
+     },
+     "ALL": {
+      "n": 138,
+      "wins": 66,
+      "win_rate_sig": 47.8
+     }
+    },
+    "by_type": {
+     "B": {
+      "boost": {
+       "n": 21,
+       "wins": 12,
+       "win_rate_sig": 57.1
+      },
+      "filter": {
+       "n": 16,
+       "wins": 10,
+       "win_rate_sig": 62.5
+      },
+      "keep": {
+       "n": 8,
+       "wins": 7,
+       "win_rate_sig": 87.5
+      },
+      "ALL": {
+       "n": 45,
+       "wins": 29,
+       "win_rate_sig": 64.4
+      }
+     },
+     "S": {
+      "boost": {
+       "n": 5,
+       "wins": 5,
+       "win_rate_sig": 100.0
+      },
+      "filter": {
+       "n": 67,
+       "wins": 21,
+       "win_rate_sig": 31.3
+      },
+      "keep": {
+       "n": 21,
+       "wins": 11,
+       "win_rate_sig": 52.4
+      },
+      "ALL": {
+       "n": 93,
+       "wins": 37,
+       "win_rate_sig": 39.8
+      }
+     }
+    }
+   },
+   "trade_level": {
+    "all": {
+     "n": 38,
+     "wins": 24,
+     "win_rate_trade": 63.2
+    },
+    "by_action": {
+     "boost": {
+      "n": 18,
+      "wins": 12,
+      "win_rate_trade": 66.7
+     },
+     "filter": {
+      "n": 15,
+      "wins": 7,
+      "win_rate_trade": 46.7
+     },
+     "keep": {
+      "n": 5,
+      "wins": 5,
+      "win_rate_trade": 100.0
+     },
+     "ALL": {
+      "n": 38,
+      "wins": 24,
+      "win_rate_trade": 63.2
+     }
+    }
+   }
+  },
+  "513310.SH": {
+   "symbol": "513310.SH",
+   "name": "513310 中韩半导体ETF",
+   "n_signals": 115,
+   "n_trips": 22,
+   "signal_level": {
+    "all": {
+     "boost": {
+      "n": 29,
+      "wins": 13,
+      "win_rate_sig": 44.8
+     },
+     "filter": {
+      "n": 41,
+      "wins": 23,
+      "win_rate_sig": 56.1
+     },
+     "keep": {
+      "n": 45,
+      "wins": 23,
+      "win_rate_sig": 51.1
+     },
+     "ALL": {
+      "n": 115,
+      "wins": 59,
+      "win_rate_sig": 51.3
+     }
+    },
+    "by_type": {
+     "B": {
+      "boost": {
+       "n": 20,
+       "wins": 7,
+       "win_rate_sig": 35.0
+      },
+      "filter": {
+       "n": 5,
+       "wins": 3,
+       "win_rate_sig": 60.0
+      },
+      "keep": {
+       "n": 6,
+       "wins": 0,
+       "win_rate_sig": 0.0
+      },
+      "ALL": {
+       "n": 31,
+       "wins": 10,
+       "win_rate_sig": 32.3
+      }
+     },
+     "S": {
+      "boost": {
+       "n": 9,
+       "wins": 6,
+       "win_rate_sig": 66.7
+      },
+      "filter": {
+       "n": 36,
+       "wins": 20,
+       "win_rate_sig": 55.6
+      },
+      "keep": {
+       "n": 39,
+       "wins": 23,
+       "win_rate_sig": 59.0
+      },
+      "ALL": {
+       "n": 84,
+       "wins": 49,
+       "win_rate_sig": 58.3
+      }
+     }
+    }
+   },
+   "trade_level": {
+    "all": {
+     "n": 22,
+     "wins": 11,
+     "win_rate_trade": 50.0
+    },
+    "by_action": {
+     "boost": {
+      "n": 13,
+      "wins": 6,
+      "win_rate_trade": 46.2
+     },
+     "filter": {
+      "n": 5,
+      "wins": 4,
+      "win_rate_trade": 80.0
+     },
+     "keep": {
+      "n": 4,
+      "wins": 1,
+      "win_rate_trade": 25.0
+     },
+     "ALL": {
+      "n": 22,
+      "wins": 11,
+      "win_rate_trade": 50.0
+     }
+    }
+   }
+  },
+  "300058.SZ": {
+   "symbol": "300058.SZ",
+   "name": "300058 蓝色光标",
+   "n_signals": 529,
+   "n_trips": 116,
+   "signal_level": {
+    "all": {
+     "boost": {
+      "n": 159,
+      "wins": 123,
+      "win_rate_sig": 77.4
+     },
+     "filter": {
+      "n": 246,
+      "wins": 68,
+      "win_rate_sig": 27.6
+     },
+     "keep": {
+      "n": 124,
+      "wins": 50,
+      "win_rate_sig": 40.3
+     },
+     "ALL": {
+      "n": 529,
+      "wins": 241,
+      "win_rate_sig": 45.6
+     }
+    },
+    "by_type": {
+     "B": {
+      "boost": {
+       "n": 75,
+       "wins": 57,
+       "win_rate_sig": 76.0
+      },
+      "filter": {
+       "n": 52,
+       "wins": 15,
+       "win_rate_sig": 28.8
+      },
+      "keep": {
+       "n": 27,
+       "wins": 15,
+       "win_rate_sig": 55.6
+      },
+      "ALL": {
+       "n": 154,
+       "wins": 87,
+       "win_rate_sig": 56.5
+      }
+     },
+     "S": {
+      "boost": {
+       "n": 84,
+       "wins": 66,
+       "win_rate_sig": 78.6
+      },
+      "filter": {
+       "n": 194,
+       "wins": 53,
+       "win_rate_sig": 27.3
+      },
+      "keep": {
+       "n": 97,
+       "wins": 35,
+       "win_rate_sig": 36.1
+      },
+      "ALL": {
+       "n": 375,
+       "wins": 154,
+       "win_rate_sig": 41.1
+      }
+     }
+    }
+   },
+   "trade_level": {
+    "all": {
+     "n": 116,
+     "wins": 61,
+     "win_rate_trade": 52.6
+    },
+    "by_action": {
+     "boost": {
+      "n": 58,
+      "wins": 40,
+      "win_rate_trade": 69.0
+     },
+     "filter": {
+      "n": 41,
+      "wins": 11,
+      "win_rate_trade": 26.8
+     },
+     "keep": {
+      "n": 17,
+      "wins": 10,
+      "win_rate_trade": 58.8
+     },
+     "ALL": {
+      "n": 116,
+      "wins": 61,
+      "win_rate_trade": 52.6
+     }
+    }
+   }
+  },
+  "600570.SH": {
+   "symbol": "600570.SH",
+   "name": "600570 恒生电子",
+   "n_signals": 256,
+   "n_trips": 52,
+   "signal_level": {
+    "all": {
+     "boost": {
+      "n": 82,
+      "wins": 72,
+      "win_rate_sig": 87.8
+     },
+     "filter": {
+      "n": 125,
+      "wins": 21,
+      "win_rate_sig": 16.8
+     },
+     "keep": {
+      "n": 49,
+      "wins": 28,
+      "win_rate_sig": 57.1
+     },
+     "ALL": {
+      "n": 256,
+      "wins": 121,
+      "win_rate_sig": 47.3
+     }
+    },
+    "by_type": {
+     "B": {
+      "boost": {
+       "n": 31,
+       "wins": 28,
+       "win_rate_sig": 90.3
+      },
+      "filter": {
+       "n": 30,
+       "wins": 6,
+       "win_rate_sig": 20.0
+      },
+      "keep": {
+       "n": 6,
+       "wins": 6,
+       "win_rate_sig": 100.0
+      },
+      "ALL": {
+       "n": 67,
+       "wins": 40,
+       "win_rate_sig": 59.7
+      }
+     },
+     "S": {
+      "boost": {
+       "n": 51,
+       "wins": 44,
+       "win_rate_sig": 86.3
+      },
+      "filter": {
+       "n": 95,
+       "wins": 15,
+       "win_rate_sig": 15.8
+      },
+      "keep": {
+       "n": 43,
+       "wins": 22,
+       "win_rate_sig": 51.2
+      },
+      "ALL": {
+       "n": 189,
+       "wins": 81,
+       "win_rate_sig": 42.9
+      }
+     }
+    }
+   },
+   "trade_level": {
+    "all": {
+     "n": 52,
+     "wins": 31,
+     "win_rate_trade": 59.6
+    },
+    "by_action": {
+     "boost": {
+      "n": 24,
+      "wins": 20,
+      "win_rate_trade": 83.3
+     },
+     "filter": {
+      "n": 23,
+      "wins": 8,
+      "win_rate_trade": 34.8
+     },
+     "keep": {
+      "n": 5,
+      "wins": 3,
+      "win_rate_trade": 60.0
+     },
+     "ALL": {
+      "n": 52,
+      "wins": 31,
+      "win_rate_trade": 59.6
+     }
+    }
+   }
+  },
+  "688111.SH": {
+   "symbol": "688111.SH",
+   "name": "688111 金山办公",
+   "n_signals": 398,
+   "n_trips": 80,
+   "signal_level": {
+    "all": {
+     "boost": {
+      "n": 217,
+      "wins": 131,
+      "win_rate_sig": 60.4
+     },
+     "filter": {
+      "n": 95,
+      "wins": 23,
+      "win_rate_sig": 24.2
+     },
+     "keep": {
+      "n": 86,
+      "wins": 31,
+      "win_rate_sig": 36.0
+     },
+     "ALL": {
+      "n": 398,
+      "wins": 185,
+      "win_rate_sig": 46.5
+     }
+    },
+    "by_type": {
+     "B": {
+      "boost": {
+       "n": 63,
+       "wins": 45,
+       "win_rate_sig": 71.4
+      },
+      "filter": {
+       "n": 13,
+       "wins": 1,
+       "win_rate_sig": 7.7
+      },
+      "keep": {
+       "n": 20,
+       "wins": 8,
+       "win_rate_sig": 40.0
+      },
+      "ALL": {
+       "n": 96,
+       "wins": 54,
+       "win_rate_sig": 56.2
+      }
+     },
+     "S": {
+      "boost": {
+       "n": 154,
+       "wins": 86,
+       "win_rate_sig": 55.8
+      },
+      "filter": {
+       "n": 82,
+       "wins": 22,
+       "win_rate_sig": 26.8
+      },
+      "keep": {
+       "n": 66,
+       "wins": 23,
+       "win_rate_sig": 34.8
+      },
+      "ALL": {
+       "n": 302,
+       "wins": 131,
+       "win_rate_sig": 43.4
+      }
+     }
+    }
+   },
+   "trade_level": {
+    "all": {
+     "n": 80,
+     "wins": 45,
+     "win_rate_trade": 56.2
+    },
+    "by_action": {
+     "boost": {
+      "n": 52,
+      "wins": 33,
+      "win_rate_trade": 63.5
+     },
+     "filter": {
+      "n": 12,
+      "wins": 5,
+      "win_rate_trade": 41.7
+     },
+     "keep": {
+      "n": 16,
+      "wins": 7,
+      "win_rate_trade": 43.8
+     },
+     "ALL": {
+      "n": 80,
+      "wins": 45,
+      "win_rate_trade": 56.2
+     }
+    }
+   }
+  }
+ },
+ "pool": {
+  "boost": {
+   "sig_win_rate": 69.4,
+   "sig_n": 513,
+   "sig_wins": 356,
+   "trade_win_rate": 67.3,
+   "trade_n": 165,
+   "trade_wins": 111
+  },
+  "filter": {
+   "sig_win_rate": 28.1,
+   "sig_n": 590,
+   "sig_wins": 166,
+   "trade_win_rate": 36.5,
+   "trade_n": 96,
+   "trade_wins": 35
+  },
+  "keep": {
+   "sig_win_rate": 45.0,
+   "sig_n": 333,
+   "sig_wins": 150,
+   "trade_win_rate": 55.3,
+   "trade_n": 47,
+   "trade_wins": 26
+  },
+  "ALL": {
+   "sig_win_rate": 46.8,
+   "sig_n": 1436,
+   "sig_wins": 672,
+   "trade_win_rate": 55.8,
+   "trade_n": 308,
+   "trade_wins": 172
+  }
+ }
+}

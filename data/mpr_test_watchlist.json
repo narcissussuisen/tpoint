@@ -1,0 +1,525 @@
+{
+  "generated_at": "2026-08-02 09:20:25",
+  "symbols": [
+    "161129.SZ",
+    "513310.SH",
+    "300058.SZ",
+    "600570.SH",
+    "688111.SH"
+  ],
+  "config": {
+    "use_stop": false,
+    "use_time": false,
+    "use_trailing": true,
+    "trail_activate_pct": 0.4,
+    "trail_pct": 0.6,
+    "s_signal_exit": true
+  },
+  "combos": [
+    {
+      "name": "baseline",
+      "label": "基线 mhd0.15",
+      "side": null,
+      "periods": null,
+      "pool": {
+        "all": {
+          "n": 5,
+          "med_win": 47.8,
+          "total_trips": 659
+        },
+        "B": {
+          "n": 5,
+          "med_win": 47.8,
+          "total_trips": 659
+        },
+        "S": {
+          "n": 5,
+          "med_win": 93.3,
+          "total_trips": 133
+        }
+      },
+      "n_b_sig": 1325,
+      "n_s_sig": 1029,
+      "per_symbol": {
+        "513310.SH": {
+          "total": 59,
+          "win_rate": 45.8,
+          "pl_ratio": 0.79,
+          "total_b": 122,
+          "total_s": 84,
+          "total_s_trips": 3,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 66
+        },
+        "161129.SZ": {
+          "total": 79,
+          "win_rate": 54.4,
+          "pl_ratio": 0.87,
+          "total_b": 138,
+          "total_s": 91,
+          "total_s_trips": 14,
+          "win_s": 92.9,
+          "pl_s": 22.54,
+          "days": 66
+        },
+        "600570.SH": {
+          "total": 103,
+          "win_rate": 50.5,
+          "pl_ratio": 0.57,
+          "total_b": 191,
+          "total_s": 186,
+          "total_s_trips": 30,
+          "win_s": 93.3,
+          "pl_s": 1.4,
+          "days": 124
+        },
+        "300058.SZ": {
+          "total": 207,
+          "win_rate": 47.8,
+          "pl_ratio": 0.87,
+          "total_b": 467,
+          "total_s": 372,
+          "total_s_trips": 21,
+          "win_s": 95.2,
+          "pl_s": 2.33,
+          "days": 145
+        },
+        "688111.SH": {
+          "total": 211,
+          "win_rate": 46.4,
+          "pl_ratio": 0.76,
+          "total_b": 407,
+          "total_s": 296,
+          "total_s_trips": 65,
+          "win_s": 70.8,
+          "pl_s": 0.75,
+          "days": 145
+        }
+      }
+    },
+    {
+      "name": "mpr_s60",
+      "label": "S侧 mpr60(>0)",
+      "side": "S",
+      "periods": [
+        60
+      ],
+      "pool": {
+        "all": {
+          "n": 5,
+          "med_win": 45.7,
+          "total_trips": 680
+        },
+        "B": {
+          "n": 5,
+          "med_win": 45.7,
+          "total_trips": 680
+        },
+        "S": {
+          "n": 5,
+          "med_win": 100.0,
+          "total_trips": 56
+        }
+      },
+      "n_b_sig": 1379,
+      "n_s_sig": 307,
+      "per_symbol": {
+        "513310.SH": {
+          "total": 60,
+          "win_rate": 45.0,
+          "pl_ratio": 0.78,
+          "total_b": 123,
+          "total_s": 28,
+          "total_s_trips": 1,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 66
+        },
+        "161129.SZ": {
+          "total": 82,
+          "win_rate": 51.2,
+          "pl_ratio": 0.87,
+          "total_b": 143,
+          "total_s": 21,
+          "total_s_trips": 5,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 66
+        },
+        "600570.SH": {
+          "total": 105,
+          "win_rate": 45.7,
+          "pl_ratio": 0.6,
+          "total_b": 200,
+          "total_s": 34,
+          "total_s_trips": 6,
+          "win_s": 83.3,
+          "pl_s": 49.09,
+          "days": 124
+        },
+        "300058.SZ": {
+          "total": 217,
+          "win_rate": 47.9,
+          "pl_ratio": 0.79,
+          "total_b": 492,
+          "total_s": 133,
+          "total_s_trips": 12,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 145
+        },
+        "688111.SH": {
+          "total": 216,
+          "win_rate": 45.4,
+          "pl_ratio": 0.79,
+          "total_b": 421,
+          "total_s": 91,
+          "total_s_trips": 32,
+          "win_s": 53.1,
+          "pl_s": 1.23,
+          "days": 145
+        }
+      }
+    },
+    {
+      "name": "mpr_s6015",
+      "label": "S侧 mpr60+15(>0)",
+      "side": "S",
+      "periods": [
+        60,
+        15
+      ],
+      "pool": {
+        "all": {
+          "n": 5,
+          "med_win": 45.7,
+          "total_trips": 680
+        },
+        "B": {
+          "n": 5,
+          "med_win": 45.7,
+          "total_trips": 680
+        },
+        "S": {
+          "n": 5,
+          "med_win": 100.0,
+          "total_trips": 46
+        }
+      },
+      "n_b_sig": 1379,
+      "n_s_sig": 203,
+      "per_symbol": {
+        "513310.SH": {
+          "total": 60,
+          "win_rate": 45.0,
+          "pl_ratio": 0.78,
+          "total_b": 123,
+          "total_s": 19,
+          "total_s_trips": 1,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 66
+        },
+        "161129.SZ": {
+          "total": 82,
+          "win_rate": 51.2,
+          "pl_ratio": 0.95,
+          "total_b": 143,
+          "total_s": 13,
+          "total_s_trips": 5,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 66
+        },
+        "600570.SH": {
+          "total": 105,
+          "win_rate": 45.7,
+          "pl_ratio": 0.6,
+          "total_b": 200,
+          "total_s": 25,
+          "total_s_trips": 4,
+          "win_s": 75.0,
+          "pl_s": 49.43,
+          "days": 124
+        },
+        "300058.SZ": {
+          "total": 217,
+          "win_rate": 47.9,
+          "pl_ratio": 0.77,
+          "total_b": 492,
+          "total_s": 81,
+          "total_s_trips": 8,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 145
+        },
+        "688111.SH": {
+          "total": 216,
+          "win_rate": 44.4,
+          "pl_ratio": 0.82,
+          "total_b": 421,
+          "total_s": 65,
+          "total_s_trips": 28,
+          "win_s": 50.0,
+          "pl_s": 1.29,
+          "days": 145
+        }
+      }
+    },
+    {
+      "name": "mpr_b60",
+      "label": "B侧 mpr60(<0)",
+      "side": "B",
+      "periods": [
+        60
+      ],
+      "pool": {
+        "all": {
+          "n": 5,
+          "med_win": 50.6,
+          "total_trips": 437
+        },
+        "B": {
+          "n": 5,
+          "med_win": 50.6,
+          "total_trips": 437
+        },
+        "S": {
+          "n": 5,
+          "med_win": 94.4,
+          "total_trips": 101
+        }
+      },
+      "n_b_sig": 614,
+      "n_s_sig": 1040,
+      "per_symbol": {
+        "513310.SH": {
+          "total": 31,
+          "win_rate": 48.4,
+          "pl_ratio": 0.56,
+          "total_b": 48,
+          "total_s": 84,
+          "total_s_trips": 1,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 66
+        },
+        "161129.SZ": {
+          "total": 57,
+          "win_rate": 57.9,
+          "pl_ratio": 0.92,
+          "total_b": 73,
+          "total_s": 91,
+          "total_s_trips": 11,
+          "win_s": 90.9,
+          "pl_s": 20.58,
+          "days": 66
+        },
+        "600570.SH": {
+          "total": 79,
+          "win_rate": 50.6,
+          "pl_ratio": 0.74,
+          "total_b": 110,
+          "total_s": 189,
+          "total_s_trips": 23,
+          "win_s": 95.7,
+          "pl_s": 2.79,
+          "days": 124
+        },
+        "300058.SZ": {
+          "total": 137,
+          "win_rate": 48.9,
+          "pl_ratio": 0.88,
+          "total_b": 199,
+          "total_s": 375,
+          "total_s_trips": 18,
+          "win_s": 94.4,
+          "pl_s": 2.07,
+          "days": 145
+        },
+        "688111.SH": {
+          "total": 133,
+          "win_rate": 51.9,
+          "pl_ratio": 0.97,
+          "total_b": 184,
+          "total_s": 301,
+          "total_s_trips": 48,
+          "win_s": 83.3,
+          "pl_s": 0.81,
+          "days": 145
+        }
+      }
+    },
+    {
+      "name": "mpr_b6015",
+      "label": "B侧 mpr60+15(<0)",
+      "side": "B",
+      "periods": [
+        60,
+        15
+      ],
+      "pool": {
+        "all": {
+          "n": 5,
+          "med_win": 50.0,
+          "total_trips": 359
+        },
+        "B": {
+          "n": 5,
+          "med_win": 50.0,
+          "total_trips": 359
+        },
+        "S": {
+          "n": 5,
+          "med_win": 93.3,
+          "total_trips": 87
+        }
+      },
+      "n_b_sig": 466,
+      "n_s_sig": 1047,
+      "per_symbol": {
+        "513310.SH": {
+          "total": 26,
+          "win_rate": 50.0,
+          "pl_ratio": 0.63,
+          "total_b": 38,
+          "total_s": 84,
+          "total_s_trips": 1,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 66
+        },
+        "161129.SZ": {
+          "total": 47,
+          "win_rate": 59.6,
+          "pl_ratio": 0.93,
+          "total_b": 56,
+          "total_s": 91,
+          "total_s_trips": 11,
+          "win_s": 90.9,
+          "pl_s": 20.58,
+          "days": 66
+        },
+        "600570.SH": {
+          "total": 69,
+          "win_rate": 50.7,
+          "pl_ratio": 0.64,
+          "total_b": 94,
+          "total_s": 189,
+          "total_s_trips": 21,
+          "win_s": 95.2,
+          "pl_s": 2.73,
+          "days": 124
+        },
+        "300058.SZ": {
+          "total": 102,
+          "win_rate": 46.1,
+          "pl_ratio": 0.74,
+          "total_b": 129,
+          "total_s": 379,
+          "total_s_trips": 15,
+          "win_s": 93.3,
+          "pl_s": 1.91,
+          "days": 145
+        },
+        "688111.SH": {
+          "total": 115,
+          "win_rate": 48.7,
+          "pl_ratio": 0.88,
+          "total_b": 149,
+          "total_s": 304,
+          "total_s_trips": 39,
+          "win_s": 84.6,
+          "pl_s": 0.63,
+          "days": 145
+        }
+      }
+    },
+    {
+      "name": "mpr_both6015",
+      "label": "B/S双 mpr60+15",
+      "side": "both",
+      "periods": [
+        60,
+        15
+      ],
+      "pool": {
+        "all": {
+          "n": 5,
+          "med_win": 46.0,
+          "total_trips": 390
+        },
+        "B": {
+          "n": 5,
+          "med_win": 46.0,
+          "total_trips": 390
+        },
+        "S": {
+          "n": 5,
+          "med_win": 100.0,
+          "total_trips": 28
+        }
+      },
+      "n_b_sig": 518,
+      "n_s_sig": 205,
+      "per_symbol": {
+        "513310.SH": {
+          "total": 27,
+          "win_rate": 48.1,
+          "pl_ratio": 0.66,
+          "total_b": 39,
+          "total_s": 19,
+          "total_s_trips": 0,
+          "win_s": 0.0,
+          "pl_s": 0.0,
+          "days": 66
+        },
+        "161129.SZ": {
+          "total": 50,
+          "win_rate": 54.0,
+          "pl_ratio": 0.97,
+          "total_b": 61,
+          "total_s": 13,
+          "total_s_trips": 3,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 66
+        },
+        "600570.SH": {
+          "total": 71,
+          "win_rate": 45.1,
+          "pl_ratio": 0.62,
+          "total_b": 102,
+          "total_s": 26,
+          "total_s_trips": 1,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 124
+        },
+        "300058.SZ": {
+          "total": 118,
+          "win_rate": 45.8,
+          "pl_ratio": 0.67,
+          "total_b": 153,
+          "total_s": 81,
+          "total_s_trips": 6,
+          "win_s": 100.0,
+          "pl_s": 99.0,
+          "days": 145
+        },
+        "688111.SH": {
+          "total": 124,
+          "win_rate": 46.0,
+          "pl_ratio": 1.04,
+          "total_b": 163,
+          "total_s": 66,
+          "total_s_trips": 18,
+          "win_s": 66.7,
+          "pl_s": 1.16,
+          "days": 145
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "plan": "C:/Users/YZP/.workbuddy/plans/radiant-forging-einstein.md",
+  "phase": 1,
+  "phase_goal": "WR_prod_exec(roll20)>=55% 且 |WR_prod_exec-WR_recalc|<=1pp 连续10交易日",
+  "current_round": "R0",
+  "round_name": "基建可度量",
+  "round_started": "2026-08-03",
+  "round_acceptance": "重放07-31复现已知差异(已达成); 连续3日自动生成 reconcile JSON",
+  "consecutive_pass_days": 2,
+  "history": [
+    {
+      "date": "2026-08-03",
+      "event": "R0启动",
+      "note": "对账器prod_vs_bt_reconcile.py上线(07-31重放差异全部复现); F盘更新器fdisk_daily_update.py上线(5只07-31已补); run_daily_review.bat接第5/6步; automation任务A/B创建"
+    },
+    {
+      "date": "2026-08-03",
+      "event": "R0 D1 对账首跑",
+      "note": "bat三bug修复(for引号配对/LF/PUSH_PY路径)后16:23全链路成功; reconcile_2026-08-03生成; 600570漏3信号(疑首扫抑制,R1靶点)"
+    },
+    {
+      "date": "2026-08-04",
+      "event": "R0 D2 对账自动生成",
+      "note": "流水线6步15:30全自动跑通(连续第2日); reconcile_2026-08-04生成(streak 2/3); 池级WR_recalc 75.0%(4笔); live/复算信号差-9笔(300058 -2/600570 -2/688111 -5,疑首扫抑制,R1靶点); roll20双侧n<10累积中"
+    },
+    {
+      "date": "2026-08-04",
+      "event": "R0 D2 日报",
+      "note": "reconcile=OK; roll20 live n=2/recalc n=6; G1=--; 连续达标2日; P=4.2%"
+    }
+  ],
+  "roll20": {
+    "wr_prod_exec": null,
+    "wr_recalc": null,
+    "g1_pp": null,
+    "n_live": 2,
+    "n_recalc": 6,
+    "as_of": "2026-08-04",
+    "note": "双侧n<10 累积中"
+  },
+  "goal_progress": {
+    "formula": "P = Σ(已完成轮次权重) + 当前轮权重 × 轮内完成度；权重 R0=5/R1=15/R2=30/R3=20/R4=20/R5=10",
+    "round_weights": {
+      "R0": 5,
+      "R1": 15,
+      "R2": 30,
+      "R3": 20,
+      "R4": 20,
+      "R5": 10
+    },
+    "r0_acceptance": {
+      "replay_0731_reproduced": true,
+      "reconcile_3d_streak": 2
+    },
+    "p_pct": 4.2,
+    "as_of": "2026-08-04"
+  },
+  "last_run": "2026-08-04T16:37:52"
+}

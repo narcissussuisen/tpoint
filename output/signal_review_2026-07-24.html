@@ -1,0 +1,71 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tpoint 实盘信号复盘 2026-07-24</title></head>
+<body style="margin:0;background:#f5f6f8;font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2a44">
+<div style="max-width:1000px;margin:0 auto;padding:24px">
+  <div style="background:linear-gradient(135deg,#1f2a44,#33507a);color:#fff;border-radius:12px;padding:22px 26px">
+    <h1 style="margin:0 0 6px;font-size:22px">tpoint 实盘信号复盘 · 2026-07-24</h1>
+    <p style="margin:0;opacity:.85;font-size:13px">生成时间 2026-07-24 15:30:06 ｜ 实盘权威源 push_audit.jsonl + state.json ｜ 验证行情 mootdx 真实 1m</p>
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px">
+    <div style="flex:1;min-width:140px;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.08)"><div style="font-size:12px;color:#888">实盘信号总数</div><div style="font-size:24px;font-weight:700">9</div><div style="font-size:12px;color:#666">买 4 / 卖 1 / 出场 4</div></div>
+    <div style="flex:1;min-width:140px;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.08)"><div style="font-size:12px;color:#888">净胜率(B/S)</div><div style="font-size:24px;font-weight:700">20.0%</div><div style="font-size:12px;color:#666">净有效 1 / 失效 4（含脆弱 2）</div></div>
+    <div style="flex:1;min-width:140px;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.08)"><div style="font-size:12px;color:#888">近5日实盘均值</div><div style="font-size:24px;font-weight:700">6.8</div><div style="font-size:12px;color:#666">信号/日（2026-07-23, 2026-07-22, 2026-07-21, 2026-07-20）</div></div>
+    <div style="flex:1;min-width:140px;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.08)"><div style="font-size:12px;color:#888">今日 vs 基线</div><div style="font-size:24px;font-weight:700">+2.2</div><div style="font-size:12px;color:#666">信号数偏差</div></div>
+  </div>
+  <div style="background:#fff;border-radius:10px;padding:18px;margin-top:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+    <h2 style="font-size:16px;margin:0 0 10px;color:#1f2a44">四、今日整体 vs 近5交易日实盘基线</h2>
+    <p style="color:#888;font-size:12px;margin:0 0 10px">基线=实盘权威计数(state.json)在可用prior交易日的平均值；今日实盘计数来自 state.json（与 push_audit 一致）。win-rate 为今日真实信号经真实 1m 验证结果。</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+     <thead><tr style="background:#f0f2f5;color:#555;text-align:left"><th style="padding:8px">指标</th><th>今日</th><th>基线均值</th><th>判定</th></tr></thead>
+     <tbody><tr><td>信号总数/日</td><td><b>5</b></td><td>6.8</td><td style='color:#0a8f3c;font-weight:700'>正常</td></tr><tr><td>买入数/日</td><td><b>4</b></td><td>4.8</td><td style='color:#0a8f3c;font-weight:700'>正常</td></tr><tr><td>卖出数/日</td><td><b>1</b></td><td>2.0</td><td style='color:#0a8f3c;font-weight:700'>正常</td></tr></tbody></table>
+  </div>
+  <h2 style="font-size:18px;margin:22px 0 0;color:#1f2a44">一~三、实盘信号明细（按标的归类）</h2>
+  
+<div style="background:#fff;border-radius:10px;padding:18px;margin-top:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+  <h2 style="font-size:16px;margin:0 0 4px;color:#1f2a44">161129.SZ 原油LOF易方达</h2>
+  <p style="color:#888;font-size:12px;margin:0 0 10px">
+    实盘推送 5 次（买 3 / 卖 0 / 出场 2）；
+    净有效买 0 / 失效买 3；净有效卖 0 / 失效卖 0；
+    净胜率 <b>0.0%</b>
+    ；仍持仓：<span style='color:#d4380d;font-weight:700'>-1.60%</span> (浮盈亏，入场 2.192 / 最新 2.157，多)
+  </p>
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+   <thead><tr style="background:#f0f2f5;color:#555;text-align:left">
+     <th style="padding:8px">时间</th><th>类型</th><th>价格</th><th>触发条件</th>
+     <th>有效/失效</th><th>最大有利</th><th>最大不利</th><th>盈亏</th><th>说明</th></tr></thead>
+   <tbody><tr><td>13:12</td><td style='color:#0a8f3c;font-weight:700'>买入</td><td>2.212</td><td>（实盘触发；条件文本未落库于 push_audit，仅存 ts/标的/类型/价格）</td><td><span style="color:#d4380d;font-weight:700">有效(脆弱)</span></td><td>+1.81%</td><td>+3.25%</td><td></td><td style='color:#666'>—</td></tr><tr><td>13:24</td><td style='color:#1677ff;font-weight:700'>出场</td><td>2.236</td><td>出场(移动止损/止损)</td><td><span style="color:#888">—</span></td><td></td><td></td><td>+1.08%</td><td style='color:#666'>—</td></tr><tr><td>14:21</td><td style='color:#0a8f3c;font-weight:700'>买入</td><td>2.208</td><td>均线引力(dev=-1.58%) + 价格地板(新低dev=-1.58%)</td><td><span style="color:#d4380d;font-weight:700">有效(脆弱)</span></td><td>+0.68%</td><td>+3.08%</td><td></td><td style='color:#666'>—</td></tr><tr><td>14:35</td><td style='color:#1677ff;font-weight:700'>出场</td><td>2.198</td><td>出场(移动止损/止损)</td><td><span style="color:#888">—</span></td><td></td><td></td><td>-0.45%</td><td style='color:#666'>—</td></tr><tr><td>14:43</td><td style='color:#0a8f3c;font-weight:700'>买入</td><td>2.192</td><td>（实盘触发；条件文本未落库于 push_audit，仅存 ts/标的/类型/价格）</td><td><span style="color:#d4380d;font-weight:700">失效</span></td><td>-0.41%</td><td>+2.37%</td><td></td><td style='color:#666'>买入后最大回撤 2.37%（最低 2.14），未出现+0.15%以上有利波动</td></tr></tbody></table>
+</div>
+<div style="background:#fff;border-radius:10px;padding:18px;margin-top:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+  <h2 style="font-size:16px;margin:0 0 4px;color:#1f2a44">513310.SH 中韩半导体ETF华泰柏瑞</h2>
+  <p style="color:#888;font-size:12px;margin:0 0 10px">
+    实盘推送 2 次（买 1 / 卖 0 / 出场 1）；
+    净有效买 0 / 失效买 1；净有效卖 0 / 失效卖 0；
+    净胜率 <b>0.0%</b>
+    ；仍持仓：<span style='color:#d4380d;font-weight:700'>-0.43%</span> (浮盈亏，入场 5.092 / 最新 5.070，多)
+  </p>
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+   <thead><tr style="background:#f0f2f5;color:#555;text-align:left">
+     <th style="padding:8px">时间</th><th>类型</th><th>价格</th><th>触发条件</th>
+     <th>有效/失效</th><th>最大有利</th><th>最大不利</th><th>盈亏</th><th>说明</th></tr></thead>
+   <tbody><tr><td>14:39</td><td style='color:#1677ff;font-weight:700'>出场</td><td>5.235</td><td>出场(移动止损/止损)</td><td><span style="color:#888">—</span></td><td></td><td></td><td></td><td style='color:#666'>—</td></tr><tr><td>14:55</td><td style='color:#0a8f3c;font-weight:700'>买入</td><td>5.092</td><td>均线引力(dev=-2.63%) + MACD绿柱收缩</td><td><span style="color:#d4380d;font-weight:700">失效</span></td><td>-0.41%</td><td>+0.47%</td><td></td><td style='color:#666'>买入后最大回撤 0.47%（最低 5.07），未出现+0.15%以上有利波动</td></tr></tbody></table>
+</div>
+<div style="background:#fff;border-radius:10px;padding:18px;margin-top:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+  <h2 style="font-size:16px;margin:0 0 4px;color:#1f2a44">688347.SH 华虹宏力</h2>
+  <p style="color:#888;font-size:12px;margin:0 0 10px">
+    实盘推送 2 次（买 0 / 卖 1 / 出场 1）；
+    净有效买 0 / 失效买 0；净有效卖 1 / 失效卖 0；
+    净胜率 <b>100.0%</b>
+    
+  </p>
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+   <thead><tr style="background:#f0f2f5;color:#555;text-align:left">
+     <th style="padding:8px">时间</th><th>类型</th><th>价格</th><th>触发条件</th>
+     <th>有效/失效</th><th>最大有利</th><th>最大不利</th><th>盈亏</th><th>说明</th></tr></thead>
+   <tbody><tr><td>13:03</td><td style='color:#d4380d;font-weight:700'>卖出</td><td>343.200</td><td>（实盘触发；条件文本未落库于 push_audit，仅存 ts/标的/类型/价格）</td><td><span style="color:#0a8f3c;font-weight:700">有效</span></td><td>+3.88%</td><td>+1.98%</td><td></td><td style='color:#666'>—</td></tr><tr><td>14:49</td><td style='color:#1677ff;font-weight:700'>出场</td><td>333.000</td><td>出场(移动止损/止损)</td><td><span style="color:#888">—</span></td><td></td><td></td><td>+2.97%</td><td style='color:#666'>—</td></tr></tbody></table>
+</div>
+  <p style="color:#999;font-size:12px;margin-top:24px;line-height:1.6">
+    说明：信号清单以生产真实推送账本 <code>data/push_audit.jsonl</code> 为准；触发条件由 floor 引擎在同口径真实 1m 上复算还原（同生产逻辑，非实盘实推）；有效/失效以真实 1m 向前验证（阈值 0.15%）。出场(X)为风控动作，不判有效/失效，改报盈亏。近5日基线仅含 state.json 中保留的 prior 交易日（2026-07-23, 2026-07-22, 2026-07-21, 2026-07-20）。
+  </p>
+  <p style="color:#999;font-size:12px;margin-top:8px">⚠️ 以上内容由 AI 基于公开信息整理生成，仅供参考，不构成任何投资建议或个股推荐。投资有风险，决策需谨慎。</p>
+</div></body></html>

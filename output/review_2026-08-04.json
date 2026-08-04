@@ -1,0 +1,567 @@
+{
+  "date": "2026-08-04",
+  "mode": "floor (production)",
+  "generated_at": "2026-08-04 17:16:10",
+  "symbols": {
+    "161129.SZ": {
+      "name": "原油LOF易方达",
+      "summary": {
+        "n_signals": 0,
+        "n_B": 0,
+        "n_S": 0,
+        "n_X": 0,
+        "valid_B": 0,
+        "invalid_B": 0,
+        "valid_S": 0,
+        "invalid_S": 0,
+        "valid_total": 0,
+        "invalid_total": 0,
+        "win_rate": null,
+        "stats": {
+          "open": 1.889,
+          "high": 1.938,
+          "low": 1.881,
+          "close": 1.895,
+          "pc": 1.852,
+          "day_chg_pct": 2.322,
+          "total_volume": 992335200.0,
+          "atr_last": 0.0026,
+          "atr_pct": 0.138,
+          "intraday_range_pct": 3.008,
+          "avg_abs_dev_vwap_pct": 0.532,
+          "max_abs_dev_vwap_pct": 1.575,
+          "n_bars": 240
+        }
+      },
+      "stats": {
+        "open": 1.889,
+        "high": 1.938,
+        "low": 1.881,
+        "close": 1.895,
+        "pc": 1.852,
+        "day_chg_pct": 2.322,
+        "total_volume": 992335200.0,
+        "atr_last": 0.0026,
+        "atr_pct": 0.138,
+        "intraday_range_pct": 3.008,
+        "avg_abs_dev_vwap_pct": 0.532,
+        "max_abs_dev_vwap_pct": 1.575,
+        "n_bars": 240
+      },
+      "rows": [],
+      "error": null
+    },
+    "513310.SH": {
+      "name": "中韩半导体ETF华泰柏瑞",
+      "summary": {
+        "n_signals": 0,
+        "n_B": 0,
+        "n_S": 0,
+        "n_X": 0,
+        "valid_B": 0,
+        "invalid_B": 0,
+        "valid_S": 0,
+        "invalid_S": 0,
+        "valid_total": 0,
+        "invalid_total": 0,
+        "win_rate": null,
+        "stats": {
+          "open": 4.41,
+          "high": 4.655,
+          "low": 4.41,
+          "close": 4.612,
+          "pc": 4.41,
+          "day_chg_pct": 4.58,
+          "total_volume": 4601414508.0,
+          "atr_last": 0.0069,
+          "atr_pct": 0.149,
+          "intraday_range_pct": 5.312,
+          "avg_abs_dev_vwap_pct": 0.419,
+          "max_abs_dev_vwap_pct": 1.892,
+          "n_bars": 240
+        }
+      },
+      "stats": {
+        "open": 4.41,
+        "high": 4.655,
+        "low": 4.41,
+        "close": 4.612,
+        "pc": 4.41,
+        "day_chg_pct": 4.58,
+        "total_volume": 4601414508.0,
+        "atr_last": 0.0069,
+        "atr_pct": 0.149,
+        "intraday_range_pct": 5.312,
+        "avg_abs_dev_vwap_pct": 0.419,
+        "max_abs_dev_vwap_pct": 1.892,
+        "n_bars": 240
+      },
+      "rows": [],
+      "error": null
+    },
+    "300058.SZ": {
+      "name": "蓝色光标",
+      "summary": {
+        "n_signals": 3,
+        "n_B": 1,
+        "n_S": 1,
+        "n_X": 1,
+        "valid_B": 1,
+        "invalid_B": 0,
+        "valid_S": 1,
+        "invalid_S": 0,
+        "valid_total": 2,
+        "invalid_total": 0,
+        "win_rate": 100.0,
+        "stats": {
+          "open": 15.1,
+          "high": 16.1,
+          "low": 14.65,
+          "close": 15.72,
+          "pc": 14.72,
+          "day_chg_pct": 6.793,
+          "total_volume": 776084900.0,
+          "atr_last": 0.0321,
+          "atr_pct": 0.204,
+          "intraday_range_pct": 9.224,
+          "avg_abs_dev_vwap_pct": 2.143,
+          "max_abs_dev_vwap_pct": 6.202,
+          "n_bars": 240
+        }
+      },
+      "stats": {
+        "open": 15.1,
+        "high": 16.1,
+        "low": 14.65,
+        "close": 15.72,
+        "pc": 14.72,
+        "day_chg_pct": 6.793,
+        "total_volume": 776084900.0,
+        "atr_last": 0.0321,
+        "atr_pct": 0.204,
+        "intraday_range_pct": 9.224,
+        "avg_abs_dev_vwap_pct": 2.143,
+        "max_abs_dev_vwap_pct": 6.202,
+        "n_bars": 240
+      },
+      "rows": [
+        {
+          "time": "2026-08-04T09:34:00.000000",
+          "type": "B",
+          "type_cn": "买入",
+          "price": 14.71,
+          "pos_pct": 2,
+          "day_chg": -0.068,
+          "tag": "[均线引力(dev=-1.72%) + 价格地板(新低dev=-1.72%)]",
+          "exit_reason": "",
+          "band": "触及下轨",
+          "max_fav_pct": 9.313,
+          "valid": true,
+          "adverse_pct": 0.068,
+          "reason": ""
+        },
+        {
+          "time": "2026-08-04T09:40:00.000000",
+          "type": "X",
+          "type_cn": "平多(卖)",
+          "price": 15.11,
+          "pos_pct": 2,
+          "day_chg": 2.649,
+          "tag": "[均线引力(dev=-1.72%) + 价格地板(新低dev=-1.72%)]",
+          "exit_reason": "S",
+          "band": "",
+          "max_fav_pct": null,
+          "valid": null,
+          "adverse_pct": null,
+          "reason": "持仓盈亏 2.72%（S 出场）"
+        },
+        {
+          "time": "2026-08-04T09:41:00.000000",
+          "type": "S",
+          "type_cn": "卖出",
+          "price": 15.11,
+          "pos_pct": 2,
+          "day_chg": 2.649,
+          "tag": "[均线引力(dev=1.14%)]",
+          "exit_reason": "",
+          "band": "触及上轨",
+          "max_fav_pct": 2.713,
+          "valid": true,
+          "adverse_pct": 6.42,
+          "reason": ""
+        }
+      ],
+      "error": null
+    },
+    "600570.SH": {
+      "name": "恒生电子",
+      "summary": {
+        "n_signals": 2,
+        "n_B": 1,
+        "n_S": 0,
+        "n_X": 1,
+        "valid_B": 1,
+        "invalid_B": 0,
+        "valid_S": 0,
+        "invalid_S": 0,
+        "valid_total": 1,
+        "invalid_total": 0,
+        "win_rate": 100.0,
+        "stats": {
+          "open": 23.46,
+          "high": 23.5,
+          "low": 23.01,
+          "close": 23.08,
+          "pc": 23.18,
+          "day_chg_pct": -0.431,
+          "total_volume": 46121300.0,
+          "atr_last": 0.0182,
+          "atr_pct": 0.079,
+          "intraday_range_pct": 2.123,
+          "avg_abs_dev_vwap_pct": 0.41,
+          "max_abs_dev_vwap_pct": 0.921,
+          "n_bars": 240
+        }
+      },
+      "stats": {
+        "open": 23.46,
+        "high": 23.5,
+        "low": 23.01,
+        "close": 23.08,
+        "pc": 23.18,
+        "day_chg_pct": -0.431,
+        "total_volume": 46121300.0,
+        "atr_last": 0.0182,
+        "atr_pct": 0.079,
+        "intraday_range_pct": 2.123,
+        "avg_abs_dev_vwap_pct": 0.41,
+        "max_abs_dev_vwap_pct": 0.921,
+        "n_bars": 240
+      },
+      "rows": [
+        {
+          "time": "2026-08-04T09:33:00.000000",
+          "type": "B",
+          "type_cn": "买入",
+          "price": 23.2,
+          "pos_pct": 2,
+          "day_chg": 0.086,
+          "tag": "[均线引力(dev=-0.58%)]",
+          "exit_reason": "",
+          "band": "触及下轨",
+          "max_fav_pct": 1.207,
+          "valid": true,
+          "adverse_pct": 0.819,
+          "reason": ""
+        },
+        {
+          "time": "2026-08-04T09:44:00.000000",
+          "type": "X",
+          "type_cn": "止损/出场",
+          "price": 23.16,
+          "pos_pct": 2,
+          "day_chg": -0.086,
+          "tag": "[均线引力(dev=-0.58%)]",
+          "exit_reason": "TRAIL",
+          "band": "",
+          "max_fav_pct": null,
+          "valid": null,
+          "adverse_pct": null,
+          "reason": "持仓盈亏 -0.17%（TRAIL 出场）"
+        }
+      ],
+      "error": null
+    },
+    "688111.SH": {
+      "name": "金山办公",
+      "summary": {
+        "n_signals": 5,
+        "n_B": 2,
+        "n_S": 1,
+        "n_X": 2,
+        "valid_B": 2,
+        "invalid_B": 0,
+        "valid_S": 1,
+        "invalid_S": 0,
+        "valid_total": 3,
+        "invalid_total": 0,
+        "win_rate": 100.0,
+        "stats": {
+          "open": 276.0,
+          "high": 280.0,
+          "low": 269.86,
+          "close": 274.45,
+          "pc": 274.01,
+          "day_chg_pct": 0.161,
+          "total_volume": 17797200.0,
+          "atr_last": 0.309,
+          "atr_pct": 0.113,
+          "intraday_range_pct": 3.695,
+          "avg_abs_dev_vwap_pct": 0.885,
+          "max_abs_dev_vwap_pct": 1.844,
+          "n_bars": 240
+        }
+      },
+      "stats": {
+        "open": 276.0,
+        "high": 280.0,
+        "low": 269.86,
+        "close": 274.45,
+        "pc": 274.01,
+        "day_chg_pct": 0.161,
+        "total_volume": 17797200.0,
+        "atr_last": 0.309,
+        "atr_pct": 0.113,
+        "intraday_range_pct": 3.695,
+        "avg_abs_dev_vwap_pct": 0.885,
+        "max_abs_dev_vwap_pct": 1.844,
+        "n_bars": 240
+      },
+      "rows": [
+        {
+          "time": "2026-08-04T09:33:00.000000",
+          "type": "B",
+          "type_cn": "买入",
+          "price": 274.74,
+          "pos_pct": 2,
+          "day_chg": 0.266,
+          "tag": "[均线引力(dev=-0.48%)]",
+          "exit_reason": "",
+          "band": "触及下轨",
+          "max_fav_pct": 1.915,
+          "valid": true,
+          "adverse_pct": 1.754,
+          "reason": ""
+        },
+        {
+          "time": "2026-08-04T09:37:00.000000",
+          "type": "X",
+          "type_cn": "平多(卖)",
+          "price": 277.83,
+          "pos_pct": 2,
+          "day_chg": 1.394,
+          "tag": "[均线引力(dev=-0.48%)]",
+          "exit_reason": "S",
+          "band": "",
+          "max_fav_pct": null,
+          "valid": null,
+          "adverse_pct": null,
+          "reason": "持仓盈亏 1.12%（S 出场）"
+        },
+        {
+          "time": "2026-08-04T09:38:00.000000",
+          "type": "S",
+          "type_cn": "卖出",
+          "price": 277.0,
+          "pos_pct": 2,
+          "day_chg": 1.091,
+          "tag": "[均线引力(dev=0.54%)]",
+          "exit_reason": "",
+          "band": "触及上轨",
+          "max_fav_pct": 2.556,
+          "valid": true,
+          "adverse_pct": 1.083,
+          "reason": ""
+        },
+        {
+          "time": "2026-08-04T09:45:00.000000",
+          "type": "X",
+          "type_cn": "回补(买)",
+          "price": 274.28,
+          "pos_pct": 2,
+          "day_chg": 0.099,
+          "tag": "[均线引力(dev=0.54%)]",
+          "exit_reason": "B",
+          "band": "",
+          "max_fav_pct": null,
+          "valid": null,
+          "adverse_pct": null,
+          "reason": "持仓盈亏 0.98%（B 出场）"
+        },
+        {
+          "time": "2026-08-04T10:38:00.000000",
+          "type": "B",
+          "type_cn": "买入",
+          "price": 274.01,
+          "pos_pct": 4,
+          "day_chg": 0.0,
+          "tag": "[均线引力(dev=-0.85%) + MACD绿柱收缩]",
+          "exit_reason": "",
+          "band": "触及下轨",
+          "max_fav_pct": 0.193,
+          "valid": true,
+          "adverse_pct": 1.493,
+          "reason": ""
+        }
+      ],
+      "error": null
+    }
+  },
+  "baseline_days": [
+    "2026-08-03",
+    "2026-07-31",
+    "2026-07-30",
+    "2026-07-29",
+    "2026-07-28"
+  ],
+  "baseline_syms": [
+    "161129.SZ",
+    "513310.SH",
+    "300058.SZ",
+    "600570.SH",
+    "688111.SH"
+  ],
+  "new_syms": [],
+  "baseline_mean": {
+    "n_signals": 1.6,
+    "n_B": 0.13,
+    "n_S": 0.87,
+    "win_rate": 60.0,
+    "range": 6.65,
+    "maxdev": 2.96
+  },
+  "today_legacy": {
+    "n_signals": 10,
+    "n_B": 4,
+    "n_S": 2,
+    "valid": 6,
+    "invalid": 0
+  },
+  "today_win_rate": 100.0,
+  "today_range": 4.67,
+  "today_maxdev": 2.49,
+  "comparison": [
+    {
+      "metric": "日均信号数",
+      "today": 10,
+      "baseline": 1.6,
+      "anomaly": true
+    },
+    {
+      "metric": "日均买入数",
+      "today": 4,
+      "baseline": 0.13,
+      "anomaly": true
+    },
+    {
+      "metric": "日均卖出数",
+      "today": 2,
+      "baseline": 0.87,
+      "anomaly": true
+    },
+    {
+      "metric": "信号胜率(%)",
+      "today": 100.0,
+      "baseline": 60.0,
+      "anomaly": true
+    },
+    {
+      "metric": "平均日内振幅(%)",
+      "today": 4.67,
+      "baseline": 6.65,
+      "anomaly": false
+    },
+    {
+      "metric": "平均最大偏离VWAP(%)",
+      "today": 2.49,
+      "baseline": 2.96,
+      "anomaly": false
+    }
+  ],
+  "baseline_note": "基线=近5交易日(2026-08-03, 2026-07-31, 2026-07-30, 2026-07-29, 2026-07-28)，仅含可比老标的：161129.SZ, 513310.SH, 300058.SZ, 600570.SH, 688111.SH；新标的(不参与基线)：无。所有日期均用当前 floor 引擎复算，保证对比口径一致。",
+  "live_counts": {
+    "161129.SZ": {
+      "B": 0,
+      "S": 0,
+      "total": 0
+    },
+    "513310.SH": {
+      "B": 0,
+      "S": 0,
+      "total": 0
+    },
+    "300058.SZ": {
+      "B": 0,
+      "S": 1,
+      "total": 1
+    },
+    "600570.SH": {
+      "B": 0,
+      "S": 0,
+      "total": 0
+    },
+    "688111.SH": {
+      "B": 0,
+      "S": 0,
+      "total": 0
+    }
+  },
+  "audit_count": 5,
+  "diff": [
+    {
+      "sym": "161129.SZ",
+      "name": "原油LOF易方达",
+      "live_B": 0,
+      "live_S": 0,
+      "live_total": 0,
+      "recalc_B": 0,
+      "recalc_S": 0,
+      "recalc_total": 0,
+      "delta_B": 0,
+      "delta_S": 0,
+      "verdict": "一致"
+    },
+    {
+      "sym": "300058.SZ",
+      "name": "蓝色光标",
+      "live_B": 0,
+      "live_S": 1,
+      "live_total": 1,
+      "recalc_B": 1,
+      "recalc_S": 1,
+      "recalc_total": 3,
+      "delta_B": -1,
+      "delta_S": 0,
+      "verdict": "实盘<复算(可能漏推/首扫抑制)"
+    },
+    {
+      "sym": "513310.SH",
+      "name": "中韩半导体ETF华泰柏瑞",
+      "live_B": 0,
+      "live_S": 0,
+      "live_total": 0,
+      "recalc_B": 0,
+      "recalc_S": 0,
+      "recalc_total": 0,
+      "delta_B": 0,
+      "delta_S": 0,
+      "verdict": "一致"
+    },
+    {
+      "sym": "600570.SH",
+      "name": "恒生电子",
+      "live_B": 0,
+      "live_S": 0,
+      "live_total": 0,
+      "recalc_B": 1,
+      "recalc_S": 0,
+      "recalc_total": 2,
+      "delta_B": -1,
+      "delta_S": 0,
+      "verdict": "实盘<复算(可能漏推/首扫抑制)"
+    },
+    {
+      "sym": "688111.SH",
+      "name": "金山办公",
+      "live_B": 0,
+      "live_S": 0,
+      "live_total": 0,
+      "recalc_B": 2,
+      "recalc_S": 1,
+      "recalc_total": 5,
+      "delta_B": -2,
+      "delta_S": -1,
+      "verdict": "实盘<复算(可能漏推/首扫抑制)"
+    }
+  ]
+}

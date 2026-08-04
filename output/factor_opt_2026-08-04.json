@@ -1,0 +1,564 @@
+{
+  "date": "2026-08-04",
+  "generated_at": "2026-08-04 23:05:23",
+  "grids": {
+    "trail_activate_pct": [
+      0.3,
+      0.4,
+      0.5
+    ],
+    "trail_pct": [
+      0.5,
+      0.6,
+      0.8
+    ],
+    "atr_min_pct": [
+      0.15,
+      0.25,
+      0.35
+    ]
+  },
+  "current": {
+    "trail": [
+      0.4,
+      0.6
+    ],
+    "atr_min_pct": 0.25
+  },
+  "symbols": {
+    "161129.SZ": {
+      "name": "原油LOF易方达",
+      "n_days": 69,
+      "thin_sample": true,
+      "baseline": {
+        "n": 32,
+        "win_rate": 53.1,
+        "pl_ratio": 1.74,
+        "total_ret": 9.11
+      },
+      "trail_grid": {
+        "0.3/0.5": {
+          "n": 32,
+          "win_rate": 53.1,
+          "pl_ratio": 1.33,
+          "total_ret": 4.69
+        },
+        "0.3/0.6": {
+          "n": 32,
+          "win_rate": 53.1,
+          "pl_ratio": 1.8,
+          "total_ret": 9.4
+        },
+        "0.3/0.8": {
+          "n": 31,
+          "win_rate": 58.1,
+          "pl_ratio": 1.32,
+          "total_ret": 8.39
+        },
+        "0.4/0.5": {
+          "n": 32,
+          "win_rate": 62.5,
+          "pl_ratio": 1.18,
+          "total_ret": 8.55
+        },
+        "0.4/0.6": {
+          "n": 32,
+          "win_rate": 53.1,
+          "pl_ratio": 1.74,
+          "total_ret": 9.11
+        },
+        "0.4/0.8": {
+          "n": 31,
+          "win_rate": 58.1,
+          "pl_ratio": 1.34,
+          "total_ret": 8.54
+        },
+        "0.5/0.5": {
+          "n": 32,
+          "win_rate": 65.6,
+          "pl_ratio": 1.13,
+          "total_ret": 9.65
+        },
+        "0.5/0.6": {
+          "n": 32,
+          "win_rate": 56.2,
+          "pl_ratio": 1.73,
+          "total_ret": 10.8
+        },
+        "0.5/0.8": {
+          "n": 31,
+          "win_rate": 58.1,
+          "pl_ratio": 1.38,
+          "total_ret": 8.8
+        }
+      },
+      "atr_grid": {
+        "0.15": {
+          "n": 42,
+          "win_rate": 52.4,
+          "pl_ratio": 1.48,
+          "total_ret": 9.33
+        },
+        "0.25": {
+          "n": 32,
+          "win_rate": 53.1,
+          "pl_ratio": 1.74,
+          "total_ret": 9.11
+        },
+        "0.35": {
+          "n": 14,
+          "win_rate": 50.0,
+          "pl_ratio": 1.47,
+          "total_ret": 2.88
+        }
+      },
+      "recommendation": {
+        "sym": "161129.SZ",
+        "name": "原油LOF易方达",
+        "param": "trail",
+        "value": "0.5/0.5",
+        "win_rate": 65.6,
+        "delta_pp": 12.5,
+        "n_trips": 32,
+        "baseline_wr": 53.1,
+        "thin": true,
+        "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+      }
+    },
+    "513310.SH": {
+      "name": "中韩半导体ETF华泰柏瑞",
+      "n_days": 69,
+      "thin_sample": true,
+      "baseline": {
+        "n": 25,
+        "win_rate": 56.0,
+        "pl_ratio": 0.85,
+        "total_ret": 1.12
+      },
+      "trail_grid": {
+        "0.3/0.5": {
+          "n": 25,
+          "win_rate": 56.0,
+          "pl_ratio": 0.98,
+          "total_ret": 2.48
+        },
+        "0.3/0.6": {
+          "n": 25,
+          "win_rate": 56.0,
+          "pl_ratio": 1.13,
+          "total_ret": 4.41
+        },
+        "0.3/0.8": {
+          "n": 24,
+          "win_rate": 41.7,
+          "pl_ratio": 1.65,
+          "total_ret": 2.32
+        },
+        "0.4/0.5": {
+          "n": 25,
+          "win_rate": 56.0,
+          "pl_ratio": 0.74,
+          "total_ret": -0.81
+        },
+        "0.4/0.6": {
+          "n": 25,
+          "win_rate": 56.0,
+          "pl_ratio": 0.85,
+          "total_ret": 1.12
+        },
+        "0.4/0.8": {
+          "n": 24,
+          "win_rate": 41.7,
+          "pl_ratio": 1.44,
+          "total_ret": 0.43
+        },
+        "0.5/0.5": {
+          "n": 25,
+          "win_rate": 60.0,
+          "pl_ratio": 0.72,
+          "total_ret": 1.02
+        },
+        "0.5/0.6": {
+          "n": 25,
+          "win_rate": 60.0,
+          "pl_ratio": 0.82,
+          "total_ret": 2.95
+        },
+        "0.5/0.8": {
+          "n": 24,
+          "win_rate": 45.8,
+          "pl_ratio": 1.38,
+          "total_ret": 2.42
+        }
+      },
+      "atr_grid": {
+        "0.15": {
+          "n": 34,
+          "win_rate": 50.0,
+          "pl_ratio": 0.8,
+          "total_ret": -3.74
+        },
+        "0.25": {
+          "n": 25,
+          "win_rate": 56.0,
+          "pl_ratio": 0.85,
+          "total_ret": 1.12
+        },
+        "0.35": {
+          "n": 18,
+          "win_rate": 66.7,
+          "pl_ratio": 1.13,
+          "total_ret": 7.95
+        }
+      },
+      "recommendation": null
+    },
+    "300058.SZ": {
+      "name": "蓝色光标",
+      "n_days": 148,
+      "thin_sample": false,
+      "baseline": {
+        "n": 129,
+        "win_rate": 57.4,
+        "pl_ratio": 0.74,
+        "total_ret": -0.76
+      },
+      "trail_grid": {
+        "0.3/0.5": {
+          "n": 130,
+          "win_rate": 55.4,
+          "pl_ratio": 0.85,
+          "total_ret": 3.57
+        },
+        "0.3/0.6": {
+          "n": 130,
+          "win_rate": 53.8,
+          "pl_ratio": 0.86,
+          "total_ret": 0.49
+        },
+        "0.3/0.8": {
+          "n": 123,
+          "win_rate": 52.8,
+          "pl_ratio": 0.86,
+          "total_ret": -2.68
+        },
+        "0.4/0.5": {
+          "n": 129,
+          "win_rate": 59.7,
+          "pl_ratio": 0.7,
+          "total_ret": 2.08
+        },
+        "0.4/0.6": {
+          "n": 129,
+          "win_rate": 57.4,
+          "pl_ratio": 0.74,
+          "total_ret": -0.76
+        },
+        "0.4/0.8": {
+          "n": 122,
+          "win_rate": 56.6,
+          "pl_ratio": 0.73,
+          "total_ret": -3.56
+        },
+        "0.5/0.5": {
+          "n": 126,
+          "win_rate": 61.1,
+          "pl_ratio": 0.58,
+          "total_ret": -6.27
+        },
+        "0.5/0.6": {
+          "n": 126,
+          "win_rate": 57.9,
+          "pl_ratio": 0.65,
+          "total_ret": -8.68
+        },
+        "0.5/0.8": {
+          "n": 120,
+          "win_rate": 57.5,
+          "pl_ratio": 0.64,
+          "total_ret": -10.45
+        }
+      },
+      "atr_grid": {
+        "0.15": {
+          "n": 148,
+          "win_rate": 53.4,
+          "pl_ratio": 0.85,
+          "total_ret": -2.63
+        },
+        "0.25": {
+          "n": 129,
+          "win_rate": 57.4,
+          "pl_ratio": 0.74,
+          "total_ret": -0.76
+        },
+        "0.35": {
+          "n": 117,
+          "win_rate": 58.1,
+          "pl_ratio": 0.75,
+          "total_ret": 2.96
+        }
+      },
+      "recommendation": {
+        "sym": "300058.SZ",
+        "name": "蓝色光标",
+        "param": "trail",
+        "value": "0.5/0.5",
+        "win_rate": 61.1,
+        "delta_pp": 3.7,
+        "n_trips": 126,
+        "baseline_wr": 57.4,
+        "thin": false,
+        "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+      }
+    },
+    "600570.SH": {
+      "name": "恒生电子",
+      "n_days": 127,
+      "thin_sample": false,
+      "baseline": {
+        "n": 53,
+        "win_rate": 58.5,
+        "pl_ratio": 0.7,
+        "total_ret": -0.22
+      },
+      "trail_grid": {
+        "0.3/0.5": {
+          "n": 54,
+          "win_rate": 55.6,
+          "pl_ratio": 0.84,
+          "total_ret": 0.9
+        },
+        "0.3/0.6": {
+          "n": 53,
+          "win_rate": 56.6,
+          "pl_ratio": 0.79,
+          "total_ret": 0.75
+        },
+        "0.3/0.8": {
+          "n": 53,
+          "win_rate": 54.7,
+          "pl_ratio": 0.97,
+          "total_ret": 3.54
+        },
+        "0.4/0.5": {
+          "n": 54,
+          "win_rate": 63.0,
+          "pl_ratio": 0.64,
+          "total_ret": 1.93
+        },
+        "0.4/0.6": {
+          "n": 53,
+          "win_rate": 58.5,
+          "pl_ratio": 0.7,
+          "total_ret": -0.22
+        },
+        "0.4/0.8": {
+          "n": 53,
+          "win_rate": 58.5,
+          "pl_ratio": 0.83,
+          "total_ret": 3.74
+        },
+        "0.5/0.5": {
+          "n": 54,
+          "win_rate": 64.8,
+          "pl_ratio": 0.62,
+          "total_ret": 2.86
+        },
+        "0.5/0.6": {
+          "n": 53,
+          "win_rate": 60.4,
+          "pl_ratio": 0.68,
+          "total_ret": 0.65
+        },
+        "0.5/0.8": {
+          "n": 53,
+          "win_rate": 58.5,
+          "pl_ratio": 0.83,
+          "total_ret": 3.74
+        }
+      },
+      "atr_grid": {
+        "0.15": {
+          "n": 73,
+          "win_rate": 52.1,
+          "pl_ratio": 0.68,
+          "total_ret": -8.88
+        },
+        "0.25": {
+          "n": 53,
+          "win_rate": 58.5,
+          "pl_ratio": 0.7,
+          "total_ret": -0.22
+        },
+        "0.35": {
+          "n": 26,
+          "win_rate": 50.0,
+          "pl_ratio": 0.69,
+          "total_ret": -4.93
+        }
+      },
+      "recommendation": {
+        "sym": "600570.SH",
+        "name": "恒生电子",
+        "param": "trail",
+        "value": "0.5/0.5",
+        "win_rate": 64.8,
+        "delta_pp": 6.3,
+        "n_trips": 54,
+        "baseline_wr": 58.5,
+        "thin": false,
+        "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+      }
+    },
+    "688111.SH": {
+      "name": "金山办公",
+      "n_days": 148,
+      "thin_sample": false,
+      "baseline": {
+        "n": 86,
+        "win_rate": 55.8,
+        "pl_ratio": 0.95,
+        "total_ret": 7.04
+      },
+      "trail_grid": {
+        "0.3/0.5": {
+          "n": 87,
+          "win_rate": 58.6,
+          "pl_ratio": 0.74,
+          "total_ret": 1.28
+        },
+        "0.3/0.6": {
+          "n": 86,
+          "win_rate": 54.7,
+          "pl_ratio": 1.08,
+          "total_ret": 9.63
+        },
+        "0.3/0.8": {
+          "n": 82,
+          "win_rate": 56.1,
+          "pl_ratio": 0.95,
+          "total_ret": 7.63
+        },
+        "0.4/0.5": {
+          "n": 87,
+          "win_rate": 59.8,
+          "pl_ratio": 0.65,
+          "total_ret": -1.34
+        },
+        "0.4/0.6": {
+          "n": 86,
+          "win_rate": 55.8,
+          "pl_ratio": 0.95,
+          "total_ret": 7.04
+        },
+        "0.4/0.8": {
+          "n": 82,
+          "win_rate": 56.1,
+          "pl_ratio": 0.93,
+          "total_ret": 6.67
+        },
+        "0.5/0.5": {
+          "n": 84,
+          "win_rate": 64.3,
+          "pl_ratio": 0.49,
+          "total_ret": -4.29
+        },
+        "0.5/0.6": {
+          "n": 83,
+          "win_rate": 57.8,
+          "pl_ratio": 0.79,
+          "total_ret": 3.46
+        },
+        "0.5/0.8": {
+          "n": 81,
+          "win_rate": 58.0,
+          "pl_ratio": 0.79,
+          "total_ret": 3.6
+        }
+      },
+      "atr_grid": {
+        "0.15": {
+          "n": 109,
+          "win_rate": 53.2,
+          "pl_ratio": 1.01,
+          "total_ret": 6.54
+        },
+        "0.25": {
+          "n": 86,
+          "win_rate": 55.8,
+          "pl_ratio": 0.95,
+          "total_ret": 7.04
+        },
+        "0.35": {
+          "n": 63,
+          "win_rate": 58.7,
+          "pl_ratio": 1.01,
+          "total_ret": 10.28
+        }
+      },
+      "recommendation": {
+        "sym": "688111.SH",
+        "name": "金山办公",
+        "param": "trail",
+        "value": "0.5/0.5",
+        "win_rate": 64.3,
+        "delta_pp": 8.5,
+        "n_trips": 84,
+        "baseline_wr": 55.8,
+        "thin": false,
+        "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+      }
+    }
+  },
+  "recommendations": [
+    {
+      "sym": "161129.SZ",
+      "name": "原油LOF易方达",
+      "param": "trail",
+      "value": "0.5/0.5",
+      "win_rate": 65.6,
+      "delta_pp": 12.5,
+      "n_trips": 32,
+      "baseline_wr": 53.1,
+      "thin": true,
+      "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+    },
+    {
+      "sym": "300058.SZ",
+      "name": "蓝色光标",
+      "param": "trail",
+      "value": "0.5/0.5",
+      "win_rate": 61.1,
+      "delta_pp": 3.7,
+      "n_trips": 126,
+      "baseline_wr": 57.4,
+      "thin": false,
+      "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+    },
+    {
+      "sym": "600570.SH",
+      "name": "恒生电子",
+      "param": "trail",
+      "value": "0.5/0.5",
+      "win_rate": 64.8,
+      "delta_pp": 6.3,
+      "n_trips": 54,
+      "baseline_wr": 58.5,
+      "thin": false,
+      "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+    },
+    {
+      "sym": "688111.SH",
+      "name": "金山办公",
+      "param": "trail",
+      "value": "0.5/0.5",
+      "win_rate": 64.3,
+      "delta_pp": 8.5,
+      "n_trips": 84,
+      "baseline_wr": 55.8,
+      "thin": false,
+      "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+    }
+  ]
+}

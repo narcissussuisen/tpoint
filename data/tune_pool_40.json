@@ -1,0 +1,259 @@
+{
+  "generated_at": "2026-08-02",
+  "seed": 20260801,
+  "min_rows": 28000,
+  "exclude": [
+    "161129.SZ",
+    "300058.SZ",
+    "513310.SH",
+    "600206.SH",
+    "600570.SH",
+    "600584.SH",
+    "688111.SH",
+    "688146.SH",
+    "688347.SH",
+    "688766.SH"
+  ],
+  "pool": [
+    {
+      "symbol": "688758.SH",
+      "rows": 34995,
+      "board": "科创板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "300052.SZ",
+      "rows": 34995,
+      "board": "创业板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "300795.SZ",
+      "rows": 34995,
+      "board": "创业板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "513030.SH",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "002379.SZ",
+      "rows": 34995,
+      "board": "深主板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "603353.SH",
+      "rows": 34995,
+      "board": "沪主板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "300016.SZ",
+      "rows": 34995,
+      "board": "创业板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "600706.SH",
+      "rows": 34995,
+      "board": "沪主板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "605050.SH",
+      "rows": 34995,
+      "board": "沪主板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "518850.SH",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "513520.SH",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "301260.SZ",
+      "rows": 34995,
+      "board": "创业板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "603360.SH",
+      "rows": 34995,
+      "board": "沪主板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "165513.SZ",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "518800.SH",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "300341.SZ",
+      "rows": 34995,
+      "board": "创业板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "000703.SZ",
+      "rows": 34995,
+      "board": "深主板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "160416.SZ",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "002948.SZ",
+      "rows": 34995,
+      "board": "深主板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "513010.SH",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "161226.SZ",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "164701.SZ",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "300568.SZ",
+      "rows": 34995,
+      "board": "创业板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "513060.SH",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "001238.SZ",
+      "rows": 34995,
+      "board": "深主板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "159985.SZ",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "159605.SZ",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "159937.SZ",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "159892.SZ",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "513100.SH",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "002936.SZ",
+      "rows": 34995,
+      "board": "深主板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "600732.SH",
+      "rows": 34995,
+      "board": "沪主板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "513660.SH",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "513080.SH",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "688223.SH",
+      "rows": 34995,
+      "board": "科创板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "159941.SZ",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "164824.SZ",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "513550.SH",
+      "rows": 16001,
+      "board": "ETF/LOF",
+      "group": "T+0"
+    },
+    {
+      "symbol": "688128.SH",
+      "rows": 34995,
+      "board": "科创板",
+      "group": "T+1"
+    },
+    {
+      "symbol": "605286.SH",
+      "rows": 34995,
+      "board": "沪主板",
+      "group": "T+1"
+    }
+  ]
+}

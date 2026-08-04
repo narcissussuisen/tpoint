@@ -1,0 +1,2 @@
+{"date": "2026-08-03", "sym": "600570.SH", "source": "recalc", "entry_idx": 2, "exit_idx": 16, "entry_price": 23.05, "exit_price": 23.01, "exit_reason": "TRAIL", "ret_pct": -0.29, "gross_ret_pct": -0.174, "hold_bars": 14, "entry_reason": "[均线引力(dev=-0.53%)]"}
+{"date": "2026-08-03", "sym": "688111.SH", "source": "recalc", "entry_idx": 125, "exit_idx": 138, "entry_price": 272.11, "exit_price": 272.2, "exit_reason": "TRAIL", "ret_pct": -0.083, "gross_ret_pct": 0.033, "hold_bars": 13, "entry_reason": "[均线引力(dev=-1.69%) + 价格地板(新低dev=-1.69%)]"}

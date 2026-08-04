@@ -1,0 +1,168 @@
+{
+ "ts": "2026-08-02 20:11:26",
+ "checks": [
+  {
+   "status": "✅",
+   "item": "VERSION 文件 = 9.3.0",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "watchlist.json 5 只标的: 原油LOF易方达, 中韩半导体ETF华泰柏瑞, 蓝色光标, 恒生电子, 金山办公",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "monitor_config.json 5 只标的 per-symbol 配置",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "watchlist↔monitor_config 对齐",
+   "detail": "全部对齐"
+  },
+  {
+   "status": "✅",
+   "item": "161129.SZ: mpr=B periods=[60] atr=0.25",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "513310.SH: mpr=B periods=[60] atr=0.25",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "300058.SZ: mpr=B periods=[60] atr=0.25",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "600570.SH: mpr=B periods=[60] atr=0.25",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "688111.SH: mpr=B periods=[60] atr=0.25",
+   "detail": ""
+  },
+  {
+   "status": "⚠",
+   "item": "️ config/monitor_config.json 重复存在",
+   "detail": "确认与 data/ 下是否一致"
+  },
+  {
+   "status": "⚠",
+   "item": "️ 当前会话 MACD_GATE_MODE=(未设置)",
+   "detail": "生产需=floor"
+  },
+  {
+   "status": "✅",
+   "item": "关键文件 core/monitor.py",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "关键文件 core/miji_alpha.py",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "关键文件 core/datasource.py",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "关键文件 scripts/watchdog.py",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "关键文件 scripts/daily_signal_review.py",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "关键文件 venv/Scripts/python.exe",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "mootdx 日K连通 (161129.SZ 5 根)",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "mootdx 实时报价: 1 行",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "腾讯分时兜底: 242 根",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "watchdog.log (549KB, 0h前更新)",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "monitor_console.log (4018KB, 5h前更新)",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "alert_engine_console.log (3051KB, 5h前更新)",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "monitor_lifecycle.log (4460KB, 0h前更新)",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": ".monitor.log 存在",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "err.txt",
+   "detail": "为空"
+  },
+  {
+   "status": "⚠",
+   "item": "️ 计划任务查询",
+   "detail": "schtasks 被禁/失败: 'NoneType' object has no attribute 'splitlines'"
+  },
+  {
+   "status": "✅",
+   "item": "注册表自启 tpoint_watchdog: \"C:\\Users\\YZP\\.workbuddy\\binaries\\python\\versions\\3.13.12\\pythonw.exe\" \"C:\\Users\\YZP\\WorkBuddy\\Claw\\tpoint\\scripts\\launch_watchdog.py\"",
+   "detail": ""
+  },
+  {
+   "status": "✅",
+   "item": "watchdog pid=2784",
+   "detail": "存活"
+  },
+  {
+   "status": "⚠",
+   "item": "️ monitor pid 文件缺失",
+   "detail": "非交易日 monitor/engine 不 spawn，属预期"
+  },
+  {
+   "status": "⚠",
+   "item": "️ alert_engine pid 文件缺失",
+   "detail": "非交易日 monitor/engine 不 spawn，属预期"
+  },
+  {
+   "status": "✅",
+   "item": "python 进程 5 个",
+   "detail": "pid=25468, pid=25596, pid=2784, pid=31212, pid=29868"
+  }
+ ],
+ "pass": 27,
+ "warn": 5,
+ "fail": 0
+}

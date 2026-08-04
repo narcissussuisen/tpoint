@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>P3-2 S 信号专项回测 2026-08-02</title>
+<style>
+body{background:#11151c;color:#d5dae2;font-family:Segoe UI,Microsoft YaHei,sans-serif;padding:24px;max-width:1200px;margin:auto}
+h1{color:#fff;font-size:20px} h2{color:#9ec9ff;font-size:15px;margin-top:28px}
+.card{background:#1a2029;border-radius:12px;padding:18px;margin-top:12px}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #2a3140;font-size:13px}
+th{color:#8a93a6;font-weight:500}
+.dim{color:#7d8798;font-size:11px}
+.ok{color:#7ee787} .bad{color:#ff7b72}
+</style></head><body>
+<h1>P3-2 S 信号专项 · 2026-08-02</h1>
+<div class="card">
+  <h2>方法</h2>
+  <p>S 侧叠加过滤（B 侧恒生产现状：mpr_b60 + atr0.25 已落地）：<br>
+     <b>vwap_dev_ceil</b>=S 侧 VWAP 偏离上限 1.2%（报告 S_vwap_dev 最优箱 [0.842,1.200]，极端偏离追高胜率回落）；<br>
+     <b>atr_min_pct_s</b>=S 侧 ATR 门控 0.25%（报告 S_atr_pct 单调升，与 B 侧对称）。<br>
+     双口径防标签转移：全回合（S 被滤后可能改由 TRAIL/TIME 出场）+ S 触发回合（exit_reason=='S'，主判定）。<br>
+     mhd 恒 0.15 / VWAP0.65 / floor 门控 / 移动止损 act0.4 trail0.6；净胜率=净收益&gt;0。</p>
+</div>
+<div class="card">
+  <h2>40 只调参池（第一段，固定全集口径）</h2>
+  <table>
+    <tr><th>组合</th><th>全回合胜率</th><th>全笔数</th><th>全收益%</th><th>S触发胜率</th><th>S触发笔数</th><th>B信号</th><th>S信号</th></tr>
+    <tr><td>基线(生产B侧)</td><td>54.10%</td><td>1755</td><td>-5.45%</td><td>96.20%</td><td>436</td><td>2239</td><td>6269</td></tr><tr><td>+S vwap≤1.2%</td><td>53.40%</td><td>1758</td><td>-16.01%</td><td>100.00%</td><td>259</td><td>2243</td><td>3490</td></tr><tr><td>+S atr≥0.25%</td><td>54.10%</td><td>1755</td><td>-5.51%</td><td>96.40%</td><td>409</td><td>2241</td><td>4357</td></tr><tr><td>+S 两者叠加</td><td>53.40%</td><td>1758</td><td>-15.44%</td><td>100.00%</td><td>258</td><td>2245</td><td>2367</td></tr>
+  </table>
+  <p class="dim">「全回合」= B 建仓全部 round-trip（防标签转移）；「S触发」= exit_reason=='S' 回合（S 侧主口径）。</p>
+</div>
+<div class="card">
+  <h2>主组合（S vwap≤1.2% + atr≥0.25%）逐标的（40 只，ΔS触发胜率降序）</h2>
+  <p><b class="ok">S触发胜率提升 11 只 / 恶化 4 只 / 共 40 只</b></p>
+  <table>
+    <tr><th>标的</th><th>基线S触发</th><th>过滤后S触发</th><th>ΔS胜率</th><th>Δ全胜率</th><th>Δ全收益%</th><th>S保留</th></tr>
+    <tr><td>688223.SH</td><td>17笔 88.2%</td><td>8笔 100.0%</td><td>+11.8pp</td><td>+0.0pp</td><td>+4.11%</td><td>47%</td></tr><tr><td>300568.SZ</td><td>29笔 89.7%</td><td>16笔 100.0%</td><td>+10.3pp</td><td>-0.3pp</td><td>-1.16%</td><td>55%</td></tr><tr><td>603353.SH</td><td>23笔 91.3%</td><td>8笔 100.0%</td><td>+8.7pp</td><td>+4.5pp</td><td>+9.37%</td><td>35%</td></tr><tr><td>603360.SH</td><td>28笔 92.9%</td><td>13笔 100.0%</td><td>+7.1pp</td><td>+1.1pp</td><td>-2.85%</td><td>46%</td></tr><tr><td>300795.SZ</td><td>16笔 93.8%</td><td>10笔 100.0%</td><td>+6.2pp</td><td>+1.7pp</td><td>+3.95%</td><td>62%</td></tr><tr><td>300052.SZ</td><td>26笔 96.2%</td><td>12笔 100.0%</td><td>+3.8pp</td><td>+0.0pp</td><td>-5.60%</td><td>46%</td></tr><tr><td>002379.SZ</td><td>28笔 96.4%</td><td>15笔 100.0%</td><td>+3.6pp</td><td>-2.1pp</td><td>-2.27%</td><td>54%</td></tr><tr><td>301260.SZ</td><td>20笔 90.0%</td><td>14笔 92.9%</td><td>+2.9pp</td><td>-1.6pp</td><td>-1.69%</td><td>70%</td></tr><tr><td>605050.SH</td><td>19笔 84.2%</td><td>15笔 86.7%</td><td>+2.5pp</td><td>+0.7pp</td><td>+0.98%</td><td>79%</td></tr><tr><td>688128.SH</td><td>22笔 86.4%</td><td>16笔 87.5%</td><td>+1.1pp</td><td>-1.5pp</td><td>-3.14%</td><td>73%</td></tr><tr><td>688758.SH</td><td>29笔 93.1%</td><td>17笔 94.1%</td><td>+1.0pp</td><td>-1.3pp</td><td>+2.92%</td><td>59%</td></tr><tr><td>513030.SH</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>300016.SZ</td><td>18笔 100.0%</td><td>13笔 100.0%</td><td>+0.0pp</td><td>-1.3pp</td><td>+0.68%</td><td>72%</td></tr><tr><td>600706.SH</td><td>14笔 100.0%</td><td>5笔 100.0%</td><td>+0.0pp</td><td>-1.5pp</td><td>-3.43%</td><td>36%</td></tr><tr><td>518850.SH</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>513520.SH</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>165513.SZ</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>518800.SH</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>300341.SZ</td><td>24笔 100.0%</td><td>19笔 100.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>-1.94%</td><td>79%</td></tr><tr><td>000703.SZ</td><td>13笔 100.0%</td><td>6笔 100.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>-3.19%</td><td>46%</td></tr><tr><td>160416.SZ</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>002948.SZ</td><td>20笔 100.0%</td><td>16笔 100.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>-2.07%</td><td>80%</td></tr><tr><td>161226.SZ</td><td>3笔 100.0%</td><td>2笔 100.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.11%</td><td>67%</td></tr><tr><td>164701.SZ</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>001238.SZ</td><td>14笔 100.0%</td><td>10笔 100.0%</td><td>+0.0pp</td><td>-1.6pp</td><td>-1.51%</td><td>71%</td></tr><tr><td>159985.SZ</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>159605.SZ</td><td>2笔 100.0%</td><td>1笔 100.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>-0.14%</td><td>50%</td></tr><tr><td>159937.SZ</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>513100.SH</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>002936.SZ</td><td>3笔 100.0%</td><td>3笔 100.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>100%</td></tr><tr><td>600732.SH</td><td>24笔 100.0%</td><td>15笔 100.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.05%</td><td>62%</td></tr><tr><td>513660.SH</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>513080.SH</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>159941.SZ</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>164824.SZ</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>513550.SH</td><td>0笔 0.0%</td><td>0笔 0.0%</td><td>+0.0pp</td><td>+0.0pp</td><td>+0.00%</td><td>0%</td></tr><tr><td>605286.SH</td><td>27笔 96.3%</td><td>17笔 94.1%</td><td>-2.2pp</td><td>-0.6pp</td><td>+0.27%</td><td>63%</td></tr><tr><td>513010.SH</td><td>3笔 66.7%</td><td>2笔 50.0%</td><td>-16.7pp</td><td>+0.0pp</td><td>-0.48%</td><td>67%</td></tr><tr><td>159892.SZ</td><td>7笔 85.7%</td><td>2笔 50.0%</td><td>-35.7pp</td><td>+0.0pp</td><td>-1.70%</td><td>29%</td></tr><tr><td>513060.SH</td><td>7笔 42.9%</td><td>3笔 0.0%</td><td>-42.9pp</td><td>+3.4pp</td><td>-1.26%</td><td>43%</td></tr>
+  </table>
+</div>
+<div class="card">
+  <h2>watchlist 5 只独立验证（第二段，不做二次调参；S触发胜率(笔数) + 全口径小字）</h2>
+  <table>
+    <tr><th>标的</th><th>基线(生产B侧)</th><th>+S vwap≤1.2%</th><th>+S atr≥0.25%</th><th>+S 两者叠加</th></tr>
+    <tr><td>161129.SZ</td><td><b>100.0%</b>(6)<br><span class="dim">全:63.2%(38) 收益8.72%</span></td><td><b>100.0%</b>(4)<br><span class="dim">全:63.2%(38) 收益6.98%</span></td><td><b>100.0%</b>(6)<br><span class="dim">全:63.2%(38) 收益8.72%</span></td><td><b>100.0%</b>(4)<br><span class="dim">全:63.2%(38) 收益6.98%</span></td></tr><tr><td>513310.SH</td><td><b>100.0%</b>(1)<br><span class="dim">全:50.0%(22) 收益-4.98%</span></td><td><b>100.0%</b>(1)<br><span class="dim">全:50.0%(22) 收益-4.98%</span></td><td><b>100.0%</b>(1)<br><span class="dim">全:50.0%(22) 收益-4.98%</span></td><td><b>100.0%</b>(1)<br><span class="dim">全:50.0%(22) 收益-4.98%</span></td></tr><tr><td>300058.SZ</td><td><b>94.1%</b>(17)<br><span class="dim">全:52.6%(116) 收益-14.50%</span></td><td><b>100.0%</b>(8)<br><span class="dim">全:53.8%(119) 收益-19.25%</span></td><td><b>94.1%</b>(17)<br><span class="dim">全:52.6%(116) 收益-14.50%</span></td><td><b>100.0%</b>(8)<br><span class="dim">全:53.8%(119) 收益-19.25%</span></td></tr><tr><td>600570.SH</td><td><b>95.2%</b>(21)<br><span class="dim">全:59.6%(52) 收益-0.13%</span></td><td><b>94.7%</b>(19)<br><span class="dim">全:59.6%(52) 收益-0.58%</span></td><td><b>95.0%</b>(20)<br><span class="dim">全:59.6%(52) 收益-0.08%</span></td><td><b>94.7%</b>(19)<br><span class="dim">全:59.6%(52) 收益-0.58%</span></td></tr><tr><td>688111.SH</td><td><b>84.4%</b>(32)<br><span class="dim">全:56.2%(80) 收益8.67%</span></td><td><b>78.3%</b>(23)<br><span class="dim">全:54.4%(79) 收益6.35%</span></td><td><b>91.7%</b>(24)<br><span class="dim">全:55.0%(80) 收益8.62%</span></td><td><b>88.9%</b>(18)<br><span class="dim">全:54.4%(79) 收益7.18%</span></td></tr>
+  </table>
+</div>
+<div class="card">
+  <h2>结论与生产建议</h2>
+  <table>
+    <tr><th>组合</th><th>调参池 40 只</th><th>watchlist 5 只</th><th>判定</th></tr>
+    <tr><td>S vwap≤1.2%</td><td>S胜率Δ+3.80pp<br><span class="dim">S保留59% / 全收益Δ-10.56%</span></td><td class="bad">⚠️ 方向对但样本/收益不足</td></tr><tr><td>S atr≥0.25%</td><td>S胜率Δ+0.20pp<br><span class="dim">S保留94% / 全收益Δ-0.06%</span></td><td class="bad">❌ 不达标</td></tr><tr><td>S 两者叠加</td><td>S胜率Δ+3.80pp<br><span class="dim">S保留59% / 全收益Δ-9.99%</span></td><td class="bad">⚠️ 方向对但样本/收益不足</td></tr>
+  </table>
+  <h2 style="margin-top:18px">判定规则</h2>
+  <ul>
+    <li>达标：S 触发净胜率中位 Δ≥+1pp 且 S 触发样本保留 ≥80%（与基线 S 回合数比）</li>
+    <li>防标签转移：全口径总收益不得恶化——若 S 胜率升但全收益降，说明只是把亏损转嫁到 TRAIL/TIME 标签</li>
+    <li>watchlist 独立验证无单只 &gt;3pp 退化（全口径）</li>
+  </ul>
+</div>
+</body></html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ML 效果复现生产 · 模块0-2 交付报告</title>
+<style>
+  :root { --bg:#0d1117; --card:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e;
+          --green:#3fb950; --red:#f85149; --blue:#58a6ff; --orange:#d29922; --purple:#bc8cff; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; line-height:1.6; padding:32px 20px; }
+  .wrap { max-width:1000px; margin:0 auto; }
+  h1 { font-size:26px; margin-bottom:6px; color:var(--blue); }
+  .sub { color:var(--muted); font-size:14px; margin-bottom:24px; }
+  .meta { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px; font-size:12px; color:var(--muted); }
+  .meta span { background:var(--card); border:1px solid var(--border); padding:4px 10px; border-radius:20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px 24px; margin-bottom:20px; }
+  .card h2 { font-size:17px; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+  .card h2 .tag { font-size:11px; background:var(--blue); color:#0d1117; padding:2px 8px; border-radius:10px; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:500; white-space:nowrap; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .ok { color:var(--green); font-weight:600; }
+  .warn { color:var(--orange); font-weight:600; }
+  .bad { color:var(--red); font-weight:600; }
+  .mono { font-family:Consolas,monospace; font-size:12px; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+  .pill.g { background:rgba(63,185,80,.15); color:var(--green); }
+  .pill.o { background:rgba(210,153,34,.15); color:var(--orange); }
+  .pill.b { background:rgba(88,166,255,.15); color:var(--blue); }
+  ul { padding-left:20px; }
+  li { margin:5px 0; font-size:13.5px; }
+  .foot { color:var(--muted); font-size:12px; text-align:center; margin-top:28px; }
+  code { background:rgba(110,118,129,.2); padding:1px 6px; border-radius:4px; font-size:12px; font-family:Consolas,monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ML 效果复现生产 · 模块0-2 交付报告</h1>
+  <div class="sub">计划 swift-forging-einstein.md · v9.3.0 生产同源 · 2026-08-02</div>
+  <div class="meta">
+    <span>里程碑 M1 ✅ 信号源对齐重训</span>
+    <span>里程碑 M2 ✅ 模型+特征管线落地 monitor</span>
+    <span>模型 v1.0.0-ml-20260802</span>
+  </div>
+
+  <div class="card">
+    <h2><span class="tag">M1</span> 信号源对齐：训练 = 生产信号链</h2>
+    <p style="font-size:13.5px;margin-bottom:12px">ML 训练信号源已从"无过滤基线（mhd=0）"对齐为生产链（<code>mhd 0.15 + per-symbol atr0.25/mpr_b60 + VWAP_DEV_BUY 0.65</code>），同源训练。</p>
+    <table>
+      <tr><th>量化实证</th><th>旧（未对齐）</th><th>新（对齐后）</th><th>变化</th></tr>
+      <tr><td>B 信号保留率（watchlist 5 只）</td><td class="num">100%</td><td class="num">12.9% ~ 22%</td><td><span class="warn">生产过滤砍 78-87% B 候选</span></td></tr>
+      <tr><td>S 信号保留率</td><td class="num">100%</td><td class="num">49.7% ~ 74%</td><td>符合生产口径</td></tr>
+      <tr><td>全量样本</td><td class="num">—</td><td class="num">1,529,453（3351 标的）</td><td>46min 构建</td></tr>
+      <tr><td>多周期 MACD</td><td>双实现</td><td>统一 <code>compute_multi_period_macd</code></td><td><span class="ok">零漂移</span></td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2><span class="tag">M2</span> 双口径验收：AUC 大幅超越阈值</h2>
+    <table>
+      <tr><th>指标</th><th>旧基线（未对齐）</th><th>新基线（对齐后）</th><th>验收阈值</th><th>判定</th></tr>
+      <tr><td>B OOS AUC</td><td class="num">0.6481</td><td class="num"><b>0.7070</b></td><td class="num">≥0.6381</td><td><span class="pill g">✅ 达标 +0.059</span></td></tr>
+      <tr><td>S OOS AUC</td><td class="num">0.7421</td><td class="num"><b>0.8060</b></td><td class="num">≥0.7321</td><td><span class="pill g">✅ 达标 +0.064</span></td></tr>
+      <tr><td>B top10% 箱胜率</td><td class="num">—</td><td class="num">89.8%</td><td>—</td><td>排序力强</td></tr>
+      <tr><td>S top10% 箱胜率</td><td class="num">—</td><td class="num">93.8%</td><td>—</td><td>排序力强</td></tr>
+      <tr><td>B 箱单调性</td><td>—</td><td><span class="ok">True</span></td><td>单调</td><td>概率→胜率映射有效</td></tr>
+      <tr><td>S 箱单调性</td><td>—</td><td><span class="ok">True</span></td><td>单调</td><td>概率→胜率映射有效</td></tr>
+    </table>
+    <p style="font-size:12.5px;color:var(--muted);margin-top:10px">GroupKFold CV：B 0.7149 (±0.001) / S 0.7862 (±0.014)。评估口径：Purged Walk-Forward OOS（70/30 时序切分），防泄漏。</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="tag">M2</span> 部署架构：进程内推理 + fail-open</h2>
+    <table>
+      <tr><th>设计决策</th><th>实现</th><th>状态</th></tr>
+      <tr><td>推理形态</td><td>XGB 加载进 monitor 同进程（lazy + mtime 热重载）</td><td><span class="ok">✅</span></td></tr>
+      <tr><td>特征管线</td><td><code>core/ml_features.py</code> 单一实现（39 特征），新旧零漂移</td><td><span class="ok">✅</span></td></tr>
+      <tr><td>特征序校验</td><td>模型 feature_names == FEAT_ALL 才加载（防错位）</td><td><span class="ok">✅</span></td></tr>
+      <tr><td>ctx 对齐</td><td>check_miji_trigger snapshot 精确 factors（消除 train-serve skew）</td><td><span class="ok">✅</span></td></tr>
+      <tr><td>fail-open</td><td>未启用→零影响；模型缺失/异常→原信号放行</td><td><span class="ok">✅</span></td></tr>
+      <tr><td>per-symbol 热重载</td><td>ml_enable/ml_model 每轮读取（15s 生效）</td><td><span class="ok">✅</span></td></tr>
+      <tr><td>影子模式</td><td>打分只写 <code>data/ml_shadow.jsonl</code> 不推送（全局开关）</td><td><span class="ok">✅</span></td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2><span class="tag">M2</span> 端到端验证（真实行情 161129 07-24）</h2>
+    <table>
+      <tr><th>验证项</th><th>结果</th><th>说明</th></tr>
+      <tr><td>信号打分</td><td>B=10 S=5 全部成功</td><td>39 特征构建 + XGB 推理</td></tr>
+      <tr><td>融合规则</td><td class="num">boost=10 / filter=3 / keep=2</td><td>p≥0.60 放大 / p&lt;0.45 过滤</td></tr>
+      <tr><td>推理耗时（稳态）</td><td class="num"><b>7-9 ms/信号</b></td><td>15s 轮询无压力</td></tr>
+      <tr><td>冷启动</td><td class="num">1.7 s</td><td>首信号一次性模型加载</td></tr>
+      <tr><td>fail-open</td><td>模型缺失 → keep</td><td>不阻塞信号主链路</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2><span class="tag">交付</span> 产物清单</h2>
+    <ul>
+      <li><b>模型</b>：<code>output/ml_models/v1.0.0-ml-20260802_{b,s}.json</code>（B AUC 0.707 / S AUC 0.806）</li>
+      <li><b>版本台账</b>：<code>output/ml_versions.json</code>（含测试版 + 正式版，可回溯）</li>
+      <li><b>数据集</b>：<code>output/ml_dataset_aligned/dataset.csv</code>（1,529,453 样本 / 3351 标的）</li>
+      <li><b>训练结果</b>：<code>output/ml_train_results_aligned.json</code></li>
+      <li><b>特征管线</b>：<code>core/ml_features.py</code>（FEAT_ALL 39 列 + compute_kdj + build_feature_row）</li>
+      <li><b>monitor 接入</b>：<code>core/monitor.py</code>（score_signal / _load_ml_model / 影子模式 / per-symbol 热重载）</li>
+      <li><b>端到端测试</b>：<code>scripts/ml_deploy_e2e_test.py</code></li>
+      <li><b>配置</b>：<code>data/monitor_config.json</code>（5 只 ml_enable=false 待灰度，ml_model 已指向正式版）</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2><span class="tag">下一步</span> 模块3-5 路线</h2>
+    <ul>
+      <li><b>模块3 效果验证</b>：离线 A/B（tune_grid ml_ab phase，固定全集口径）+ 在线影子模式 5 交易日（<code>config/monitor_config.json</code> 全局 <code>ml_shadow=true</code> 即开启）</li>
+      <li><b>模块4 上线策略</b>：按实盘信号历史灰度顺序 161129 → 513310 → 600570 → 300058 → 688111；A/B 对比净胜率；异常自动回滚（fail-open + 一键 ml_enable=false）</li>
+      <li><b>模块5 监控重训</b>：周重训自动化（只发版不上线）；<code>data/ml_shadow.jsonl</code> 累计样本监控 drift；模型版本热重载（mtime）</li>
+    </ul>
+  </div>
+
+  <div class="foot">tpoint v9.3.0 · 报告生成 2026-08-02 22:40 · 数据源 F:\keyfactor_data\1m</div>
+</div>
+</body>
+</html>
