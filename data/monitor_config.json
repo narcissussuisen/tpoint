@@ -35,8 +35,8 @@
     "_vol_note": "v10.0.0 量能确认启用（0805消融全指标改善）"
   },
   "_global": {
-    "settle_split_enable": true,
-    "_note": "2026-08-04 用户批准启用（生产实测）；回滚=改false"
+    "settle_split_enable": false,
+    "_note": "2026-08-05 用户指令：T1不做单次往返限制，全量信号实时推送，实盘观察信号质量；settle_rules 模块保留（开关随时可恢复）"
   },
   "300308.SZ": {
     "comment": "中际旭创；0805新进watchlist（用户指令）；F盘98d回填；F2消融 ret 5.24→26.41/wr 52.6→56.3/dd 18.67→10.77/sharpe 0.24→1.78 全面改善",
