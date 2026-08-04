@@ -1717,6 +1717,16 @@ def run():
                                                      mpr_enable=_mpr_e, mpr_periods=_mpr_p,
                                                      atr_min_pct=_atr_p),
                                           override_action)
+                        # [v9.4.0] T+0/T+1 结算闸门（core/settle_rules，默认关）：T1 标的每方向每日
+                        # 限 1 次完整往返（防底仓磨损/过度交易），T0 标的不变。
+                        # 开关：monitor_config.json 顶层 "_global".settle_split_enable
+                        try:
+                            import settle_rules as _sr
+                            if _sr.split_enabled():
+                                sigs = _sr.filter_signals(sym, sigs, st,
+                                                          now.strftime('%Y%m%d'), log=print)
+                        except Exception as _e:
+                            print(f"  [warning] settle_rules 异常(不阻断信号): {_e}")
                         if _first_scan:
                             # 首扫抑制：重启/长断线后 detect_for 会重扫一段历史 bar 以重建持仓状态，
                             # 但这些 bar 的实时信号当时并未发出（用户未收到），重发既刷屏又误导。

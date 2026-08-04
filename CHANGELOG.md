@@ -163,3 +163,8 @@
 - 价格口径：当日同源行情用推送价（实证 bar close 会错判盈亏）；配对同分钟去重
 - 寻优首跑：4/5只 trail→0.5/0.5 候选（+3.7~12.5pp）待两段式复核；atr 维持 0.25
 - 注：core/monitor.py 同时包含 08-02/08-03 工作区遗留的 ML shadow 接入改动（一并入库）
+
+## v9.4.0（2026-08-04）大版本 —— T+0/T+1 结算制度拆分（开关默认关，待用户确认启用）
+- 新增 core/settle_rules.py：T0/T1 规则模块（T1 每方向每日1次完整往返状态机；T0 原样）
+- core/monitor.py：_risk_gate 后接入 settle_rules.filter_signals，开关=_global.settle_split_enable（默认 false，生产行为与 v9.3.1 一致）
+- docs/t0_t1_split.md：差异口径（信号生成/调仓频率/成交规则）与回滚说明
