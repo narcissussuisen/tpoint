@@ -823,8 +823,13 @@ def load_state():
         return {}
 
 def save_state(s):
-    with open(STATE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(s, f)
+    # 2026-08-04 健壮性修复：state.json 写入失败（外部工具锁定/EDR拦截）不应中断扫描轮。
+    # 内存态 st 保持，下轮重试落盘；推送主链路（飞书webhook）不依赖本地文件，不中断。
+    try:
+        with open(STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(s, f)
+    except Exception as e:
+        print(f"  ⚠️ state.json 写入失败(内存态保持,下轮重试): {e}")
 
 def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
     """每轮扫描末写入 metrics.json，供告警引擎(watchdog)采集。
@@ -1477,15 +1482,20 @@ def run():
         if st.get('_daily_refreshed_date') != today_str:
             refresh_daily()
             st['_daily_refreshed_date'] = today_str
-            if not os.path.exists(SIGNAL_FILE):
-                with open(SIGNAL_FILE, 'w', encoding='utf-8') as f:
-                    f.write(f"[{today_str}]\n")
-            else:
-                with open(SIGNAL_FILE, 'r', encoding='utf-8', errors='replace') as f:
-                    existing = f.read()
-                if f'[{today_str}]' not in existing:
-                    with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
-                        f.write(f"\n[{today_str}]\n")
+            # 2026-08-04 健壮性修复：signal.txt 日期头写入失败（如被外部排查工具/EDR临时锁定）
+            # 不应导致整个 monitor 启动崩溃——写日志失败只跳过，监控主流程继续。
+            try:
+                if not os.path.exists(SIGNAL_FILE):
+                    with open(SIGNAL_FILE, 'w', encoding='utf-8') as f:
+                        f.write(f"[{today_str}]\n")
+                else:
+                    with open(SIGNAL_FILE, 'r', encoding='utf-8', errors='replace') as f:
+                        existing = f.read()
+                    if f'[{today_str}]' not in existing:
+                        with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
+                            f.write(f"\n[{today_str}]\n")
+            except Exception as e:
+                print(f"  ⚠️ signal.txt 日期头写入失败(不阻断启动): {e}")
             print(f"[{datetime.now(CST).strftime('%H:%M:%S')}] 📅 日K已刷新 " +
                   ', '.join(f"{TARGETS[s]}={STATE[s]['PC']:.2f}" for s in syms))
 
