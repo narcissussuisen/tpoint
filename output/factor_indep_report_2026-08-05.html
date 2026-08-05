@@ -1,0 +1,58 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
+<title>tpoint 独立因子研究终报 2026-08-05</title>
+<style>body{font-family:system-ui,"Microsoft YaHei",sans-serif;background:#fafbfc;color:#222;padding:28px;max-width:1150px;margin:auto;line-height:1.6}
+h1{font-size:21px;border-bottom:2px solid #c0392b;padding-bottom:8px} h2{font-size:16px;margin-top:30px;color:#c0392b}
+table{border-collapse:collapse;width:100%;font-size:13px;background:#fff;margin:10px 0}
+td,th{border:1px solid #ddd;padding:6px 9px;text-align:left} th{background:#eef2f6}
+.k{color:#c0392b;font-weight:600} .g{color:#2e7d32;font-weight:600}
+.note{color:#666;font-size:12px;line-height:1.7} .box{background:#fff;border:1px solid #e0e0e0;border-left:4px solid #c0392b;padding:12px 16px;margin:12px 0;font-size:13.5px}
+</style></head><body>
+<h1>tpoint 独立因子研究终报（脱离 miji 三因子框架）· 2026-08-05</h1>
+<p class="note">方法：候选池 = Alpha101/Alpha191 中 1m OHLCV 可计算的时序因子 + 经典技术指标共 23 个，现框架因子（VWAPdev/MACDhist）仅作对照不参与预设。
+评判唯一标准 = 数据：日内 Spearman IC（前向 5/15/30/60 分钟，按日计算跨日平均，t=mean/(std/√n日)），方向一致性 ≥3/4 标的；
+阈值信号按 z 分数触发、扣双边成本（股票 0.116%/基金 0.06%）。标的：161129 / 513310 / 688111 / 300308（F盘全历史 66~145 交易日 1m）。</p>
+
+<h2>一、关键因子清单（筛选结果 + 最优参数 + 选择理由）</h2>
+<table>
+<tr><th>#</th><th>因子</th><th>来源</th><th>最优参数</th><th>IC(60min)</th><th>t值</th><th>策略角色</th><th>选择理由（数据依据）</th></tr>
+<tr><td>1</td><td class="k">HLPOS 日内位置</td><td>自构（高低点归一）</td><td>(c−当日min)/(当日max−min)，z&gt;2.0，持有60min</td><td>−0.4365</td><td>−14.41</td><td><b>主触发</b></td><td>全部因子中 IC 最高且 4/4 标的方向一致；z&gt;2.0 信号单笔净 +1.60%、胜率 93.2%（n=2992）。比 VWAPdev 略优，且不依赖成交量（对缩量 LOF 更稳）。</td></tr>
+<tr><td>2</td><td class="k">VWAPdev 均线引力</td><td>现框架（对照组）</td><td>偏离日内VWAP%，z&gt;2.0，持有60min</td><td>−0.4306</td><td>−15.44</td><td><b>主触发（并列/确认）</b></td><td>t 值全榜最高（−15.44），z&gt;2.0 单笔净 +1.43%、胜率 96.0%。独立研究反而<b>验证了现框架核心因子的正确性</b>——但它是"确认"而非"更优触发"。</td></tr>
+<tr><td>3</td><td class="k">RSI24 / RSI14</td><td>Alpha191#6 同源 / Wilder</td><td>周期24（60min horizon），超买&gt;80 超卖&lt;20</td><td>−0.2644</td><td>−9.72</td><td><b>辅助确认</b></td><td>经典反转族中表现最好；与 HLPOS 相关性中等（不同构造），可做第二确认降低误触。回应了 08-05 复盘〇节"缺 RSI/KDJ 兜底"的诊断。</td></tr>
+<tr><td>4</td><td class="k">ROC20 / MOM30</td><td>动量族（Alpha191#31族）</td><td>20/30 bar 动量反转</td><td>−0.2582 / −0.3038</td><td>−11.02 / −10.78</td><td><b>辅助确认</b></td><td>日内与 RSI 同族的反转证据，IC 显著；MOM30 在 60min horizon 与 HLPOS 互补（价格路径 vs 区间位置）。</td></tr>
+<tr><td>5</td><td class="k">KDJ_K9</td><td>经典 KDJ</td><td>9,3,3，K值超买超卖</td><td>−0.1950</td><td>−8.39</td><td><b>兜底触发</b></td><td>高低点反转族的平滑版，在 HLPOS 未达极值但快速折返时提供更早信号（响应快于 RSI24）。</td></tr>
+<tr><td>6</td><td class="k">VOLZ20 量能异常</td><td>自构</td><td>z&gt;1.5 作为过滤器</td><td colspan="2">IC 弱（直接预测力不强）</td><td><b>过滤器（非触发）</b></td><td>直接 IC 不显著，但作为<b>过滤条件</b>可减少假突破：v10 量能确认（vol_confirm）消融全指标改善已侧面验证其过滤价值。</td></tr>
+</table>
+
+<h2>二、有效性证据（历史回测数据）</h2>
+<div class="box">
+<b>IC 总榜（60min horizon，全部 4/4 方向一致）：</b><br>
+HLPOS −0.437(t−14.4) ＞ VWAPdev −0.431(t−15.4) ＞ MOM30 −0.304(t−10.8) ＞ RSI24 −0.264(t−9.7) ＞ ROC20 −0.258(t−11.0) ＞ BOLL%b/ZSCORE −0.226(t−10.6) ＞ RSI14 −0.215(t−9.0) ＞ KDJ −0.195(t−8.4) ＞ ROC10 −0.184(t−10.2)<br>
+<b>Alpha101 全部落选</b>：#54/#101/#12/#53 的 IC 均 <0.1 或方向不一致——该库为日频横截面设计，直接移植到分钟级时序无效（数据否决，不迁就名气）。
+</div>
+<div class="box">
+<b>阈值信号扣费净收益（z 分数触发，60min 前向，已扣双边成本）：</b><br>
+HLPOS z&gt;2.0：<span class="g">+1.60%/笔，胜率 93.2%，n=2992</span>（分标的复算：+1.41%/+1.40%/+1.03% 均成立，非单标的偶然）<br>
+HLPOS z&gt;1.5：+1.50%/笔，胜率 87.8%，n=3710<br>
+VWAPdev z&gt;2.0：+1.43%/笔，胜率 96.0%，n=2407<br>
+<b>结论：分钟级做T的 alpha 几乎全部来自"均值回复"家族；趋势/动量/量价因子在本周期尺度无证据。</b>
+</div>
+
+<h2>三、因子组合逻辑建议</h2>
+<div class="box">
+<b>三层结构（触发 → 确认 → 过滤）：</b><br>
+① <b>触发层</b>：HLPOS 达极值区（&gt;0.9 或 &lt;0.1，或 z&gt;2.0）——候选信号产生；<br>
+② <b>确认层</b>：VWAPdev 同向极值（偏离 VWAP 超阈）+ RSI24 超买/超卖（&gt;80/&lt;20）——≥1 项确认才放行，压制 HLPOS 在单边趋势日的假极值；<br>
+③ <b>过滤层</b>：VOLZ20 量能异常放大时降权（防放量突破沿趋势延续），KDJ 折返方向与触发方向一致时加分；<br>
+④ <b>出场</b>：维持当前 trail 最优参数（v10.0.1 已上线 0.5/0.6、0.3/0.5、0.5/0.8），60min 为信号有效性验证基准窗。<br>
+<b>与现框架的关系</b>：不是推翻——HLPOS+VWAPdev 本质是现"引力"因子的强化版（位置归一+成交量解耦），新增价值在 RSI/KDJ 确认层与 VOLZ 过滤层。
+</div>
+
+<h2>四、诚实声明（必须阅读）</h2>
+<p class="note">
+1. 本研究为<b>样本内证据</b>：IC 与阈值收益基于 F盘全历史，未做盲 holdout。按 v9.3.0 教训，任何因子声称"有效"前须过新宇宙盲 holdout（tune_pool_40 池就位后执行）。<br>
+2. 阈值信号收益是"前向 60min 均值−成本"的预测力证据，<b>非完整 round-trip 回测</b>（未含出场管理/冷却/仓位约束），实盘收益会打折。<br>
+3. HLPOS 与 VWAPdev 高相关（同源均值回复），组合时不应重复计权。<br>
+4. 688111/513310 全历史策略收益为负的结构性问题与本研究结论独立——因子再好，标的不适配仍是负期望，建议评审移出。<br>
+5. 明细数据：factor_indep_2026-08-05.json / factor_indep_2026-08-05.html（全量 IC 表+阈值表）。</p>
+<p class="note">生成：factor_research_independent.py ｜ 2026-08-05 17:20 ｜ 口径：数据表现为唯一评判标准</p>
+</body></html>
