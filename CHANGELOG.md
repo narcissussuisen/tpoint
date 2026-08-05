@@ -194,3 +194,12 @@
 - 688111.SH trail: 0.4/0.6 → 0.5/0.8（ret -32.62%→-29.23%，wr 47.0%→48.0%）
 - 300308.SZ trail: 0.4/0.6 → 0.5/0.6（ret 5.24%→14.1%，wr 52.6%→58.3%）
 - 回测报告：output/optimal_deploy_2026-08-05.html
+
+## v10.1.0（2026-08-05）自迭代闭环 + 独立因子研究
+- 新增 daily_closed_loop.py：五环自迭代闭环（检验→排查→寻优→组合回测→次日算法落盘），bat 第10步
+- 新增 gate_ablation.py：零推送标的闸门消融探针（区分算法卡死 vs 生产侧抑制）
+- 新增 deploy_optimal.py：最优因子上线器（total_ret 优先 + wr 不降硬约束），4只 trail 已上线（v10.0.1）
+- 新增 factor_research_independent.py：独立因子研究（Alpha101/191+经典23因子 IC 评估）
+- 修复：_today.py / fdisk_daily_update.py 从 git 历史还原（v10.0.0 灾难恢复丢失，bat %D% 空根因）
+- 加固：ml_features 缺失 fail-open 守卫；selfcheck/watchdog 修复
+- 结论：分钟级 alpha 集中于均值回复族（HLPOS IC -0.437 最优）；Alpha101 移植无效被数据否决

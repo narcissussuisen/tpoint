@@ -51,6 +51,7 @@ PID_FILE = os.path.join(DATA_DIR, '.monitor.svc.pid')
 PROMPT_FILE = os.path.join(BASE_DIR, '..', 'stock-pool', 'prompt-common.md')
 CONFIG_FILE = os.path.join(BASE_DIR, 'config', 'monitor_config.json')
 WATCHLIST_FILE = os.path.join(DATA_DIR, 'watchlist.json')
+ALERT_PID_FILE = os.path.join(DATA_DIR, '.alert_engine.pid')   # alert_engine 单实例 PID（与 monitor 同机制，写于 core/alert_engine.py）
 
 # 解释器（与 run_monitor.bat 一致：managed python 3.13.12）
 MANAGED_PY = r'C:\Users\YZP\.workbuddy\binaries\python\versions\3.13.12\python.exe'
@@ -139,9 +140,41 @@ class CheckResult:
 
 def _get_python_procs():
     """获取所有 python 进程的 [(pid, cmdline)] 列表。
-    优先用 PowerShell Get-CimInstance，wmic 兜底。"""
+
+    多方法互补（union，按 PID 去重），任一方法在计划任务/自检会话下漏抓都不会导致
+    整体为空——这是此前 alert_engine「未检测到」+ 计划任务 FAIL 误报的根因。
+    优先级: wmic（本机验证最稳，含完整 commandline）> PowerShell > tasklist PIDs 兜底。
+    """
     procs = []
-    # 方法1: PowerShell
+    seen = set()
+
+    def _add(pid, cmd):
+        try:
+            pid = int(pid)
+        except Exception:
+            return
+        if pid in seen:
+            return
+        seen.add(pid)
+        procs.append((pid, (cmd or '').strip()))
+
+    # 方法1: wmic（本机验证可用，含完整 commandline；解析与旧兜底一致）
+    try:
+        out = subprocess.check_output(
+            ['wmic', 'process', 'where', "name like 'python%'", 'get', 'processid,commandline'],
+            timeout=15, stderr=subprocess.DEVNULL, text=True, errors='replace')
+        for line in out.strip().splitlines()[1:]:
+            line = line.strip()
+            if not line:
+                continue
+            # wmic 输出格式: CommandLine  PID（右对齐数字）
+            parts = line.rsplit(None, 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                _add(parts[1], parts[0])
+    except Exception:
+        pass
+
+    # 方法2: PowerShell Get-CimInstance
     try:
         out = subprocess.check_output(
             ['powershell', '-NoProfile', '-Command',
@@ -153,26 +186,22 @@ def _get_python_procs():
             if '||' in line:
                 pid_s, cmd = line.split('||', 1)
                 if pid_s.strip().isdigit():
-                    procs.append((int(pid_s.strip()), cmd.strip()))
-        if procs:
-            return procs
+                    _add(pid_s, cmd)
     except Exception:
         pass
-    # 方法2: wmic (兜底，部分新 Windows 已移除)
+
+    # 方法3: tasklist PIDs 兜底（无 commandline，仅保证 PID 不漏）
     try:
         out = subprocess.check_output(
-            ['wmic', 'process', 'where', "name like 'python%'", 'get', 'processid,commandline'],
-            timeout=15, stderr=subprocess.DEVNULL, text=True, errors='replace')
-        for line in out.strip().splitlines()[1:]:
-            line = line.strip()
-            if not line:
-                continue
-            # wmc 输出格式: CommandLine  PID（右对齐数字）
-            parts = line.rsplit(None, 1)
-            if len(parts) == 2 and parts[1].isdigit():
-                procs.append((int(parts[1]), parts[0].strip()))
+            ['tasklist', '/fi', 'imagename eq python.exe', '/fo', 'csv', '/nh'],
+            timeout=10, stderr=subprocess.DEVNULL, text=True, errors='replace')
+        for line in out.strip().splitlines():
+            parts = line.strip().strip('"').split('","')
+            if len(parts) >= 2 and parts[1].isdigit():
+                _add(parts[1], '')
     except Exception:
         pass
+
     return procs
 
 
@@ -223,6 +252,22 @@ def _proc_alive(pid):
         return True
     except Exception:
         return False
+
+
+def _read_pid_file(path):
+    """读取 PID 文件，返回 int PID；文件缺失/内容非数字返回 None。
+
+    作为 monitor / alert_engine 进程存活判定的权威来源（与 watchdog 单实例机制一致），
+    不依赖 cmdline 抓取——后者在计划任务/自检会话下 Get-CimInstance 常返回空导致误报。
+    """
+    try:
+        if os.path.exists(path):
+            c = open(path, encoding='utf-8').read().strip()
+            if c.isdigit():
+                return int(c)
+    except Exception:
+        pass
+    return None
 
 
 def _query_scheduled_tasks():
@@ -450,17 +495,16 @@ def check_services(trading_day):
     results = []
 
     # 2.1 monitor 进程存活
+    # 主判定：PID 文件 + 进程存活（与 watchdog/monitor 同机制，最可靠，不依赖 cmdline 抓取）
     procs = _get_python_procs()
-    monitor_pids = [pid for pid, cmd in procs if 'monitor.py' in cmd]
-    if not monitor_pids and procs:
-        # 命令行没抓到，用 PID 文件兜底
-        try:
-            with open(PID_FILE) as f:
-                pid_in_file = int(f.read().strip())
-            if _proc_alive(pid_in_file):
-                monitor_pids = [pid_in_file]
-        except Exception:
-            pass
+    pid_in_file = _read_pid_file(PID_FILE)
+    monitor_pids = [pid_in_file] if (pid_in_file and _proc_alive(pid_in_file)) else []
+    # 兜底1: cmdline 扫描（Get-CimInstance/tasklist 可能漏抓）
+    if not monitor_pids:
+        monitor_pids = [pid for pid, cmd in procs if 'monitor.py' in cmd]
+    # 兜底2: PID 文件存在但上面未抓到（cmdline 缺失但进程在）
+    if not monitor_pids and pid_in_file and _proc_alive(pid_in_file):
+        monitor_pids = [pid_in_file]
 
     if monitor_pids:
         pid = monitor_pids[0]
@@ -477,7 +521,14 @@ def check_services(trading_day):
         results.append(CheckResult('服务运行', 'monitor 进程', status, msg))
 
     # 2.2 alert_engine 进程存活
-    engine_pids = [pid for pid, cmd in procs if 'alert_engine' in cmd]
+    # 与 monitor 同机制：PID 文件 + 存活判定优先（此前无 PID 兜底 → cmdline 漏抓即误报 FAIL）
+    ae_pid = _read_pid_file(ALERT_PID_FILE)
+    engine_pids = [ae_pid] if (ae_pid and _proc_alive(ae_pid)) else []
+    if not engine_pids:
+        engine_pids = [pid for pid, cmd in procs if 'alert_engine' in cmd]
+    if not engine_pids and ae_pid and _proc_alive(ae_pid):
+        engine_pids = [ae_pid]
+
     if engine_pids:
         results.append(CheckResult('服务运行', 'alert_engine 进程', 'PASS',
                                    f'PID {engine_pids[0]}', value=engine_pids[0]))
@@ -757,9 +808,15 @@ def check_scheduled_tasks():
 
     expected = {'tpoint_monitor', 'tpoint_alert_engine'}
     procs = _get_python_procs()
+    # 进程存活判定：PID 文件 + 存活探测为权威源（与 watchdog 单实例机制一致），
+    # cmdline 匹配仅作兜底——计划任务/自检会话下 Get-CimInstance 常返回空导致误报。
+    _mon_pid = _read_pid_file(PID_FILE)
+    _ae_pid = _read_pid_file(ALERT_PID_FILE)
     running = {
-        'tpoint_monitor': any('monitor.py' in c for _, c in procs),
-        'tpoint_alert_engine': any('alert_engine' in c for _, c in procs),
+        'tpoint_monitor': (_mon_pid is not None and _proc_alive(_mon_pid))
+                          or any('monitor.py' in c for _, c in procs),
+        'tpoint_alert_engine': (_ae_pid is not None and _proc_alive(_ae_pid))
+                               or any('alert_engine' in c for _, c in procs),
     }
     found = set(tasks.keys())
     for name in expected:

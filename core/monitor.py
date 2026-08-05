@@ -23,7 +23,14 @@ from indicators import stars, K1
 # 出场管理：接 exit_manager 的移动止损/硬止损/S信号出场（P0 待办）
 from exit_manager import make_config
 # ML 信号打分：39 特征单一实现（core/ml_features，模块2.2）
-from ml_features import FEAT_ALL, build_feature_row as ml_build_feature_row
+# fail-open：ml_features.py 缺失（v10.0.0 灾难恢复后未找回，从未入 git）时
+# FEAT_ALL/ml_build_feature_row=None；ml_enable=false 时该路径不执行零影响，
+# 误开 ml_enable 时 score_signal 返回 keep 原样放行（见 score_signal 前部守卫）。
+try:
+    from ml_features import FEAT_ALL, build_feature_row as ml_build_feature_row
+except ImportError:
+    FEAT_ALL = None
+    ml_build_feature_row = None
 
 # ========== 路径配置化（跨平台，无需硬编码绝对路径） ==========
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -172,6 +179,9 @@ def score_signal(sym, sig_type, data, i, pc, sub, ctx, ml_cfg, shadow=False):
     # 未启用（含 None 配置）→ 直接返回，不打印告警、不计数（零影响原则）
     if not ml_cfg or not ml_cfg.get('ml_enable'):
         return None
+    # ml_features 模块缺失（导入守卫置 None）→ fail-open 原样放行
+    if FEAT_ALL is None or ml_build_feature_row is None:
+        return ('keep', None, 0)
     import time as _t
     t0 = _t.perf_counter()
     try:
