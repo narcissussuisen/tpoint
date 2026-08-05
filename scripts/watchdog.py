@@ -15,11 +15,12 @@ BASE = r'C:\Users\YZP\WorkBuddy\Claw\tpoint'
 # 用 WorkBuddy 托管的 python（3.13.12，91KB 启动器）而非 venv 的 241KB python.exe——
 # 实测 venv 的 python.exe 在 Windows 上启动即自复制出一模一样的子进程（parent→child 同 cmdline），
 # 导致 monitor/engine/watchdog 每个都变成双进程，引发重复告警。托管 python 不会自复制。
-# watchdog 自身与 monitor/engine 均用 pythonw（无窗口子系统），彻底无 cmd 弹窗。
-# 子进程 stdout/stderr 用【PIPE + 父进程 tee 线程】写日志文件——不依赖句柄继承，
-# 规避 pythonw 父进程文件句柄不可继承导致的 OSError 22 静默崩溃（旧方案已验证会偶发）。
+# watchdog 自身用 pythonw（无窗口）；monitor/engine 必须用 python.exe（v3.2 起）——
+# pythonw 拉起的子进程会静默早夭/僵死（进程存在但零日志零心跳，08-03/08-05 两次实证），
+# python.exe + CREATE_NO_WINDOW(0x08000000) 同样无弹窗但输出/心跳正常。
+# 子进程 stdout/stderr 用【PIPE + 父进程 tee 线程】写日志文件——不依赖句柄继承。
 PY     = r'C:\Users\YZP\.workbuddy\binaries\python\versions\3.13.12\pythonw.exe'   # watchdog 自身（无窗口）
-PY_CON = r'C:\Users\YZP\.workbuddy\binaries\python\versions\3.13.12\pythonw.exe'   # monitor/engine（无窗口子系统）
+PY_CON = r'C:\Users\YZP\.workbuddy\binaries\python\versions\3.13.12\python.exe'    # monitor/engine（v3.2: python.exe，禁用 pythonw）
 DATA = os.path.join(BASE, 'data')
 LOGS = os.path.join(BASE, 'logs')
 WATCHDOG_LOG  = os.path.join(LOGS, 'watchdog.log')
