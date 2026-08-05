@@ -1,0 +1,476 @@
+{
+  "date": "2026-08-05",
+  "generated_at": "2026-08-05 17:27:27",
+  "grids": {
+    "trail_activate_pct": [
+      0.3,
+      0.4,
+      0.5
+    ],
+    "trail_pct": [
+      0.5,
+      0.6,
+      0.8
+    ],
+    "atr_min_pct": [
+      0.15,
+      0.25,
+      0.35
+    ]
+  },
+  "current": {
+    "trail": [
+      0.4,
+      0.6
+    ],
+    "atr_min_pct": 0.25
+  },
+  "symbols": {
+    "161129.SZ": {
+      "name": "原油LOF易方达",
+      "n_days": 70,
+      "thin_sample": true,
+      "baseline": {
+        "n": 78,
+        "win_rate": 50.0,
+        "pl_ratio": 1.03,
+        "total_ret": 1.06
+      },
+      "trail_grid": {
+        "0.3/0.5": {
+          "n": 78,
+          "win_rate": 50.0,
+          "pl_ratio": 0.97,
+          "total_ret": -0.99
+        },
+        "0.3/0.6": {
+          "n": 78,
+          "win_rate": 48.7,
+          "pl_ratio": 1.08,
+          "total_ret": 0.91
+        },
+        "0.3/0.8": {
+          "n": 72,
+          "win_rate": 44.4,
+          "pl_ratio": 1.14,
+          "total_ret": -3.19
+        },
+        "0.4/0.5": {
+          "n": 78,
+          "win_rate": 52.6,
+          "pl_ratio": 0.89,
+          "total_ret": -0.48
+        },
+        "0.4/0.6": {
+          "n": 78,
+          "win_rate": 50.0,
+          "pl_ratio": 1.03,
+          "total_ret": 1.06
+        },
+        "0.4/0.8": {
+          "n": 72,
+          "win_rate": 45.8,
+          "pl_ratio": 1.11,
+          "total_ret": -2.13
+        },
+        "0.5/0.5": {
+          "n": 78,
+          "win_rate": 57.7,
+          "pl_ratio": 0.78,
+          "total_ret": 2.14
+        },
+        "0.5/0.6": {
+          "n": 78,
+          "win_rate": 52.6,
+          "pl_ratio": 1.01,
+          "total_ret": 4.35
+        },
+        "0.5/0.8": {
+          "n": 72,
+          "win_rate": 47.2,
+          "pl_ratio": 1.08,
+          "total_ret": -1.28
+        }
+      },
+      "atr_grid": {
+        "0.15": {
+          "n": 78,
+          "win_rate": 50.0,
+          "pl_ratio": 1.03,
+          "total_ret": 1.06
+        },
+        "0.25": {
+          "n": 78,
+          "win_rate": 50.0,
+          "pl_ratio": 1.03,
+          "total_ret": 1.06
+        },
+        "0.35": {
+          "n": 78,
+          "win_rate": 50.0,
+          "pl_ratio": 1.03,
+          "total_ret": 1.06
+        }
+      },
+      "recommendation": {
+        "sym": "161129.SZ",
+        "name": "原油LOF易方达",
+        "param": "trail",
+        "value": "0.5/0.5",
+        "win_rate": 57.7,
+        "delta_pp": 7.7,
+        "n_trips": 78,
+        "baseline_wr": 50.0,
+        "thin": true,
+        "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+      }
+    },
+    "513310.SH": {
+      "name": "中韩半导体ETF华泰柏瑞",
+      "n_days": 70,
+      "thin_sample": true,
+      "baseline": {
+        "n": 66,
+        "win_rate": 43.9,
+        "pl_ratio": 0.99,
+        "total_ret": -8.33
+      },
+      "trail_grid": {
+        "0.3/0.5": {
+          "n": 75,
+          "win_rate": 42.7,
+          "pl_ratio": 1.14,
+          "total_ret": -5.29
+        },
+        "0.3/0.6": {
+          "n": 73,
+          "win_rate": 42.5,
+          "pl_ratio": 1.15,
+          "total_ret": -5.12
+        },
+        "0.3/0.8": {
+          "n": 65,
+          "win_rate": 41.5,
+          "pl_ratio": 1.1,
+          "total_ret": -8.37
+        },
+        "0.4/0.5": {
+          "n": 67,
+          "win_rate": 44.8,
+          "pl_ratio": 0.95,
+          "total_ret": -8.32
+        },
+        "0.4/0.6": {
+          "n": 66,
+          "win_rate": 43.9,
+          "pl_ratio": 0.99,
+          "total_ret": -8.33
+        },
+        "0.4/0.8": {
+          "n": 63,
+          "win_rate": 41.3,
+          "pl_ratio": 1.09,
+          "total_ret": -9.0
+        },
+        "0.5/0.5": {
+          "n": 63,
+          "win_rate": 49.2,
+          "pl_ratio": 0.82,
+          "total_ret": -7.24
+        },
+        "0.5/0.6": {
+          "n": 64,
+          "win_rate": 46.9,
+          "pl_ratio": 0.93,
+          "total_ret": -6.4
+        },
+        "0.5/0.8": {
+          "n": 62,
+          "win_rate": 45.2,
+          "pl_ratio": 1.01,
+          "total_ret": -6.02
+        }
+      },
+      "atr_grid": {
+        "0.15": {
+          "n": 66,
+          "win_rate": 43.9,
+          "pl_ratio": 0.99,
+          "total_ret": -8.33
+        },
+        "0.25": {
+          "n": 66,
+          "win_rate": 43.9,
+          "pl_ratio": 0.99,
+          "total_ret": -8.33
+        },
+        "0.35": {
+          "n": 66,
+          "win_rate": 43.9,
+          "pl_ratio": 0.99,
+          "total_ret": -8.33
+        }
+      },
+      "recommendation": {
+        "sym": "513310.SH",
+        "name": "中韩半导体ETF华泰柏瑞",
+        "param": "trail",
+        "value": "0.5/0.5",
+        "win_rate": 49.2,
+        "delta_pp": 5.3,
+        "n_trips": 63,
+        "baseline_wr": 43.9,
+        "thin": true,
+        "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+      }
+    },
+    "688111.SH": {
+      "name": "金山办公",
+      "n_days": 149,
+      "thin_sample": false,
+      "baseline": {
+        "n": 186,
+        "win_rate": 48.4,
+        "pl_ratio": 0.75,
+        "total_ret": -28.77
+      },
+      "trail_grid": {
+        "0.3/0.5": {
+          "n": 188,
+          "win_rate": 48.9,
+          "pl_ratio": 0.66,
+          "total_ret": -31.95
+        },
+        "0.3/0.6": {
+          "n": 187,
+          "win_rate": 47.6,
+          "pl_ratio": 0.79,
+          "total_ret": -25.76
+        },
+        "0.3/0.8": {
+          "n": 182,
+          "win_rate": 46.2,
+          "pl_ratio": 0.87,
+          "total_ret": -24.44
+        },
+        "0.4/0.5": {
+          "n": 187,
+          "win_rate": 49.7,
+          "pl_ratio": 0.63,
+          "total_ret": -35.17
+        },
+        "0.4/0.6": {
+          "n": 186,
+          "win_rate": 48.4,
+          "pl_ratio": 0.75,
+          "total_ret": -28.77
+        },
+        "0.4/0.8": {
+          "n": 181,
+          "win_rate": 46.4,
+          "pl_ratio": 0.85,
+          "total_ret": -26.01
+        },
+        "0.5/0.5": {
+          "n": 186,
+          "win_rate": 53.2,
+          "pl_ratio": 0.55,
+          "total_ret": -37.34
+        },
+        "0.5/0.6": {
+          "n": 185,
+          "win_rate": 50.8,
+          "pl_ratio": 0.67,
+          "total_ret": -31.22
+        },
+        "0.5/0.8": {
+          "n": 181,
+          "win_rate": 48.1,
+          "pl_ratio": 0.79,
+          "total_ret": -27.87
+        }
+      },
+      "atr_grid": {
+        "0.15": {
+          "n": 186,
+          "win_rate": 48.4,
+          "pl_ratio": 0.75,
+          "total_ret": -28.77
+        },
+        "0.25": {
+          "n": 186,
+          "win_rate": 48.4,
+          "pl_ratio": 0.75,
+          "total_ret": -28.77
+        },
+        "0.35": {
+          "n": 186,
+          "win_rate": 48.4,
+          "pl_ratio": 0.75,
+          "total_ret": -28.77
+        }
+      },
+      "recommendation": {
+        "sym": "688111.SH",
+        "name": "金山办公",
+        "param": "trail",
+        "value": "0.5/0.5",
+        "win_rate": 53.2,
+        "delta_pp": 4.8,
+        "n_trips": 186,
+        "baseline_wr": 48.4,
+        "thin": false,
+        "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+      }
+    },
+    "300308.SZ": {
+      "name": "中际旭创",
+      "n_days": 98,
+      "thin_sample": false,
+      "baseline": {
+        "n": 223,
+        "win_rate": 53.8,
+        "pl_ratio": 0.95,
+        "total_ret": 10.77
+      },
+      "trail_grid": {
+        "0.3/0.5": {
+          "n": 224,
+          "win_rate": 52.7,
+          "pl_ratio": 0.95,
+          "total_ret": 5.51
+        },
+        "0.3/0.6": {
+          "n": 224,
+          "win_rate": 49.6,
+          "pl_ratio": 1.11,
+          "total_ret": 8.58
+        },
+        "0.3/0.8": {
+          "n": 213,
+          "win_rate": 47.9,
+          "pl_ratio": 1.06,
+          "total_ret": -2.6
+        },
+        "0.4/0.5": {
+          "n": 223,
+          "win_rate": 58.3,
+          "pl_ratio": 0.81,
+          "total_ret": 12.02
+        },
+        "0.4/0.6": {
+          "n": 223,
+          "win_rate": 53.8,
+          "pl_ratio": 0.95,
+          "total_ret": 10.77
+        },
+        "0.4/0.8": {
+          "n": 212,
+          "win_rate": 51.4,
+          "pl_ratio": 0.98,
+          "total_ret": 3.47
+        },
+        "0.5/0.5": {
+          "n": 222,
+          "win_rate": 62.2,
+          "pl_ratio": 0.69,
+          "total_ret": 13.03
+        },
+        "0.5/0.6": {
+          "n": 221,
+          "win_rate": 57.9,
+          "pl_ratio": 0.83,
+          "total_ret": 15.16
+        },
+        "0.5/0.8": {
+          "n": 211,
+          "win_rate": 53.6,
+          "pl_ratio": 0.9,
+          "total_ret": 4.25
+        }
+      },
+      "atr_grid": {
+        "0.15": {
+          "n": 223,
+          "win_rate": 53.8,
+          "pl_ratio": 0.95,
+          "total_ret": 10.77
+        },
+        "0.25": {
+          "n": 223,
+          "win_rate": 53.8,
+          "pl_ratio": 0.95,
+          "total_ret": 10.77
+        },
+        "0.35": {
+          "n": 223,
+          "win_rate": 53.8,
+          "pl_ratio": 0.95,
+          "total_ret": 10.77
+        }
+      },
+      "recommendation": {
+        "sym": "300308.SZ",
+        "name": "中际旭创",
+        "param": "trail",
+        "value": "0.5/0.5",
+        "win_rate": 62.2,
+        "delta_pp": 8.4,
+        "n_trips": 222,
+        "baseline_wr": 53.8,
+        "thin": false,
+        "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+      }
+    }
+  },
+  "recommendations": [
+    {
+      "sym": "161129.SZ",
+      "name": "原油LOF易方达",
+      "param": "trail",
+      "value": "0.5/0.5",
+      "win_rate": 57.7,
+      "delta_pp": 7.7,
+      "n_trips": 78,
+      "baseline_wr": 50.0,
+      "thin": true,
+      "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+    },
+    {
+      "sym": "513310.SH",
+      "name": "中韩半导体ETF华泰柏瑞",
+      "param": "trail",
+      "value": "0.5/0.5",
+      "win_rate": 49.2,
+      "delta_pp": 5.3,
+      "n_trips": 63,
+      "baseline_wr": 43.9,
+      "thin": true,
+      "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+    },
+    {
+      "sym": "688111.SH",
+      "name": "金山办公",
+      "param": "trail",
+      "value": "0.5/0.5",
+      "win_rate": 53.2,
+      "delta_pp": 4.8,
+      "n_trips": 186,
+      "baseline_wr": 48.4,
+      "thin": false,
+      "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+    },
+    {
+      "sym": "300308.SZ",
+      "name": "中际旭创",
+      "param": "trail",
+      "value": "0.5/0.5",
+      "win_rate": 62.2,
+      "delta_pp": 8.4,
+      "n_trips": 222,
+      "baseline_wr": 53.8,
+      "thin": false,
+      "status": "待两段式tune_pool_40验证后自动灰度(M4)"
+    }
+  ]
+}
