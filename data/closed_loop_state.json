@@ -8,18 +8,6 @@
       "new": "0.5/0.6"
     },
     {
-      "sym": "513310.SH",
-      "param": "trail",
-      "old": "0.4/0.6",
-      "new": "0.3/0.5"
-    },
-    {
-      "sym": "688111.SH",
-      "param": "trail",
-      "old": "0.4/0.6",
-      "new": "0.5/0.8"
-    },
-    {
       "sym": "300308.SZ",
       "param": "trail",
       "old": "0.4/0.6",
@@ -45,8 +33,8 @@
         60
       ],
       "ml_enable": false,
-      "trail_activate_pct": 0.3,
-      "trail_pct": 0.5
+      "trail_activate_pct": 0.4,
+      "trail_pct": 0.6
     },
     "688111.SH": {
       "atr_min_pct": 0.25,
@@ -56,8 +44,8 @@
       ],
       "vol_confirm": true,
       "ml_enable": false,
-      "trail_activate_pct": 0.5,
-      "trail_pct": 0.8
+      "trail_activate_pct": 0.4,
+      "trail_pct": 0.6
     },
     "300308.SZ": {
       "atr_min_pct": 0.25,

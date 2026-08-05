@@ -23,9 +23,9 @@
     "atr_min_pct": 0.25,
     "ml_enable": false,
     "ml_model": "v1.0.0-ml-20260802",
-    "trail_activate_pct": 0.3,
-    "trail_pct": 0.5,
-    "_trail_note": "2026-08-05 最优因子上线：total_ret优先口径 ret -8.74%→-3.15% wr 43.3%→44.8% n=67（deploy_optimal.py）"
+    "trail_activate_pct": 0.4,
+    "trail_pct": 0.6,
+    "_trail_note": "2026-08-05 回退0.4/0.6：含今日数据复核 wr 较基线下降（513310 -1.2pp/688111 -0.3pp），不达上线硬约束（wr不降），撤回v10.0.1调参；161129/300308 双优保留"
   },
   "688111.SH": {
     "comment": "金山办公；ATR中位0.148%（F盘145d）→高波动档，B侧mpr60 + ATR0.25（叠加56.2%+9.8pp）；ML 默认关",
@@ -36,11 +36,11 @@
     "atr_min_pct": 0.25,
     "ml_enable": false,
     "ml_model": "v1.0.0-ml-20260802",
-    "_trail_note": "2026-08-05 最优因子上线：total_ret优先口径 ret -32.62%→-29.23% wr 47.0%→48.0% n=173（deploy_optimal.py）",
+    "_trail_note": "2026-08-05 回退0.4/0.6：含今日数据复核 wr 较基线下降（513310 -1.2pp/688111 -0.3pp），不达上线硬约束（wr不降），撤回v10.0.1调参；161129/300308 双优保留",
     "vol_confirm": true,
     "_vol_note": "v10.0.0 量能确认启用（0805消融全指标改善）",
-    "trail_activate_pct": 0.5,
-    "trail_pct": 0.8
+    "trail_activate_pct": 0.4,
+    "trail_pct": 0.6
   },
   "_global": {
     "settle_split_enable": false,
