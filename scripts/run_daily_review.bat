@@ -43,3 +43,7 @@ REM --- 2026-08-04 晚新增：步骤9 每日自迭代（用户指令：寻优�
 "%PY_EXE%" "%ROOT%\scripts\daily_iterate.py" --date %D% >> "%ROOT%\logs\daily_review.log" 2>&1
 if errorlevel 1 echo [%DATE% %TIME%] [WARN] daily_iterate non-zero >> "%ROOT%\logs\daily_review.log"
 echo [%DATE% %TIME%] === done (daily iterate) === >> "%ROOT%\logs\daily_review.log"
+REM --- 2026-08-05 new: step10 closed loop ---
+"%PY_EXE%" "%ROOT%\scripts\daily_closed_loop.py" --date %D% >> "%ROOT%\logs\daily_review.log" 2>&1
+if errorlevel 1 echo [%DATE% %TIME%] [WARN] closed_loop non-zero >> "%ROOT%\logs\daily_review.log"
+echo [%DATE% %TIME%] === done (closed loop) === >> "%ROOT%\logs\daily_review.log"

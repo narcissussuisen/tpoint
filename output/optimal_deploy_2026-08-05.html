@@ -1,0 +1,11 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
+<title>tpoint 最优因子回测报告 2026-08-05</title>
+<style>body{font-family:system-ui,"Microsoft YaHei",sans-serif;background:#0f1419;color:#e6e6e6;padding:24px;max-width:1100px;margin:auto}
+h1{font-size:20px} table{border-collapse:collapse;width:100%;font-size:13px}
+td,th{border:1px solid #333;padding:6px 8px;text-align:left} th{background:#1c232b}
+.up{color:#f6465d} .dn{color:#2ebd85} .note{color:#999;font-size:12px;margin-top:16px}</style></head><body>
+<h1>tpoint 最优因子回测报告 2026-08-05（total_ret 优先口径 · wr 不降为硬约束 · n≥30）</h1>
+<table><tr><th>标的</th><th>名称</th><th>上线trail</th><th>基线(0.4/0.6)全历史</th><th>最优组合全历史</th><th>近20日holdout 基线→最优</th><th>状态</th></tr><tr><td>161129.SZ</td><td>原油LOF易方达</td><td>0.5/0.6</td><td>n=83 wr=49.4% pl=1.14 ret=4.02%</td><td>n=77 wr=51.9% pl=1.03 ret=4.14%</td><td>n=28 wr=53.6% pl=1.06 ret=2.96% → n=27 wr=55.6% pl=0.98 ret=2.73%</td><td>已上线</td></tr><tr><td>513310.SH</td><td>中韩半导体ETF华泰柏瑞</td><td>0.3/0.5</td><td>n=67 wr=43.3% pl=1.0 ret=-8.74%</td><td>n=67 wr=44.8% pl=1.11 ret=-3.15%</td><td>n=27 wr=37.0% pl=1.05 ret=-6.48% → n=27 wr=40.7% pl=1.13 ret=-3.27%</td><td>已上线</td></tr><tr><td>688111.SH</td><td>金山办公</td><td>0.5/0.8</td><td>n=198 wr=47.0% pl=0.76 ret=-32.62%</td><td>n=173 wr=48.0% pl=0.77 ret=-29.23%</td><td>n=35 wr=54.3% pl=0.96 ret=2.38% → n=30 wr=66.7% pl=0.64 ret=4.08%</td><td>已上线</td></tr><tr><td>300308.SZ</td><td>中际旭创</td><td>0.5/0.6</td><td>n=232 wr=52.6% pl=0.95 ret=5.24%</td><td>n=218 wr=58.3% pl=0.82 ret=14.1%</td><td>n=61 wr=52.5% pl=0.66 ret=-11.09% → n=59 wr=57.6% pl=0.55 ret=-10.17%</td><td>已上线</td></tr></table>
+<p class="note">口径：F盘全历史 1m + 生产同源信号 + simulate_day；成本=万一佣金+印花(股票卖边)+滑点2bps/边。
+atr 网格(0.15/0.25/0.35)今日实测三档指标完全一致（无区分度），未变更。生成：deploy_optimal.py 2026-08-05 16:50:12</p>
+</body></html>

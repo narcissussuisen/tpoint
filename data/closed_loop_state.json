@@ -1,0 +1,74 @@
+{
+  "last_run": "2026-08-05",
+  "applied_today": [
+    {
+      "sym": "161129.SZ",
+      "param": "trail",
+      "old": "0.4/0.6",
+      "new": "0.5/0.6"
+    },
+    {
+      "sym": "513310.SH",
+      "param": "trail",
+      "old": "0.4/0.6",
+      "new": "0.3/0.5"
+    },
+    {
+      "sym": "688111.SH",
+      "param": "trail",
+      "old": "0.4/0.6",
+      "new": "0.5/0.8"
+    },
+    {
+      "sym": "300308.SZ",
+      "param": "trail",
+      "old": "0.4/0.6",
+      "new": "0.5/0.6"
+    }
+  ],
+  "config_snapshot": {
+    "161129.SZ": {
+      "atr_min_pct": 0.25,
+      "mpr_enable": "B",
+      "mpr_periods": [
+        60
+      ],
+      "vol_confirm": true,
+      "ml_enable": true,
+      "trail_activate_pct": 0.5,
+      "trail_pct": 0.6
+    },
+    "513310.SH": {
+      "atr_min_pct": 0.25,
+      "mpr_enable": "B",
+      "mpr_periods": [
+        60
+      ],
+      "ml_enable": false,
+      "trail_activate_pct": 0.3,
+      "trail_pct": 0.5
+    },
+    "688111.SH": {
+      "atr_min_pct": 0.25,
+      "mpr_enable": "B",
+      "mpr_periods": [
+        60
+      ],
+      "vol_confirm": true,
+      "ml_enable": false,
+      "trail_activate_pct": 0.5,
+      "trail_pct": 0.8
+    },
+    "300308.SZ": {
+      "atr_min_pct": 0.25,
+      "mpr_enable": "B",
+      "mpr_periods": [
+        60
+      ],
+      "vol_confirm": true,
+      "ml_enable": false,
+      "trail_activate_pct": 0.5,
+      "trail_pct": 0.6
+    }
+  }
+}

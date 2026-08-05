@@ -9,7 +9,10 @@
     "ml_enable": true,
     "ml_model": "v1.0.0-ml-20260802",
     "vol_confirm": true,
-    "_vol_note": "v10.0.0 量能确认启用（0805消融全指标改善）"
+    "_vol_note": "v10.0.0 量能确认启用（0805消融全指标改善）",
+    "trail_activate_pct": 0.5,
+    "trail_pct": 0.6,
+    "_trail_note": "2026-08-05 最优因子上线：total_ret优先口径 ret 4.02%→4.14% wr 49.4%→51.9% n=77（deploy_optimal.py）"
   },
   "513310.SH": {
     "comment": "中韩半导体ETF T+0；ATR中位0.203%（F盘66d）→高波动档，B侧mpr60 + ATR0.25（叠加50.0%踩线，保留37%）；ML 默认关",
@@ -19,7 +22,10 @@
     ],
     "atr_min_pct": 0.25,
     "ml_enable": false,
-    "ml_model": "v1.0.0-ml-20260802"
+    "ml_model": "v1.0.0-ml-20260802",
+    "trail_activate_pct": 0.3,
+    "trail_pct": 0.5,
+    "_trail_note": "2026-08-05 最优因子上线：total_ret优先口径 ret -8.74%→-3.15% wr 43.3%→44.8% n=67（deploy_optimal.py）"
   },
   "688111.SH": {
     "comment": "金山办公；ATR中位0.148%（F盘145d）→高波动档，B侧mpr60 + ATR0.25（叠加56.2%+9.8pp）；ML 默认关",
@@ -30,9 +36,11 @@
     "atr_min_pct": 0.25,
     "ml_enable": false,
     "ml_model": "v1.0.0-ml-20260802",
-    "_trail_note": "2026-08-05 撤销trail灰度：全历史复核 total_ret 8.18→-4.29、pl 1.0→0.49（胜率虚胖）→ 回退0.4/0.6",
+    "_trail_note": "2026-08-05 最优因子上线：total_ret优先口径 ret -32.62%→-29.23% wr 47.0%→48.0% n=173（deploy_optimal.py）",
     "vol_confirm": true,
-    "_vol_note": "v10.0.0 量能确认启用（0805消融全指标改善）"
+    "_vol_note": "v10.0.0 量能确认启用（0805消融全指标改善）",
+    "trail_activate_pct": 0.5,
+    "trail_pct": 0.8
   },
   "_global": {
     "settle_split_enable": false,
@@ -48,6 +56,9 @@
     "ml_enable": false,
     "ml_model": "v1.0.0-ml-20260802",
     "vol_confirm": true,
-    "_vol_note": "v10.0.0 量能确认启用（0805验证全面优于基线）"
+    "_vol_note": "v10.0.0 量能确认启用（0805验证全面优于基线）",
+    "trail_activate_pct": 0.5,
+    "trail_pct": 0.6,
+    "_trail_note": "2026-08-05 最优因子上线：total_ret优先口径 ret 5.24%→14.1% wr 52.6%→58.3% n=218（deploy_optimal.py）"
   }
 }
