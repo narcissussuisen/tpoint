@@ -26,9 +26,9 @@ err.txt
 .mypy_cache/
 
 # 敏感/本地（绝不入库）
-.local/            # SSH 密钥等
-.workbuddy/       # 项目记忆（私有）
-.monitor.log      # 运行时日志
+.local/
+.workbuddy/
+.monitor.log
 ml_shadow_offline_*.json
 ml_shadow_offline_*.csv
-push_feishu_html  # 0 字节占位，真正的推送脚本在 F:/.../research/
+push_feishu_html
