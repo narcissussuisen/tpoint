@@ -2,6 +2,183 @@
 
 > 版本号规则：MAJOR.MINOR.PATCH（完整规则见 `docs/versioning.md`，每次改动必须对照判断）。
 > 说明仅标注各版本**核心算法与信号语义**的差异，便于回溯。
+>
+> **方法论版本**（独立轴）：当前 `METHODOLOGY_VERSION=1.1.0`，权威真源 `docs/methodology_framework.md`。
+> 方法论版本号与算法版本号**解耦**：方法论 bump 由方法论文档驱动，算法 bump 由 `VERSION` 驱动；
+> 两者对齐索引见 `docs/methodology_framework.md` §11。
+
+## v10.3.0（2026-08-20）综合评分模型 v4 —— 三神技 + RSI 连续加权融合
+> 用户要求「基于三大核心策略设计可供上线评估的核心算法指标体系，整合三大策略信号与 RSI 超买超卖，
+> 构建综合评分模型并输出交易信号」。本版本**纯增量**：新增 `core/composite_scorer.py` 与 `detect_signals_v4`，
+> 不动 v9 / v2 / v3 / monitor / exit_manager / shadow_v3 既有逻辑；v4 可与 v2/v3 并行回测对比。
+
+### 核心设计：连续评分引擎（与 v3 布尔触发本质不同）
+- v3 (`detect_signals_v3`) 用「多条件 AND」布尔触发 → 离散 0/1 信号，易信号爆发/漏触。
+- v4 (`detect_signals_v4`) 每个组件输出**连续子评分 C ∈ [-1,1]**（方向×强度），加权求和得
+  `composite = Σ w·C / Σ w ∈ [-1,1]`，综合分越阈值才出信号 → 天然支持强度分级 / 多因子融合 / 权重可配。
+
+### 四大组件（出处：方法论 v1.x §4 三大神技 + RSI 协同）
+- `C_vwap` 分时均线引力：`−tanh((close−vwap)/(k1·atr))`（价低于带→正/买，高于带→负/卖）
+- `C_vol_div` 量价背离：价极值 + 缩量(vol_ratio<0.7) 的动能衰竭，strength∈[0,1] 由量缩程度决定
+- `C_macd_div` MACD 背离：价极值 + 柱状不确认（价格新低而 MACD 不新低 / 反之），strength∈[0,1]
+- `C_rsi` RSI 超买超卖：线性映射 `clip((rsi_neutral−rsi)/half_range, −1, 1)`
+
+### 可配参数（`CompositeConfig` / `DEFAULT_CONFIG`）
+- 权重 `w_vwap=1.2 / w_macd_div=0.9 / w_rsi=0.8 / w_vol_div=0.7`（量价背离实证净负，刻意低配）
+- RSI `rsi_period=14 / oversold=35 / overbought=65 / neutral=50`
+- 信号阈值 `buy_threshold=sell_threshold=0.50`（默认落在方法论 §8 健康密度带 0.5~2.0/百bar 附近；
+  0.35=灵敏、0.55=严控）；强度档 `strong=0.62 / medium=0.50`
+- 趋势门控 `trend_b_allowed=(1,)`（B 仅上升市，沿用 v2 生产）/ `trend_s_allowed=(−1,0,1)`（S 全放行）
+- 节奏 `signal_gap=8 / max_b=max_s=12`
+
+### 结构化输出（每条信号）
+`type, idx, price, score(带符号综合分), strength(|score|), strength_band, rsi, trend, reason,
+components{vwap,vol_div,macd_div,rsi}, weights{...}, triggers[...]` —— 供评分审计 / 解释 / 回测。
+
+### 回测验证结论（离线 tickflow 1m，688111×20日 + 603039×2日；午间对比脚本 v2_v3_noon_compare.py）
+- 组件本身均衡无偏（vwap 均值 +0.04 / rsi +0.07，>0 占比均≈52%），无系统性偏差。
+- 默认趋势门控下 v4 信号 S 主导（本样本 B/S≈4/112）；因 exit_manager 仅支持**正T**配对，S 侧无法回测，
+  故 v4 的「胜率」指标在本样本主要反映极少量 B 的样本噪声，**不代表 v4 真实质量**。
+- 验证：松弛 B 门控后方向恢复平衡(B=136/S=108)但 WR 反降至 18.8%，证明趋势门控确在保护质量。
+- 信号密度随阈值可调：0.35→0.55 映射 3.39→1.59 信号/百bar（落入健康带）。
+- **判定：v4 需 反T(先卖后买)回测支持才能公平评估其 S 侧；当前维持 v2 生产，v4 仅作离线评估/候选。**
+- 待办：① 给 exit_manager 加 反T 配对（或 v4 专用 反T eval）；② 门控松弛后做大样本回测；③ 再决定 shadow 接入。
+
+## v10.2.0（2026-08-20）三大神技 + KDJ —— 更灵敏精准的日内波动捕获
+> 用户依据 v14《散户专属做T秘籍》提出三大神技（分时均线引力 / 量价背离 / 分时MACD背离），
+> 结合 KDJ / RSI 指标重构信号判定。本版本**纯增量**：不动 v9 / v2 / monitor / exit_manager 既有逻辑，
+> 新增 v3 检测函数 + 5 个新因子，行为可与 v2 并行回测对比。
+
+### 补遗：v3 影子旁路（2026-08-20 盘前接入，不改动生产）
+
+- 目的：在不开盘前替换生产算法的前提下，并行积累 v3 信号证据（遵循"v3 胜率待 1+ 月 live 沉淀"纪律）。
+- 新增 `core/shadow_v3.py`：从 `monitor.data['df']` 原始 bar 自行算 `indicators.compute_indicators` + `detect_signals_v3`，
+  落日志到 `data/shadow_v3_<date>.jsonl`。完全独立于 `detect_for` / `miji_alpha`，不读 miji 的 data 字典（回避双栈漂移）。
+- 注入点：`monitor.run()` 主循环 `sigs=_risk_gate(...)` 之后、`emit_signal` 之前，一行 fire-and-forget + 双重 try/except。
+- 护栏：① 进程内按 (sym,bar_ts,type) 去重；② 剔除最后一根进行中 bar（与生产 trim_frontier=True 对齐）；
+  ③ 总开关 `SHADOW_V3_ENABLED` + 环境变量 `TPOINT_SHADOW_V3` 可即时停用；④ 所有异常内部吞掉，绝不阻断生产。
+- 复盘工具：`scripts/shadow_v3_review.py` 聚合 jsonl 并按 (标的,分钟,方向) 与生产 signal.txt 对比重叠/独有。
+- 本补遗提交的 monitor.py 同时含此前未提交的 v10.2.0 monitor 改动（_bar_tradability、detect_for 的 trim_frontier/vol_ratio_b_max），
+  均属 v10.2.0 分支预定状态。
+
+### 新增算法（来自《散户专属做T秘籍》三大神技）
+
+#### 神技#1：分时均线"引力定律"（继承自 v9/v2，无改动）
+- 价位偏离 VWAP 过远会回归。急涨远离均线 → 卖；急跌远离均线 → 买。
+- 实现：`core/indicators.py` 中 `vwap[i] ± K*ATR[i]` 标准/极端轨（沿用 K1_V2=0.8 / K2_V2=1.8）。
+
+#### 神技#2：量价背离"动能衰竭"（v10.2.0 新增）
+- 价格新高但成交量一波比一波小 → 可能回调；价格新低但成交量萎缩 → 可能反弹。
+- v9/v2 仅有量比（vol_ratio）单维度，未做价×量联合"背离"判定。
+- 新因子 `factor_registry.f_vol_price_div`：当前 bar 创近 LOCAL_W=15 根新高 + vol_ratio < 窗口均量×0.7 → 返回 +1；
+  价新低 + 量缩 → 返回 -1（用于 B 候选的反弹信号）。
+
+#### 神技#3：分时 MACD"背离确认"（v10.2.0 新增）
+- 买 = 股价新低 + MACD 红柱缩短 / 绿柱收敛；
+- 卖 = 股价新高 + MACD 红柱缩短 / 绿柱放大。
+- v9/v2 仅有 `macd_hist` 趋势因子，无背离事件检测。
+- 新因子 `factor_registry.f_macd_div`：价新高 + 绿柱放大（hist 三连降）→ +1（S 候选）；
+  价新低 + 红柱缩短（hist 三连降但仍 >0）→ -1（B 候选）。
+
+### 协同指标
+
+#### KDJ（v10.2.0 新增，因果前向）
+- `core/primitives.compute_kdj(h, lo, c)`：SSE 经典定义 N=9, K=3, D=3，J=3K-2D。
+- 注册因子 `kdj_k` / `kdj_d` / `kdj_j`。
+- v3 触发门：J<0 或 K<20 → B 候选加分；J>100 或 K>80 → S 候选加分。
+
+#### RSI（已有，沿用）
+- v2 的 RSI<35 / RSI≥55 门控在 v3 中保留为兜底（与 v2 路径兼容）。
+
+### 新增函数
+
+- `core/primitives.compute_kdj(h, lo, c, n=9, k_period=3, d_period=3)` → (k, d, j) ndarray
+- `core/factor_registry.f_kdj_k/d/j`、`f_vol_price_div`、`f_macd_div`（注册到 FACTORS）
+- `core/indicators.detect_signals_v3(data, pc)`：融合 3 神技 + KDJ + RSI 的多路径触发
+  - B 触发路径（任一满足）：
+    a. v2 兼容路径：标准/极端轨触及 + 反转 K + trend==1
+    b. 神技#3 强势路径：MACD 底背离 + 反转 K + (量价底背离 或 KDJ 超卖)
+    c. 神技#2 强势路径：量价底背离 + KDJ 超卖 + 反转 K
+    d. KDJ 超卖路径：J<0/K<20 + 标准轨触及 + 反转 K
+  - S 触发路径对称（MACD 顶背离 / 量价顶背离 / KDJ 超买 / 标准轨）
+  - 新增 reason 类型：`MACD底背离` / `MACD顶背离` / `量价底背离` / `量价顶背离` / `KDJ超卖反弹` / `KDJ超买回落`
+  - 跨型信号冷却沿用 v2 的 SIGNAL_GAP=8 分钟
+  - 输出 dict 兼容 v2 格式（type/idx/price/chg/rsi/trend/reason/vol_ratio），扩展 kdj_k/d/j/macd_div/vol_price_div 字段
+- `core/indicators.compute_indicators` 返回 dict 增加 `kdj_k` / `kdj_d` / `kdj_j` 三个键（向后兼容）
+
+### 验证
+
+- 新增 `tests/test_v10_2_0_intraday_capture.py` **5/5 PASS**：
+  1. KDJ 数值正确性（J=3K-2D 恒等、K 越界检查）
+  2. 新因子因果守护（perturbation_test，n_checks=12，worst_diff=0）
+  3. v3 信号兼容性（必填字段全）
+  4. v3 灵敏性（合成日内波动数据：v3=7 信号 vs v2=0）
+  5. v3 新 reason 触发（强背离场景：3 次量价底背离命中）
+- 旧回归无破坏：`tests/test_leak_guard.py` 4/4、`tests/test_evolution.py` 4/4 仍 PASS。
+
+### 不在本次范围（避免动 monitor 生产代码）
+- 暂不替换 monitor.detect_for 默认检测器；v3 通过 `indicators.detect_signals_v3` 暴露供回测对比与后续灰度。
+- monitor_config.json 未变更（仍由 daily_iterate.py / auto_tune.py 护栏控制参数）。
+- 数据质量哨兵（live vs recalc）口径不变。
+
+### 已知缺口（下一轮迭代方向）
+- v3 新增 reason 在生产回测上的胜率/盈亏比尚未验证 → 需要至少 1 个月的 live 信号积累
+  （daily_signal_review 自动沉淀），后续在 research/ 跑 v2 vs v3 对比报告。
+- `vol_price_div` / `macd_div` 阈值（LOCAL_W=15 / DIV_VOL_RATIO=0.7）当前为合理起点，
+  待 evolution.py 池级 OOS 评估后微调（参考 candidate `vol_ratio_b_low` 的晋升路径）。
+
+## 2026-08-18 — 大更新：零未来函数 + 池级因子演化引擎（4 Phase 全量落地）
+> 战略转向：优化对象从「per-symbol 参数(trail/atr)」升级为「因子/门控规则」，目标函数为
+> **池级** total_ret + 净夏普 + 逐年稳健（不对单一标的调参）。4 阶段：零未来函数→单一因子源→因子演化→清理。
+
+### Phase 1 — 零未来函数 + 池级评估基建
+- `monitor.detect_for` 增 `trim_frontier`：live 只对已收盘 bar 出信号（修「live 同根前视」）；`run()` 传 True。
+- 新增 `monitor._bar_tradability`：锁涨停不可买/锁跌停不可卖/停牌不可成交（修「涨跌停/停牌无过滤」）。
+- 新增 `core/pool_eval.py`：全池合并 round-trip → 池级 total_ret/净夏普/逐年稳健。
+- 修复 `exit_manager.simulate_day` 的 entry_date 未透传 bug（6 处 `_mk_trip` 补 `entry_date=day_date`）→ 逐年口径真正生效。
+
+### Phase 2 — 单一因子源 + 因子注册表
+- 新增 `core/primitives.py`：ema/atr/vwap/rsi/vol_ratio 单一实现；`indicators.py` 与 `miji_alpha.py` 改 import，删除复制版。
+- 新增 `core/factor_registry.py`：因子注册表（8 个因果因子），纳入 leak_guard 守护。
+
+### Phase 3 — 因子演化引擎 MVP
+- 新增 `core/evolution.py`：候选门控 → 池级 IS/OOS → 晋升/淘汰（OOS total_ret 改善 + wr 不降才 PROMOTE）。
+- 新增 `scripts/factor_evolve.py`：演化 CLI，落盘 `output/research/factor_evolution_<date>.json`。
+- 演化实测：`vol_ratio_b_low` PROMOTE（OOS Δret +9.61pp）；`rsi_b_oversold` DEMOTE（IS +12.41%→OOS -7.11pp 反转）；单标的深跌拟合反例 DEMOTE。
+
+### Phase 4 — ML 下线 + 清理
+- ML 影子下线：`data/monitor_config.json` 161129 `ml_enable=false`（ml_features 丢失本就 fail-open）。
+- watchlist/config 对齐：移除孤儿 688111/300308，补 300757；标的集收敛为 {161129, 300757, 513310}。
+- 删除 `miji_alpha.py` 死代码块（5m/指数门控、mtf、aggregate_60m_direction、_np_asarray，全仓零引用）；修 MPR 过时注释。
+
+## 2026-08-17 — 前视偏差防护栅栏（AQuA 论文研判回灌，跨版本 Integrity 层）
+> 来源：普林斯顿×蚂蚁 AQuA「自进化量化研究智能体」+ QuantML A股复现。
+> 性质：**不改动信号语义的防御性 Integrity 层**，独立于版本号，全版本生效。
+
+### 新增 — `core/leak_guard.py`（未来扰动测试）
+- `perturbation_test(feat_fn, ohlcv)`：在多个切分点 k 仅对 k 之后"未来"bar 灌高斯噪声，
+  重算全量特征并比对 k 及之前的历史值；历史值不变 → 无泄漏。可复算、可回归的硬检验。
+- `assert_no_lookahead`：失败抛 AssertionError（接入 selftest / pytest）。
+- 覆盖 **v9 特征栈**（`compute_indicators`）与 **miji 特征栈**（`compute_miji_indicators`）
+  两套信号引擎统一受防；新增含未来数据的特征会立刻变红（防回归）。
+- `tests/test_leak_guard.py` 含红测：故意构造"全样本均值做分母"的泄漏特征，断言栅栏抓出 →
+  证明栅栏非摆设（否则比漏报更危险）。
+
+### 修复 — miji 多周期 MACD 周期内前视泄漏（真实线上 bug）
+- `core/miji_alpha.py:compute_multi_period_macd` 原用 `np.maximum.at(seg_max, boundary, c)`
+  取"段内 max close"，但段 [boundary(b), boundary(b)+p) 含 b 之后的未来 bar —— 即 bar b 的
+  60m 重采样 rc[b] 偷看了同周期内未来分钟（如 9:31 含 10:30 收盘）。
+- **影响范围**：生产 `monitor_config.json` 中 161129/513310/688111/300308 四个标的
+  `mpr_enable:"B"`（B 侧 60m 方向过滤**默认开启**），即该泄漏在生产 B 侧真实生效。
+- 修复：改为段内截至当前 bar 的**因果运行最大值**（rc[b] 仅依赖 c[0..b]），受 leak_guard 守护。
+- 修复后栅栏 v9/miji 双栈均 ok=True。建议对 mpr 启用标的重跑回测/OOS 以量化真实收益变化。
+
+### 增强 — `core/exit_manager.aggregate_metrics` 增逐年稳健口径（AQuA 第三点：IC≠夏普）
+- 新增 `yearly`（按 entry_date 年份聚合：净收益/胜率/净夏普/是否正年）、`yearly_consistent`
+  （是否逐年全正）、`worst_year`。净夏普的逐年稳健性比聚合夏普更能暴露样本外分布漂移。
+- `simulate_day` 透传 `prices['date']` 到 trip 的 `entry_date`；无日期路径（实时/旧回放）自动跳过。
+- `factor_optimizer.metrics_of` 透出 `yearly`；`oos_validate` 裁决理由追加"逐年全正/存在负年"提示；
+  `backtest_screener` 汇总打印追加逐年标记。全链路统一消费同一口径。
 
 ## v9.3.0 — 生产优化版（08-02 部署线，P0-P3 落地）
 > 父版本：v9.2.2（floor 漏顶漏底修复基线）。2026-08-02 上线，watchdog v3.1 周一 08-03 09:25 自动拉起生效。

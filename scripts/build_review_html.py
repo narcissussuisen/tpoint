@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-r"""build_review_html.py — tpoint 每日信号复盘 HTML 生成器（2026-08-04 实盘化重构 v2）
+r"""build_review_html.py — tpoint 每日信号复盘 HTML 生成器（2026-08-18 v9.4.0 新版重构）
 
 报告哲学（用户拍板 2026-08-04 晚）：只看「真实推送给我的交易信号」。
 - 信号唯一权威源 = data/push_audit.jsonl（飞书ACK确认）；复算信号不进报告（仅后台对账）。
 - 有效判定 = round-trip 净盈亏 > 0（扣双边成本），替代旧 0.15% 阈值。
-- 五节结构：〇实盘投递诊断 / 一 round-trip有效性 / 二 负收益根因 / 三 实盘基线对比 /
-  四 行情图（仅有推送标的）/ 五 波动段捕获分析（自迭代改进建议）。
+- v9.4.0 新版六节结构：〇投递诊断+质量评分 / 一round-trip有效性(含质量分数) / 二负收益根因(六维) /
+  三实盘基线(+Regime分层) / 四行情图(仅实推标的+资金曲线) / 五优化空间清单(+因子贡献方向)。
 
 读取：output/live_review_<D>.json（live_roundtrip_review.py 产出）
      data/push_audit.jsonl、data/watchlist.json、output/chart_<D>_<sym>.png（base64 内嵌）
@@ -139,7 +139,7 @@ trips = live['trips']
 
 body = []
 body.append('<h1>📊 tpoint 每日信号复盘 — %s</h1>' % TARGET)
-body.append('<div class="sub">生产 monitor v9.3.0 ｜ 信号源=实盘推送（push_audit 飞书ACK确认）｜ 有效=round-trip 净盈亏&gt;0（扣双边成本：佣金万1+印花(仅股票)+滑点2bps/边）｜ 数据截止 %s 15:00 ｜ 生成于 %s</div>'
+body.append('<div class="sub">生产 monitor v9.4.0 ｜ 信号源=实盘推送（push_audit 飞书ACK确认）｜ 有效=round-trip 净盈亏&gt;0（扣双边成本：佣金万1+印花(仅股票)+滑点2bps/边）｜ v9.4.0新增:信号质量评分+六维归因+Regime分层 ｜ 数据截止 %s 15:00 ｜ 生成于 %s</div>'
             % (TARGET, live['generated_at']))
 
 # 异常横幅（仅 bad 级诊断触发）
@@ -150,16 +150,22 @@ if bad_hits:
 
 # 总览 KPI
 vr = sm['valid_rate_pct']
+qs = sm.get('avg_quality_score')  # v9.4.0
+regime = sm.get('regime')         # v9.4.0
+regime_cn = {'high_vol': '🔴 高波动', 'normal': '🟢 常态', 'low_vol': '🔵 低波动'}.get(regime, regime or '—')
 body.append('<div class="kpis">'
             f'<div class="kpi"><div class="v" style="color:#7db3ff">{sm["n_pushes"]}</div><div class="l">实盘推送(买{n_B}/卖{n_S}/出{n_X})</div></div>'
             f'<div class="kpi"><div class="v">{sm["n_trips"]}</div><div class="l">round-trip 配对</div></div>'
             f'<div class="kpi"><div class="v {"ok" if (vr or 0) >= 50 else "bad"}">{"—" if vr is None else str(vr) + "%"}</div><div class="l">T 单有效率(净>0)</div></div>'
-            f'<div class="kpi"><div class="v {"ok" if sm["net_sum_pct"] > 0 else "bad"}">{sm["net_sum_pct"]:+.3f}%</div><div class="l">净盈亏合计</div></div>'
+            f'<div class="kpi"><div class="v {"ok" if sm["net_sum_pct"] > 0 else "bad"}>{sm["net_sum_pct"]:+.3f}%</div><div class="l">净盈亏合计</div></div>'
             f'<div class="kpi"><div class="v">{sm["gross_sum_pct"]:+.3f}%</div><div class="l">毛差合计</div></div>'
+            # v9.4.0: 质量评分 + Regime
+            f'<div class="kpi"><div class="v {"ok" if (qs or 0) >= 60 else "warn"}>{"—" if qs is None else str(qs)}</div><div class="l">信号质量均分(0-100)</div></div>'
+            f'<div class="kpi"><div class="v">{regime_cn}</div><div class="l">当日Regime(ATR={sm.get("pool_atr_pct")}%)</div></div>'
             '</div>')
 
 # ================= 〇、实盘投递实况与诊断 =================
-body.append('<h2>〇、今日实盘投递实况与诊断（push_audit 逐笔）</h2>')
+body.append('<h2>〇、今日实盘投递实况与诊断（push_audit 逐笔 + v9.4.0 质量评分）</h2>')
 body.append('<div class="sub">本节目的：追踪验证推送链路<b>及时性/完整性/准确性</b>，定位根因驱动自迭代。仅含真实推送，复算信号不参与。</div>')
 body.append('<div class="kpis">'
             f'<div class="kpi"><div class="v">{len(audit)}</div><div class="l">投递总数(买{n_B}/卖{n_S}/出{n_X})</div></div>'
@@ -193,23 +199,28 @@ body.append('<div class="card"><b>可执行改进建议（自迭代驱动）</b>
             + ''.join('<li>%s</li>' % esc(s) for s in suggestions) + '</ol></div>')
 
 # ================= 一、round-trip 有效性验证 =================
-body.append('<h2>一、实盘信号 round-trip 有效性验证（一B一S 完整做T，净盈亏&gt;0 为有效）</h2>')
-body.append('<div class="sub">配对规则：单仓位；正T B→S/X/EOD，反T S→B回补/EOD收盘回补；进出场价=当日推送价（EOD=收盘），成本=%s。同向重复信号按生产单仓位模型忽略。</div>'
+body.append('<h2>一、实盘信号 round-trip 有效性验证（含 v9.4.0 质量分数）</h2>')
+body.append('<div class="sub">配对规则：单仓位；正T B→S/X/EOD，反T S→B回补/EOD收盘回补；进出场价=当日推送价（EOD=收盘），成本=%s。同向重复信号按生产单仓位模型忽略。质量分数(0-100)=方向正确性(30)+时机精准度(25)+波动捕获(25)+持有效率(20)。</div>'
             % esc(live['cost_model']))
 if not trips:
     body.append('<div class="card"><div class="note">今日实盘推送未形成完整 round-trip（无配对或零推送）。</div></div>')
 else:
     body.append('<div class="card"><table><thead><tr><th>标的</th><th>方向</th><th>进场</th><th>出场</th><th>持有</th><th>出场原因</th>'
-                '<th>毛差%</th><th>成本%</th><th>净盈亏%</th><th>判定</th></tr></thead><tbody>')
+                '<th>毛差%</th><th>成本%</th><th>净盈亏%</th><th>质量分</th><th>判定</th></tr></thead><tbody>')
     for t in trips:
         vcls = 'ok' if t['valid'] else 'bad'
         vtx = '✓ 有效' if t['valid'] else '✗ 无效'
         dcls = 'buy' if t['dir'] == '正T' else 'sell'
+        qs = t.get('quality_score')
+        qs_v = str(qs) if qs is not None else '—'
+        qs_cls = 'ok' if (qs or 0) >= 60 else ('warn' if (qs or 0) >= 40 else 'bad')
         body.append('<tr><td>%s</td><td class="%s"><b>%s</b></td><td>%s @%s</td><td>%s @%s</td><td>%s根</td><td>%s</td>'
-                    '<td>%+.3f</td><td>%.3f</td><td><b>%+.3f</b></td><td><span class="%s">%s</span></td></tr>'
+                    '<td>%+.3f</td><td>%.3f</td><td><b>%+.3f</b></td>'
+                    '<td class="%s"><b>%s</b></td><td><span class="%s">%s</span></td></tr>'
                     % (esc(sym_label(t['sym'])), dcls, t['dir'], t['entry_time'], t['entry_price'],
                        t['exit_time'], t['exit_price'], t['hold_bars'], t['exit_reason'],
-                       t['gross_ret_pct'], t['cost_pct'], t['net_ret_pct'], vcls, vtx))
+                       t['gross_ret_pct'], t['cost_pct'], t['net_ret_pct'],
+                       qs_cls, qs_v, vcls, vtx))
     body.append('</tbody></table></div>')
     if sm['orphans']:
         body.append('<div class="note">未配对信号（单仓位模型忽略）：%s</div>'
@@ -230,9 +241,11 @@ else:
                     % (esc(sym_label(t['sym'])), t['dir'], t['entry_time'], t['entry_price'],
                        t['exit_time'], t['exit_price'], t['exit_reason'], t['net_ret_pct'], tags))
 
-# ================= 三、整体表现 vs 近5日基线（纯实盘口径） =================
-body.append('<h2>三、整体表现与近5交易日基线对比（实盘推送 round-trip 口径）</h2>')
-body.append('<div class="sub">基线与今日完全同源：历史 push_audit 实推 + 当日行情配对。复算/模拟信号不参与决策，故不参与对比。</div>')
+# ================= 三、整体表现 vs 近5日基线（纯实盘口径 + v9.4.0 Regime分层）=================
+body.append('<h2>三、整体表现与近5交易日基线对比（实盘推送 round-trip 口径 + Regime分层）</h2>')
+body.append('<div class="sub">基线与今日完全同源：历史 push_audit 实推 + 当日行情配对。复算/模拟信号不参与决策，故不参与对比。'
+            'v9.4.0 新增：当日 Regime=<b>%s</b>（全标的ATR均值=%.2f%%），高波动日有效率的基准应适当下调。</div>'
+            % (regime_cn, sm.get('pool_atr_pct') or 0))
 bm = bl['mean']
 rows = [
     ('日均推送数', str(sm['n_pushes']), '—' if bm['n_pushes'] is None else str(bm['n_pushes'])),
@@ -253,21 +266,23 @@ body.append('</tbody></table></div>')
 if bl.get('note'):
     body.append('<div class="note">⚠️ %s</div>' % esc(bl['note']))
 
-# ================= 四、行情图（仅有实盘推送的标的） =================
-body.append('<h2>四、当日行情图（1m 分时 · 仅有实盘推送的标的）</h2>')
+# ================= 四、行情图（仅有实盘推送的标的 + v9.4.0 资金曲线）=================
+body.append('<h2>四、当日行情图（1m 分时 · 仅有实盘推送标的 + 日内资金曲线）</h2>')
 if not live['syms_with_push']:
     body.append('<div class="card"><div class="note">今日无实盘推送信号，按规则不绘制行情图。</div></div>')
 else:
-    body.append('<div class="sub">仅展示今日有实盘推送的标的（%d 只）；标注为真实推送点（非复算）。</div>' % len(live['syms_with_push']))
+    body.append('<div class="sub">仅展示今日有实盘推送的标的（%d 只）；标注为真实推送点（非复算）。'
+                'v9.4.0 注：资金曲线（逐笔盈亏累计）可在 chart 叠加层查看，反映日内 P/L 走势与最大回撤。</div>' % len(live['syms_with_push']))
     for sym in live['syms_with_push']:
         cp = os.path.join(OUT, 'chart_%s_%s.png' % (TARGET, sym.replace('.', '_')))
         if os.path.exists(cp):
             body.append('<div class="card"><b>%s</b><br><img class="chart" src="%s"></div>' % (esc(sym_label(sym)), b64(cp)))
 
-# ================= 五、当日行情捕获分析（仅结论：优化空间清单） =================
-body.append('<h2>五、当日行情捕获分析（v9.3.0 优化空间）</h2>')
+# ================= 五、当日行情捕获分析（v9.4.0 优化空间 + 因子贡献方向）=================
+body.append('<h2>五、当日行情捕获分析（v9.4.0 优化空间 + 因子贡献方向）</h2>')
 body.append('<div class="sub">后台已对全天 1m 行情做波动段切分与逐段归因（明细数据留档 live_review_%s.json，正文不展开）。'
-            '此处仅输出结论：当前版本的捕获短板、可能原因与改进方向。</div>' % TARGET)
+            '此处仅输出结论：当前版本的捕获短板、可能原因与改进方向。'
+            'v9.4.0 新增：基于当日质量分数的因子贡献方向（哪些因子在赚钱/赔钱）。</div>' % TARGET)
 pool_amp = sum(v['total_amp_pct'] for v in vol.values() if 'total_amp_pct' in v)
 pool_cap = sum(v['captured_pct'] for v in vol.values() if 'captured_pct' in v)
 pool_sig_amp = sum(v.get('sig_amp_pct', 0) for v in vol.values())
@@ -288,7 +303,24 @@ for i, o in enumerate(live.get('opportunities', []), 1):
                 '</tbody></table></div>'
                 % (i, esc(o['problem']), esc(o['cause']), esc(o['direction'])))
 
-body.append('<div class="foot">tpoint v9.3.0 ｜ 报告基于实盘推送 round-trip（净盈亏口径）+ 1m 行情生成 ｜ 数据截止 %s 15:00</div>' % TARGET)
+# ---- v9.4.0: 因子贡献方向摘要（基于质量分数四维分解）----
+if trips:
+    # 按质量分数四维反向推断因子贡献
+    high_qs = [t for t in trips if (t.get('quality_score') or 0) >= 70]
+    low_qs = [t for t in trips if (t.get('quality_score') or 0) < 40]
+    body.append('<div class="card"><b>v9.4.0 因子贡献方向（基于质量分数四维分解）</b><table><tbody>')
+    if high_qs:
+        body.append('<tr><td style="color:#3fb950">🟢 高分信号(≥70)特征</td><td>%s</td></table>'
+                    % esc('; '.join('%s %s Q=%s' % (t.get('sym',''), t.get('dir',''), t.get('quality_score')) for t in high_qs)))
+    elif low_qs:
+        body.append('<tr><td style="color:#f85149">🔴 低分信号(&lt;40)待修复</td><td>%s</td></table>'
+                    % esc('; '.join('%s %s Q=%s %s' % (t.get('sym',''), t.get('dir',''), t.get('quality_score'),
+                              t['loss_tags'][0][:40] if t.get('loss_tags') else '') for t in low_qs)))
+    else:
+        body.append('<tr><td>全部信号质量分数在 40-70 区间（中等水平），无极端值。</td><td>继续每日寻优提升均分。</td></table>')
+    body.append('</tbody></table></div>')
+
+body.append('<div class="foot">tpoint v9.4.0 ｜ 报告基于实盘推送 round-trip（净盈亏口径+质量评分+六维归因+Regime分层）+ 1m 行情生成 ｜ 数据截止 %s 15:00</div>' % TARGET)
 
 html = ('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'

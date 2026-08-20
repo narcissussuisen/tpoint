@@ -154,7 +154,8 @@ def backtest_symbol(csv_path, config=None, engine='miji', macd_min_hist_diff=0.0
                                    mpr_enable=mpr_enable, mpr_periods=mpr_periods,
                                    vwap_dev_ceil=vwap_dev_ceil, atr_min_pct_s=atr_min_pct_s)
         prices = {'o': o, 'h': h, 'lo': lo, 'c': c, 'atr': data['atr'],
-                  'trend': data.get('trend'), 'n': data['n']}
+                  'trend': data.get('trend'), 'n': data['n'],
+                  'date': date}
         trips = simulate_day(sigs, prices, mcfg, cost=cost)
         all_trips.extend(trips)
         day_count += 1
@@ -208,10 +209,13 @@ def run_batch(paths, verbose=True, engine='miji', macd_min_hist_diff=0.0, atr_mi
         if verbose:
             m = r['metrics']; v = r['verdict']
             mark = '✅' if v['pass'] else ('⚠️' if not v['sample_ok'] else '❌')
+            ynote = ''
+            if m.get('yearly') is not None:
+                ynote = '｜逐年全正' if m.get('yearly_consistent') else f'｜逐年存在负年({m.get("worst_year")})'
             print(f'  {mark} {r["symbol"]:12s} 天数{r["days"]:>3} 笔数{m["total"]:>3} '
                   f'胜率{m["win_rate"]:>5.1f}% 盈亏比{m["pl_ratio"]:>5.2f} '
                   f'年化{m["ann_ret_pct"]:>8.2f}% 回撤{m["max_drawdown_pct"]:>6.2f}% '
-                  f'{v["reason"]}')
+                  f'{v["reason"]}{ynote}')
     return results
 
 

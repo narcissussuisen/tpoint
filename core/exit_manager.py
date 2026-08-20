@@ -13,6 +13,7 @@
 
 本模块与数据源/STATE无关, 纯算法, 可被 monitor(实盘) / 回测共用。
 """
+import re
 import numpy as np
 
 
@@ -100,6 +101,17 @@ def cost_for_symbol(sym):
 
 # ========== 单日正向T配对模拟 ==========
 
+def limit_thr(sym):
+    """涨跌停阈值(%)：主板10 / 创业板(300·301)·科创板(688) 20 / 北交所(8·4·92) 30。
+    与 monitor._limit_up_threshold 口径一致。[2026-08-18 出场侧成交可行性过滤用]"""
+    code = (sym or '').split('.')[0]
+    if code.startswith(('300', '301', '688')):
+        return 0.20
+    if code.startswith(('8', '4', '92')):
+        return 0.30
+    return 0.10
+
+
 def simulate_day(signals, prices, config, cost=None):
     """对单日信号做正向T(先买后卖)配对模拟, 应用出场管理规则。
 
@@ -119,6 +131,18 @@ def simulate_day(signals, prices, config, cost=None):
     n = prices['n']
     c = prices['c']; lo = prices['lo']; atr = prices['atr']
     trend = prices.get('trend')
+    h = prices.get('h')
+    # [2026-08-17 AQuA 第三点] 透传交易日期用于按年稳定性统计(净夏普逐年稳健性)。
+    # 缺省(实时/无日期回放)为 None → aggregate_metrics 自动跳过逐年口径。
+    day_date = prices.get('date')
+    # [2026-08-18 P0 出场侧成交可行性] 锁跌停不可卖：pc+sym 存在时算 locked_down 数组，
+    # 出场判定跳过锁跌停 bar（正T单仓位仅 long，故只关心"卖不出去"的跌停）。
+    _pc = prices.get('pc')
+    _sym = prices.get('sym')
+    locked_down = None
+    if _pc and _pc > 0 and _sym and h is not None:
+        _ld = round(float(_pc) * (1 - limit_thr(_sym)), 2)
+        locked_down = h <= _ld + 0.02
     # 信号按idx建索引
     b_idx = {s['idx']: s for s in signals if s['type'] == 'B'}
     s_idx = {s['idx']: s for s in signals if s['type'] == 'S'}
@@ -139,26 +163,28 @@ def simulate_day(signals, prices, config, cost=None):
             continue
 
         # ---- 持仓中, 检查出场(优先级: 硬止损 > S信号 > 移动止损 > 时间止损) ----
+        # [2026-08-18 P0 出场侧成交可行性] 锁跌停 bar 卖不出去 → 本 bar 不出场，下一 bar 再判。
+        can_sell = (locked_down is None) or (not bool(locked_down[i]))
         # 1) 硬止损(风险兜底, 最高优先)
         if config['use_stop']:
             if config['stop_mode'] == 'trend':
                 # 趋势破位止损: 仅当趋势确认翻空(trend==-1)才出场, 不被正常下探洗掉
-                if trend is not None and trend[i] == -1:
-                    trips.append(_mk_trip(pos, i, c[i], 'STOP', buy_cost, sell_cost))
+                if trend is not None and trend[i] == -1 and can_sell:
+                    trips.append(_mk_trip(pos, i, c[i], 'STOP', buy_cost, sell_cost, entry_date=day_date))
                     pos = None
                     continue
             else:
                 # ATR噪音止损: 盘中最低价触及 stop_price 即出
-                if lo[i] <= pos['stop_price']:
-                    trips.append(_mk_trip(pos, i, pos['stop_price'], 'STOP', buy_cost, sell_cost))
+                if lo[i] <= pos['stop_price'] and can_sell:
+                    trips.append(_mk_trip(pos, i, pos['stop_price'], 'STOP', buy_cost, sell_cost, entry_date=day_date))
                     pos = None
                     continue
         # 更新浮动盈利高点
         if c[i] > pos['max_fav']:
             pos['max_fav'] = c[i]
         # 2) S信号出场(原v9自然出场)
-        if config['s_signal_exit'] and i in s_idx:
-            trips.append(_mk_trip(pos, i, s_idx[i]['price'], 'S', buy_cost, sell_cost))
+        if config['s_signal_exit'] and i in s_idx and can_sell:
+            trips.append(_mk_trip(pos, i, s_idx[i]['price'], 'S', buy_cost, sell_cost, entry_date=day_date))
             pos = None
             continue
         # 3) 移动止损(浮盈保护)
@@ -166,23 +192,23 @@ def simulate_day(signals, prices, config, cost=None):
             fav_ret = (pos['max_fav'] - pos['entry_price']) / pos['entry_price'] * 100
             if fav_ret >= config['trail_activate_pct']:
                 trail_stop = pos['max_fav'] * (1 - config['trail_pct'] / 100.0)
-                if c[i] <= trail_stop and trail_stop > pos['stop_price']:
-                    trips.append(_mk_trip(pos, i, c[i], 'TRAIL', buy_cost, sell_cost))
+                if c[i] <= trail_stop and trail_stop > pos['stop_price'] and can_sell:
+                    trips.append(_mk_trip(pos, i, c[i], 'TRAIL', buy_cost, sell_cost, entry_date=day_date))
                     pos = None
                     continue
         # 4) 时间止损(超时强平)
-        if config['use_time'] and (i - pos['entry_idx']) >= config['time_stop_bars']:
-            trips.append(_mk_trip(pos, i, c[i], 'TIME', buy_cost, sell_cost))
+        if config['use_time'] and (i - pos['entry_idx']) >= config['time_stop_bars'] and can_sell:
+            trips.append(_mk_trip(pos, i, c[i], 'TIME', buy_cost, sell_cost, entry_date=day_date))
             pos = None
             continue
 
     # 收盘仍未平仓 → 强平(EOD)
     if pos is not None:
-        trips.append(_mk_trip(pos, n - 1, c[n - 1], 'EOD', buy_cost, sell_cost))
+        trips.append(_mk_trip(pos, n - 1, c[n - 1], 'EOD', buy_cost, sell_cost, entry_date=day_date))
     return trips
 
 
-def _mk_trip(pos, exit_idx, exit_price, reason, buy_cost=0.0, sell_cost=0.0):
+def _mk_trip(pos, exit_idx, exit_price, reason, buy_cost=0.0, sell_cost=0.0, entry_date=None):
     entry_price = pos['entry_price']
     gross = (exit_price - entry_price) / entry_price * 100 if entry_price > 0 else 0.0
     # 净收益 = 毛收益 - 双边成本（买边成本在买入价基础上扣除，卖边在卖出价基础上扣除）
@@ -197,10 +223,24 @@ def _mk_trip(pos, exit_idx, exit_price, reason, buy_cost=0.0, sell_cost=0.0):
         'gross_ret_pct': round(float(gross), 3),
         'hold_bars': int(exit_idx - pos['entry_idx']),
         'entry_reason': pos.get('entry_reason', ''),
+        'entry_date': entry_date,
     }
 
 
 # ========== 聚合指标 ==========
+
+def _year_of(d):
+    """从 trip 的 entry_date 抽取年份(兼容 datetime.date / Timestamp / 'YYYY-MM-DD' 字符串)。"""
+    if d is None:
+        return None
+    if hasattr(d, 'year'):
+        try:
+            return int(d.year)
+        except Exception:
+            pass
+    m = re.match(r'(\d{4})', str(d))
+    return int(m.group(1)) if m else None
+
 
 def aggregate_metrics(trips):
     """汇总 round_trips 指标: 笔数/胜率/均盈/均亏/盈亏比/总收益/平均持仓/各出场占比。
@@ -247,6 +287,36 @@ def aggregate_metrics(trips):
     by_reason = {}
     for t in trips:
         by_reason[t['exit_reason']] = by_reason.get(t['exit_reason'], 0) + 1
+
+    # [2026-08-17 AQuA 第三点] 逐年稳定性: IC≠夏普, 须看"净夏普"的逐年稳健性,
+    # 而非只看聚合夏普。某年样本外分布漂移时聚合夏普仍好看, 但逐年已出现负年。
+    # 按 entry_date 年份聚合, 逐年净收益/胜率/净夏普, 并判是否"逐年全正"。
+    yearly = {}
+    for t in trips:
+        d = t.get('entry_date')
+        if d is None:
+            continue
+        y = _year_of(d)
+        if y is None:
+            continue
+        yearly.setdefault(y, []).append(t['ret_pct'])
+    yearly_out = None
+    yearly_consistent = None
+    worst_year = None
+    if yearly:
+        yearly_out = {}
+        for y, rs in sorted(yearly.items()):
+            rs = np.asarray(rs, dtype=float)
+            nav = float(np.prod(1.0 + rs / 100.0))
+            wr = float((rs > 0).mean() * 100) if len(rs) else 0.0
+            sh = (float(rs.mean() / rs.std(ddof=1) * np.sqrt(244))
+                  if len(rs) > 1 and rs.std(ddof=1) > 0 else 0.0)
+            yearly_out[str(y)] = {'n': len(rs), 'ret_pct': round(float(rs.sum()), 2),
+                                  'net': round(nav, 3), 'win_rate': round(wr, 1),
+                                  'sharpe': round(sh, 2), 'positive': bool(rs.sum() > 0)}
+        yearly_consistent = all(v['positive'] for v in yearly_out.values())
+        worst_year = min(yearly_out.items(), key=lambda kv: kv[1]['ret_pct'])[0]
+
     return {
         'total': len(trips),
         'win_rate': round(len(wins) / len(trips) * 100, 1),
@@ -261,4 +331,7 @@ def aggregate_metrics(trips):
         'ann_ret_pct': round(ann_ret, 2),
         'avg_hold': round(float(np.mean([t['hold_bars'] for t in trips])), 1),
         'by_reason': by_reason,
+        'yearly': yearly_out,
+        'yearly_consistent': yearly_consistent,
+        'worst_year': worst_year,
     }

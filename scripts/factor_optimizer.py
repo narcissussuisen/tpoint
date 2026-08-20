@@ -126,15 +126,24 @@ def eval_config(sig_days, trail_act, trail_pct):
     trips = []
     for d, data, sigs in sig_days:
         prices = {'o': data['o'], 'h': data['h'], 'lo': data['lo'], 'c': data['c'],
-                  'atr': data['atr'], 'trend': data.get('trend'), 'n': data['n']}
+                  'atr': data['atr'], 'trend': data.get('trend'), 'n': data['n'],
+                  'date': d,
+                  # [2026-08-18 P0 出场侧成交可行性] 透传 pc+sym 供 simulate_day 算锁跌停
+                  'pc': data.get('pc'), 'sym': data.get('sym')}
         trips.extend(simulate_day(sigs, prices, mcfg, cost=cost_for_symbol(data.get('sym', '')) if data.get('sym') else None))
     return trips
 
 
 def metrics_of(trips):
     m = aggregate_metrics(trips)
-    return {'n': m['total'], 'win_rate': m['win_rate'], 'pl_ratio': m['pl_ratio'],
-            'total_ret': m.get('total_ret_pct', m.get('total_ret', 0))}
+    out = {'n': m['total'], 'win_rate': m['win_rate'], 'pl_ratio': m['pl_ratio'],
+           'total_ret': m.get('total_ret_pct', m.get('total_ret', 0))}
+    # [2026-08-17 AQuA 第三点] 透出逐年稳健性, 供 OOS 检验/选股报告统一展示
+    if m.get('yearly') is not None:
+        out['yearly'] = m['yearly']
+        out['yearly_consistent'] = m['yearly_consistent']
+        out['worst_year'] = m['worst_year']
+    return out
 
 
 def main():

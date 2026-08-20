@@ -2,8 +2,12 @@
 v9 纯算法层 — 指标计算 + 信号触发判定
 无数据源(tickflow)/状态(STATE)依赖, 可独立单元测试。
 monitor / backtest / selftest 共用此模块。
+[v10.2.0 2026-08-20 新增] KDJ 字段 + detect_signals_v3（融合 3 神技 + KDJ/RSI）
 """
 import numpy as np
+# [2026-08-18 Phase 2 单一因子源] 因果原语统一从 primitives 导入，删除本文件重复实现
+from primitives import (ema, compute_atr, compute_rsi, compute_vwap, compute_vol_ratio,
+                         compute_kdj)
 
 # ========== 默认参数 ==========
 ATR_PERIOD = 14
@@ -31,40 +35,16 @@ DOWN_DAY_THR = -1.0  # 日内跌幅超过此值视为跌日(触发严格B过滤)
 LOCAL_W = 15      # 局部极值窗口(分钟)
 SIGNAL_GAP = 8    # 同型+跨型信号最小间隔(分钟)
 
+# ========== [v10.2.0 新增] v3 因子参数（三大神技 + KDJ + 背离） ==========
+KDJ_OVERSOLD_K = 20    # B 候选：K<20 强超卖
+KDJ_OVERSOLD_J = 0     # B 候选：J<0 极端超卖（更严）
+KDJ_OVERBOUGHT_K = 80  # S 候选：K>80 强超买
+KDJ_OVERBOUGHT_J = 100  # S 候选：J>100 极端超买
+DIV_LOCAL_W = 15       # 背离窗口（与 v2 LOCAL_W 一致）
+DIV_VOL_RATIO = 0.7    # 量价背离的量缩阈值（<均量*0.7）
+
 
 # ========== 基础指标 ==========
-
-def ema(arr, period):
-    """指数移动平均"""
-    arr = np.asarray(arr, dtype=float)
-    out = np.zeros_like(arr)
-    if len(arr) == 0:
-        return out
-    k = 2.0 / (period + 1)
-    out[0] = arr[0]
-    for i in range(1, len(arr)):
-        out[i] = arr[i] * k + out[i-1] * (1 - k)
-    return out
-
-
-def compute_atr(h, lo, c, period=ATR_PERIOD):
-    """Wilder ATR"""
-    h = np.asarray(h, dtype=float); lo = np.asarray(lo, dtype=float); c = np.asarray(c, dtype=float)
-    n = len(c)
-    tr = np.zeros(n)
-    tr[0] = h[0] - lo[0]
-    for i in range(1, n):
-        tr[i] = max(h[i] - lo[i], abs(h[i] - c[i-1]), abs(lo[i] - c[i-1]))
-    atr = np.zeros(n)
-    if n > period:
-        atr[period] = tr[1:period+1].mean()
-        for i in range(period+1, n):
-            atr[i] = (atr[i-1] * (period-1) + tr[i]) / period
-        atr[:period] = atr[period]
-    else:
-        atr[:] = tr.mean() if tr.mean() > 0 else 0.0
-    return atr
-
 
 def compute_adx(h, lo, c, period=ADX_PERIOD):
     """Wilder ADX"""
@@ -102,50 +82,6 @@ def compute_adx(h, lo, c, period=ADX_PERIOD):
     return adx
 
 
-def compute_rsi(c, period=14):
-    """RSI(14) Wilder"""
-    c = np.asarray(c, dtype=float)
-    n = len(c)
-    dlt = np.diff(c, prepend=c[0])
-    g = np.where(dlt > 0, dlt, 0.0)
-    l_arr = np.where(dlt < 0, -dlt, 0.0)
-    ag = np.zeros(n); al = np.zeros(n)
-    if n > period:
-        ag[period] = g[1:period+1].mean()
-        al[period] = l_arr[1:period+1].mean()
-        for i in range(period+1, n):
-            ag[i] = (ag[i-1] * (period-1) + g[i]) / period
-            al[i] = (al[i-1] * (period-1) + l_arr[i]) / period
-    rsi = np.where(al > 0, 100 - 100 / (1 + ag / np.where(al == 0, 1, al)), 50)
-    return rsi
-
-
-def compute_vwap(h, lo, c, v):
-    """日内累计VWAP. v为None或全0时退化为等权均价."""
-    h = np.asarray(h, dtype=float); lo = np.asarray(lo, dtype=float)
-    c = np.asarray(c, dtype=float); n = len(c)
-    if v is not None and np.sum(v) > 0:
-        v = np.asarray(v, dtype=float)
-        tp = (h + lo + c) / 3.0
-        cum_vp = np.cumsum(tp * v)
-        cum_v = np.cumsum(v)
-        return cum_vp / np.where(cum_v > 0, cum_v, 1.0)
-    return np.cumsum(c) / np.arange(1, n + 1)
-
-
-def compute_vol_ratio(v, lookback=VOL_LOOKBACK):
-    """量比 = 当前量 / 过去lookback bar均量"""
-    n = len(v) if v is not None else 0
-    vr = np.ones(max(n, 1))
-    if v is None:
-        return vr
-    v = np.asarray(v, dtype=float)
-    for i in range(lookback, n):
-        avg = v[i-lookback:i].mean()
-        vr[i] = v[i] / avg if avg > 0 else 1.0
-    return vr
-
-
 # ========== 统一指标计算 ==========
 
 def compute_indicators(o, h, lo, c, v, pc, has_vol=True):
@@ -165,6 +101,8 @@ def compute_indicators(o, h, lo, c, v, pc, has_vol=True):
             np.where((ema_f < ema_s) & (adx > ADX_THRESHOLD), -1, 0))
     vol_ratio = compute_vol_ratio(v if real_vol else None)
     rsi = compute_rsi(c)
+    # [v10.2.0 新增] KDJ（N=9, K=3, D=3；SSE 经典）
+    kdj_k, kdj_d, kdj_j = compute_kdj(h, lo, c)
 
     chg_pct = (c - pc) / pc * 100 if pc > 0 else np.zeros(n)
     chg_comp = np.clip((chg_pct + 5) / 10.0 * 100, 0, 100)
@@ -178,6 +116,8 @@ def compute_indicators(o, h, lo, c, v, pc, has_vol=True):
         'vwap': vwap, 'atr': atr, 'trend': trend,
         'vol_ratio': vol_ratio, 'has_vol': real_vol,
         'rsi': rsi, 'temp': temp, 'ema_f': ema_f, 'ema_s': ema_s, 'adx': adx,
+        # [v10.2.0 新增] KDJ 字段（向后兼容：consumers 不引用则无影响）
+        'kdj_k': kdj_k, 'kdj_d': kdj_d, 'kdj_j': kdj_j,
     }
 
 
@@ -358,3 +298,172 @@ def stars(sig_type, temp_val, vol_ratio_val):
     if total >= 3:
         return '★★☆'
     return '★☆☆'
+
+
+# ========== [v10.2.0 新增] 分时 MACD 计算（detect_signals_v3 内部使用；与 factor_registry 同源） ==========
+
+def _macd_inplace(c, fast=12, slow=26, signal=9):
+    """与 factor_registry._macd 同步的内联版本，避免循环内多次跨模块 import。"""
+    ema_fast = ema(c, fast); ema_slow = ema(c, slow)
+    dif = ema_fast - ema_slow
+    dea = ema(dif, signal)
+    hist = (dif - dea) * 2
+    return dif, dea, hist
+
+
+# ========== [v10.2.0 新增] detect_signals_v3：融合 3 神技 + KDJ + RSI ==========
+
+def detect_signals_v3(data, pc, start_idx=2, max_b=MAX_B_DAILY, max_s=MAX_S_DAILY):
+    """v3 信号检测（2026-08-20 引入）— 融合三大神技 + KDJ + RSI，更灵敏精准捕获日内波动。
+
+    三大神技（出处：v14《散户专属做T秘籍》）对应实现：
+      1) 分时均线"引力定律"：VWAP ± K*ATR 带 + 长下影/上影 反转 K（继承自 v2）。
+      2) 量价背离"动能衰竭"：价新高+量缩 → S 强信号；价新低+量缩 → B 强信号。
+         （v2 仅看量比，无价×量联合的"背离"判定，震荡日易误触/漏触）。
+      3) 分时 MACD"背离确认"：价新低+MACD 红柱缩短 → B 强信号；
+         价新高+MACD 绿柱放大 → S 强信号。
+         （v2 仅看 DIF/DEA 趋势，无背离判定）。
+
+    协同指标：
+      - KDJ（用户明确要求）：J<0/K<20 强超卖（B）→ J>100/K>80 强超买（S）
+      - RSI（已有）：保留 v2 的超买/超卖门控（RSI<35/55）作为兜底。
+
+    设计原则（最小化重构，不动 v9/v2/monitor）：
+      - 完全新增函数；不影响 v9 detect_signals 与 v2 detect_signals_v2 的现有行为。
+      - 返回格式与 v2 完全兼容（含 type/idx/price/chg/rsi/trend/reason/vol_ratio），
+        额外增加 kdj_j / kdj_k / vol_price_div / macd_div 字段供 v3 评分/回测使用。
+      - 多触发原因分级：'神技背离B/S' > 'KDJ超卖/超买' > v2 既有 '超卖反转/超买回落/回踩下轨/反弹遇阻'。
+      - 跨型信号冷却沿用 v2 的 SIGNAL_GAP=8 分钟（防同段行情两面抓）。
+    """
+    if pc <= 0:
+        return []
+    n = data['n']; c = data['c']; o = data['o']; lo = data['lo']; h = data['h']
+    vwap = data['vwap']; atr = data['atr']; trend = data['trend']; vr = data['vol_ratio']
+    ema_f = data['ema_f']; rsi = data['rsi']; has_vol = data['has_vol']
+    # [v10.2.0] KDJ 字段
+    kdj_k = data['kdj_k']; kdj_d = data['kdj_d']; kdj_j = data['kdj_j']
+    # [v10.2.0] MACD 历史（神技#3 用）
+    _, _, macd_hist = _macd_inplace(c)
+
+    sigs = []; b_last = -999; s_last = -999; bc = 0; sc = 0
+    for i in range(max(start_idx, 2), n):
+        if atr[i] <= 0:
+            continue
+        # 标准轨 / 极端轨（沿用 v2）
+        lower_std = vwap[i] - K1_V2 * atr[i]; lower_ext = vwap[i] - K2_V2 * atr[i]
+        upper_std = vwap[i] + K1_V2 * atr[i]; upper_ext = vwap[i] + K2_V2 * atr[i]
+        is_yang = c[i] > o[i]; is_yin = c[i] < o[i]
+        ls = (o[i] - lo[i]) if is_yang else (c[i] - lo[i])
+        us = (h[i] - o[i]) if is_yin else (h[i] - c[i])
+        day_chg = (c[i] / pc - 1) * 100
+
+        # ---- 神技#3 MACD 背离预计算 ----
+        # 顶背离（S 候选）：近 LOCAL_W 根新高 + 绿柱放大
+        # 底背离（B 候选）：近 LOCAL_W 根新低 + 红柱缩短
+        w_start = max(0, i - LOCAL_W)
+        local_top = h[i] >= h[w_start:i + 1].max()
+        local_bot = lo[i] <= lo[w_start:i + 1].min()
+        macd_top_div = local_top and macd_hist[i] < 0 and i >= 2 and macd_hist[i] < macd_hist[i - 1] < macd_hist[i - 2]
+        macd_bot_div = local_bot and macd_hist[i] > 0 and i >= 2 and macd_hist[i] < macd_hist[i - 1] < macd_hist[i - 2]
+
+        # ---- 神技#2 量价背离预计算（v 缺失时静默）----
+        vp_top_div = False  # 价新高 + 量缩
+        vp_bot_div = False  # 价新低 + 量缩
+        if has_vol and i >= LOCAL_W:
+            v_win = data['vol_ratio']  # 复用 vol_ratio 作为窗口均量参照（>1=放量,<1=缩量）
+            # 直接用 vol_ratio 判断：当前量比 < 0.7 * 窗口均值近似 → 缩量
+            v_local = vr[i]
+            # 近 LOCAL_W 内的 vol_ratio 均值
+            v_avg_local = vr[max(0, i - LOCAL_W):i + 1].mean()
+            if v_avg_local > 0:
+                vp_top_div = local_top and v_local < v_avg_local * DIV_VOL_RATIO
+                vp_bot_div = local_bot and v_local < v_avg_local * DIV_VOL_RATIO
+
+        # ---- B ----
+        if bc < max_b and (i - b_last) >= SIGNAL_GAP and (i - s_last) >= SIGNAL_GAP:
+            hit = (lo[i-1] <= lower_std) or (lo[i] <= lower_std) or (lo[i] <= lower_ext)
+            reversion = (c[i] > lower_std) or (c[i] > lower_ext and ls >= atr[i])
+            trend_ok = int(trend[i]) == 1
+            reversal_k = is_yang or (ls >= 0.5 * atr[i])
+            # 神技#3：MACD 底背离确认（替代 v2 的 rsi 严苛门控，更灵敏）
+            macd_confirm = macd_bot_div
+            # KDJ 超卖：J<0 或 K<20
+            kdj_oversold = (kdj_j[i] < KDJ_OVERSOLD_J) or (kdj_k[i] < KDJ_OVERSOLD_K)
+            # 神技#2 量价底背离
+            vp_confirm = vp_bot_div
+
+            # 三种 B 触发路径（任一满足即可）：
+            #   路径 a) v2 兼容：hit + reversion + reversal_k + trend_ok
+            #   路径 b) 神技#2/3 强势路径：底背离 + 长下影反转 + 趋势不严格 + KDJ 超卖加分
+            #   路径 c) KDJ 超卖 + hit + reversion（极端超卖区主动建仓）
+            triggered = False
+            reason = ''
+            if hit and reversion and reversal_k and trend_ok:
+                triggered = True
+                reason = '回踩下轨' if lo[i] <= lower_std else '极端超卖反弹'
+            elif macd_confirm and reversal_k and (vp_confirm or kdj_oversold):
+                triggered = True
+                reason = 'MACD底背离'
+            elif vp_confirm and kdj_oversold and reversal_k:
+                triggered = True
+                reason = '量价底背离'
+            elif kdj_oversold and hit and reversion and reversal_k:
+                triggered = True
+                reason = 'KDJ超卖反弹'
+
+            if triggered:
+                sigs.append({'type': 'B', 'idx': i, 'price': round(float(c[i]), 2),
+                             'chg': round(day_chg, 2), 'rsi': round(float(rsi[i]), 1),
+                             'trend': int(trend[i]),
+                             'reason': reason,
+                             'vol_ratio': round(float(vr[i]), 2),
+                             # [v10.2.0] 扩展字段供回测打分
+                             'kdj_k': round(float(kdj_k[i]), 1),
+                             'kdj_d': round(float(kdj_d[i]), 1),
+                             'kdj_j': round(float(kdj_j[i]), 1),
+                             'macd_div': 1 if macd_bot_div else 0,
+                             'vol_price_div': 1 if vp_bot_div else 0})
+                b_last = i; bc += 1
+
+        # ---- S ----
+        if sc < max_s and (i - s_last) >= SIGNAL_GAP and (i - b_last) >= SIGNAL_GAP:
+            hit = (h[i-1] >= upper_std) or (h[i] >= upper_std) or (h[i] >= upper_ext)
+            reversion = (c[i] < upper_std) or (c[i] < upper_ext and us >= atr[i])
+            reversal_k = is_yin or (us >= 0.5 * atr[i])
+            # 神技#3 MACD 顶背离
+            macd_confirm = macd_top_div
+            # KDJ 超买
+            kdj_overbought = (kdj_j[i] > KDJ_OVERBOUGHT_J) or (kdj_k[i] > KDJ_OVERBOUGHT_K)
+            # 神技#2 量价顶背离
+            vp_confirm = vp_top_div
+            # 趋势：v2 用 trend∈{-1,0}；v3 允许 trend∈{-1,0,1}（强背离信号可破势）
+            trend_ok = int(trend[i]) in (-1, 0, 1)
+
+            triggered = False
+            reason = ''
+            if hit and reversion and reversal_k and trend_ok:
+                triggered = True
+                reason = '反弹遇阻' if h[i] >= upper_std else '极端超买回落'
+            elif macd_confirm and reversal_k and (vp_confirm or kdj_overbought):
+                triggered = True
+                reason = 'MACD顶背离'
+            elif vp_confirm and kdj_overbought and reversal_k:
+                triggered = True
+                reason = '量价顶背离'
+            elif kdj_overbought and hit and reversion and reversal_k:
+                triggered = True
+                reason = 'KDJ超买回落'
+
+            if triggered:
+                sigs.append({'type': 'S', 'idx': i, 'price': round(float(c[i]), 2),
+                             'chg': round(day_chg, 2), 'rsi': round(float(rsi[i]), 1),
+                             'trend': int(trend[i]),
+                             'reason': reason,
+                             'vol_ratio': round(float(vr[i]), 2),
+                             'kdj_k': round(float(kdj_k[i]), 1),
+                             'kdj_d': round(float(kdj_d[i]), 1),
+                             'kdj_j': round(float(kdj_j[i]), 1),
+                             'macd_div': 1 if macd_top_div else 0,
+                             'vol_price_div': 1 if vp_top_div else 0})
+                s_last = i; sc += 1
+    return sigs

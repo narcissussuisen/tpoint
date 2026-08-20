@@ -19,6 +19,8 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 from backtest.keyfactor._gate_floor import gate_buy, gate_sell  # noqa: E402
+# [2026-08-18 Phase 2 单一因子源] 因果原语统一从 primitives 导入，删除本文件重复实现
+from primitives import ema, compute_atr, compute_vwap, compute_rsi, compute_vol_ratio  # noqa: E402
 
 # ========== 可调参数 ==========
 
@@ -113,39 +115,6 @@ def _is_new_high(c, h, i, w=LOCAL_W):
 
 # ========== 技巧一: 分时均线"引力定律" ==========
 
-def compute_vwap(h, lo, c, v):
-    """日内累计VWAP. v为None或全0时退化为等权均价."""
-    h = np.asarray(h, dtype=float); lo = np.asarray(lo, dtype=float)
-    c = np.asarray(c, dtype=float); n = len(c)
-    if v is not None and np.sum(v) > 0:
-        v = np.asarray(v, dtype=float)
-        tp = (h + lo + c) / 3.0
-        cum_vp = np.cumsum(tp * v)
-        cum_v = np.cumsum(v)
-        return cum_vp / np.where(cum_v > 0, cum_v, 1.0)
-    return np.cumsum(c) / np.arange(1, n + 1)
-
-
-def compute_atr(h, lo, c, period=ATR_PERIOD):
-    """Wilder ATR"""
-    h = np.asarray(h, dtype=float); lo = np.asarray(lo, dtype=float)
-    c = np.asarray(c, dtype=float)
-    n = len(c)
-    tr = np.zeros(n)
-    tr[0] = h[0] - lo[0]
-    for i in range(1, n):
-        tr[i] = max(h[i] - lo[i], abs(h[i] - c[i-1]), abs(lo[i] - c[i-1]))
-    atr = np.zeros(n)
-    if n > period:
-        atr[period] = tr[1:period+1].mean()
-        for i in range(period+1, n):
-            atr[i] = (atr[i-1] * (period-1) + tr[i]) / period
-        atr[:period] = atr[period]
-    else:
-        atr[:] = tr.mean() if tr.mean() > 0 else 0.0
-    return atr
-
-
 def gravity_signal(c, vwap, atr, i):
     """技巧一: 分时均线引力定律
 
@@ -224,19 +193,6 @@ def volume_divergence_signal(h, lo, c, v, i,
 
 
 # ========== 技巧三: 分时MACD"背离确认" ==========
-
-def ema(arr, period):
-    """指数移动平均"""
-    arr = np.asarray(arr, dtype=float)
-    out = np.zeros_like(arr)
-    if len(arr) == 0:
-        return out
-    k = 2.0 / (period + 1)
-    out[0] = arr[0]
-    for i in range(1, len(arr)):
-        out[i] = arr[i] * k + out[i-1] * (1 - k)
-    return out
-
 # ========== 日内趋势判定 (trend filter 用) ==========
 
 def compute_trend(c, fast=5, slow=20):
@@ -312,14 +268,14 @@ def compute_macd(c, fast=MACD_FAST, slow=MACD_SLOW, signal=MACD_SIGNAL):
 # --- 多周期 MACD（P3-1，2026-08-02 从 ml_build_dataset L128-143 抽取） ---
 # 用途：大周期（60m/15m）MACD hist 方向做"方向一致"过滤——B 信号要求大周期 hist 为负
 #   （大周期在下方，1m 抄底顺大势）、S 信号要求大周期 hist 为正（大周期在上方，1m 逃顶顺大势）。
-# 语义（严格等同 ml_build_dataset 原始实现，保证与报告特征口径一致）：
-#   - 周期边界 bar（idx%p==0）：rc = 该周期内所有 1m close 的 max
+# 语义（[2026-08-17 前视偏差修复] 已改为因果运行最大值，不再"严格等同"泄漏旧实现）：
+#   - 周期边界 bar（idx%p==0）：rc = 该段截至当前 bar 的**因果运行 max**（不含未来 bar）
 #   - 非边界 bar：rc = 段首 close（前向填充到最近周期边界）
 #   然后对 rc 做标准 MACD(12,26,9)。
 
 def compute_multi_period_macd(c, periods=(5, 15, 30, 60),
                               fast=MACD_FAST, slow=MACD_SLOW, signal=MACD_SIGNAL):
-    """多周期 MACD：对 1m close 按周期重采样（边界=段内 max + 前向填充段首）后分别计算 MACD。
+    """多周期 MACD：对 1m close 按周期重采样（边界=段内截至当前 bar 的因果运行 max + 前向填充段首）后分别计算 MACD。
 
     返回 dict: {p: {'dif': np.array, 'dea': np.array, 'hist': np.array}}，数组长度与输入 c 一致。
     数据不足（n < p*2）的周期返回全 0 数组（与 ml_build_dataset 一致）。
@@ -331,9 +287,25 @@ def compute_multi_period_macd(c, periods=(5, 15, 30, 60),
     for p in periods:
         if n >= p * 2:
             boundary = idx - (idx % p)          # 每根 bar 所属周期边界（段起始）
-            seg_max = np.zeros(n)
-            np.maximum.at(seg_max, boundary, c)  # seg_max[b] = 该段内 max close
-            # 边界 bar 用段内 max，非边界 bar 前向填充段首 close
+            # [2026-08-17 前视偏差修复] 原实现用 np.maximum.at(seg_max, boundary, c)
+            # 求"段内 max close"，但段 [boundary(b), boundary(b)+p) 包含 b 之后的未来
+            # bar —— 即 bar b 的 60m 重采样值 rc[b] 实际用到了同周期内未来分钟(如
+            # 9:31 的 rc 含 10:30 收盘)，属周期内前视泄漏(AQuA 论文同款坑)。
+            # 改为段内截至当前 bar 的**因果运行最大值**：rc[b] 仅依赖 c[0..b]。
+            # 边界 bar(boundary=b)运行值= c[b]；非边界 bar 前向填充段首 close，
+            # 二者均不触及未来。受 core/leak_guard.perturbation_test 栅栏守护。
+            runmax = np.empty(n)
+            prev_b = None
+            run = 0.0
+            for b in range(n):
+                if boundary[b] != prev_b:
+                    run = c[b]
+                else:
+                    run = run if c[b] <= run else c[b]
+                runmax[b] = run
+                prev_b = boundary[b]
+            seg_max = runmax
+            # 边界 bar 用段内(截至当前)running max，非边界 bar 前向填充段首 close
             rc = np.where(idx % p == 0, seg_max, c[boundary])
             p_dif, p_dea, p_hist = compute_macd(rc, fast=fast, slow=slow, signal=signal)
             out[p] = {'dif': p_dif, 'dea': p_dea, 'hist': p_hist}
@@ -425,37 +397,6 @@ def macd_divergence_signal(h, lo, c, dif, dea, hist, i, w=LOCAL_W, min_hist_diff
 W_RSI, W_CHG, W_VR, W_DEV = 0.4, 0.2, 0.2, 0.2
 RSI_PERIOD = 14
 VOL_LOOKBACK = 20
-
-
-def compute_rsi(c, period=RSI_PERIOD):
-    """RSI(14) Wilder (从 indicators.py 拷入, 供 monitor temp/stars)."""
-    c = np.asarray(c, dtype=float)
-    n = len(c)
-    dlt = np.diff(c, prepend=c[0])
-    g = np.where(dlt > 0, dlt, 0.0)
-    l_arr = np.where(dlt < 0, -dlt, 0.0)
-    ag = np.zeros(n); al = np.zeros(n)
-    if n > period:
-        ag[period] = g[1:period+1].mean()
-        al[period] = l_arr[1:period+1].mean()
-        for i in range(period+1, n):
-            ag[i] = (ag[i-1] * (period-1) + g[i]) / period
-            al[i] = (al[i-1] * (period-1) + l_arr[i]) / period
-    rsi = np.where(al > 0, 100 - 100 / (1 + ag / np.where(al == 0, 1, al)), 50)
-    return rsi
-
-
-def compute_vol_ratio(v, lookback=VOL_LOOKBACK):
-    """量比 = 当前量 / 过去lookback bar均量 (从 indicators.py 拷入)."""
-    n = len(v) if v is not None else 0
-    vr = np.ones(max(n, 1))
-    if v is None:
-        return vr
-    v = np.asarray(v, dtype=float)
-    for i in range(lookback, n):
-        avg = v[i-lookback:i].mean()
-        vr[i] = v[i] / avg if avg > 0 else 1.0
-    return vr
 
 
 def compute_miji_indicators(o, h, lo, c, v, pc, has_vol=True):
@@ -892,265 +833,6 @@ def check_miji_trigger(data, i, min_resonance=RESONANCE_THRESHOLD,
     return b_trig, s_trig, b_detail, s_detail, snapshot
 
 
-# ========== 5分钟K线 + 大盘指数 共振门控 (v9.1.1 新增) ==========
-# 设计：在 v9.1.0 的"K线三因子共振"底座之上, 新增一层"大盘指数伴随确认"。
-#   最终 B = (K线形态候选B) 且 (指数满足买入伴随条件)
-#   最终 S = (K线形态候选S) 且 (指数满足卖出伴随条件)
-# v9.1.0 兼容：compute_miji_indicators / detect_miji_signals / compute_trend / check_miji_trigger
-#   全部原样复用, 本段只新增函数, 不改任何既有逻辑。
-
-# --- 大盘指数伴随条件参数 (初始启发式, 未经优化, 可调) ---
-IDX_MA_FAST = 5
-IDX_MA_SLOW = 20
-IDX_BUY_DAY_CHG_MIN = -0.015   # 指数当日跌幅 <= -1.5% 时禁止买(避免暴跌日接飞刀)
-IDX_SELL_DAY_CHG_MIN = 0.010   # 指数当日涨幅 > +1.0% 允许卖(锁利)
-
-
-def index_buy_at(trend_i, day_chg):
-    """大盘买入伴随条件(单bar, 纯函数可测)。
-
-    trend_i : 指数趋势 (+1 多头 / -1 空头 / 0 震荡), 来自 compute_trend
-    day_chg : 指数较昨收的当日涨跌幅(小数, 如 +0.01 = +1%)
-
-    买入确认 = 指数处多头(trend==+1) 且 当日未深跌(> -1.5%)
-    """
-    return bool(trend_i == 1 and day_chg > IDX_BUY_DAY_CHG_MIN)
-
-
-def index_sell_at(trend_i, day_chg):
-    """大盘卖出伴随条件(单bar, 纯函数可测)。
-
-    卖出抑制 = 指数强多头(trend==+1) 且 当日仍下跌(<= +1.0%)
-               -> 持仓待涨, 不在此情境下平仓
-    其余情况(走弱/震荡/已大涨)均允许卖出(锁利或避险)。
-    """
-    blocked = (trend_i == 1) and (day_chg <= IDX_SELL_DAY_CHG_MIN)
-    return bool(not blocked)
-
-
-def index_buy_condition(idx_c, idx_prev_close):
-    """便捷封装：传入整段指数收盘序列 + 昨收, 取末bar判定买入确认。"""
-    t = int(compute_trend(idx_c, IDX_MA_FAST, IDX_MA_SLOW)[-1])
-    chg = (idx_c[-1] / idx_prev_close - 1) if idx_prev_close > 0 else 0.0
-    return index_buy_at(t, chg)
-
-
-def index_sell_condition(idx_c, idx_prev_close):
-    """便捷封装：传入整段指数收盘序列 + 昨收, 取末bar判定卖出确认。"""
-    t = int(compute_trend(idx_c, IDX_MA_FAST, IDX_MA_SLOW)[-1])
-    chg = (idx_c[-1] / idx_prev_close - 1) if idx_prev_close > 0 else 0.0
-    return index_sell_at(t, chg)
-
-
-def _prev_close_map(dates, closes):
-    """返回 dict: date -> 该日期前一交易日的收盘价(用于算当日涨跌幅)。
-
-    dates/closes 为按时间顺序排列的数组。首个有数据日若无前日,
-    用其首bar收盘价近似。
-    """
-    arr_dates = list(dates)
-    arr_close = list(closes)
-    daily_last = {}
-    for d, c in zip(arr_dates, arr_close):
-        daily_last[d] = c   # 覆盖到最后一根即为当日收盘
-    sorted_days = sorted(daily_last.keys())
-    prev = {}
-    for k, d in enumerate(sorted_days):
-        prev[d] = daily_last[sorted_days[k - 1]] if k > 0 else daily_last[d]
-    return prev
-
-
-def _merge_5m(stock_df, idx_df):
-    """将个股5分钟K线与指数5分钟K线按 trade_time 内连接, 对齐到共同时段。
-
-    返回 merged DataFrame: trade_time, trade_date, open, high, low, close, volume, idx_close
-    无重叠时段返回 None。
-    """
-    if stock_df is None or idx_df is None:
-        return None
-    s = stock_df[['trade_time', 'trade_date', 'open', 'high', 'low', 'close', 'volume']].copy()
-    i = idx_df[['trade_time', 'close']].rename(columns={'close': 'idx_close'}).copy()
-    m = s.merge(i, on='trade_time', how='inner')
-    if len(m) == 0:
-        return None
-    return m.sort_values('trade_time').reset_index(drop=True)
-
-
-def _gate_signals_by_index(cand, idx_c, idx_trend, pc_map, dates):
-    """纯函数门控：用大盘指数状态过滤K线形态候选信号。
-
-    cand      : detect_miji_signals 产出的候选信号列表(每含 'type'/'idx'/'price')
-    idx_c     : 对齐后的指数收盘数组(与 cand 同序)
-    idx_trend : 指数趋势数组(compute_trend 算出, 与 cand 同序)
-    pc_map    : _prev_close_map 产出的 {date: 昨收}
-    dates     : 对齐后的 trade_date 列表(与 cand 同序)
-
-    返回：通过门控的最终信号(追加 'index_state' 字段)。仅当
-      候选B 且 指数买入确认 -> 保留
-      候选S 且 指数卖出确认 -> 保留
-    """
-    final = []
-    for sg in cand:
-        i = sg['idx']
-        if i < 0 or i >= len(idx_trend):
-            continue
-        d = dates[i]
-        pc = pc_map.get(d, sg.get('price', 0.0))
-        t = int(idx_trend[i])
-        chg = (idx_c[i] / pc - 1) if pc and pc > 0 else 0.0
-        if sg['type'] == 'B' and index_buy_at(t, chg):
-            s2 = dict(sg)
-            s2['index_state'] = {'trend': t, 'day_chg': round(chg * 100, 3), 'gate': 'buy_ok'}
-            final.append(s2)
-        elif sg['type'] == 'S' and index_sell_at(t, chg):
-            s2 = dict(sg)
-            s2['index_state'] = {'trend': t, 'day_chg': round(chg * 100, 3), 'gate': 'sell_ok'}
-            final.append(s2)
-    return final
-
-
-def detect_miji_signals_5m_index(sym, index_sym='000300', index_market=1, count=240,
-                                  min_resonance=RESONANCE_THRESHOLD,
-                                  b_trend_filter=False, allow_reverse=True, ds=None):
-    """v9.1.1 主入口：5分钟K线形态 + 大盘指数 双重确认。
-
-    流程：
-      1) 取 sym 的5分钟K线 + index_sym 的5分钟指数K线(对应时段)
-      2) 对5分钟K线跑现有三因子共振 -> 候选 B/S(即"K线形态"部分)
-      3) 对每个候选bar, 取同时刻的指数状态做伴随确认：
-           最终B = 候选B 且 指数满足买入伴随条件
-           最终S = 候选S 且 指数满足卖出伴随条件
-      4) 返回 (过滤后信号列表, 元信息dict)
-
-    参数：
-      sym          : 个股代码(如 '600519.SH' 或 '600519')
-      index_sym   : 6位指数代码(默认 '000300' 沪深300)
-      index_market: 指数市场 0=深 1=沪(000300/999999 实际属沪, 显式传 1)
-      count        : 取的5分钟bar数(默认240 ≈ 5个交易日)
-      ds           : 注入 MootdxDataSource 实例(便于测试/复用)
-
-    v9.1.0 兼容：完全复用 compute_miji_indicators / detect_miji_signals /
-    compute_trend, 不改动任何既有函数。
-    """
-    try:
-        from core.datasource import MootdxDataSource
-    except Exception:
-        from datasource import MootdxDataSource
-    ds = ds or MootdxDataSource()
-    stock_df = ds.get_5m(sym, count=count)
-    idx_df = ds.get_index_5m(index_sym, count=count, market=index_market)
-    meta = {'ok': False, 'stock': stock_df is not None, 'index': idx_df is not None}
-    if stock_df is None or idx_df is None:
-        return [], meta
-
-    merged = _merge_5m(stock_df, idx_df)
-    if merged is None or len(merged) == 0:
-        meta['merged'] = 0
-        return [], meta
-
-    o = merged['open'].values.astype(float)
-    h = merged['high'].values.astype(float)
-    lo = merged['low'].values.astype(float)
-    c = merged['close'].values.astype(float)
-    v = merged['volume'].values.astype(float)
-    dates = merged['trade_date'].tolist()
-
-    pc_map = _prev_close_map(dates, c)
-    pc_win = pc_map.get(dates[0], c[0])   # 窗口级昨收(给 detect 的 day_chg 展示用)
-
-    # --- K线形态候选(复用 v9.1.0 底座) ---
-    data = compute_miji_indicators(o, h, lo, c, v, pc_win)
-    cand = detect_miji_signals(data, pc_win, min_resonance=min_resonance,
-                                b_trend_filter=b_trend_filter, allow_reverse=allow_reverse)
-
-    # --- 大盘指数伴随确认 ---
-    idx_c = merged['idx_close'].values.astype(float)
-    # 指数日涨跌幅必须用"指数昨收", 不可用个股 pc_map(否则数量级错配)
-    idx_pc_map = _prev_close_map(dates, idx_c)
-    idx_trend = compute_trend(idx_c, IDX_MA_FAST, IDX_MA_SLOW)
-    final = _gate_signals_by_index(cand, idx_c, idx_trend, idx_pc_map, dates)
-
-    meta.update({'ok': True, 'n_merged': len(merged),
-                 'n_cand': len(cand), 'n_final': len(final)})
-    return final, meta
-
-
-def check_miji_trigger_5m_index(data, idx_c, idx_prev_close, min_resonance=RESONANCE_THRESHOLD):
-    """单bar实时触发(供 monitor 调用), 带大盘指数门控。
-
-    data           : 个股5分钟已算指标(compute_miji_indicators 产出)
-    idx_c         : 指数5分钟收盘序列(对齐到个股时段)
-    idx_prev_close: 指数昨收
-
-    返回：(b_trig, s_trig, b_detail, s_detail, snapshot)
-    snapshot 追加 idx_trend / idx_day_chg。
-    """
-    b_trig, s_trig, b_detail, s_detail, snap = check_miji_trigger(data, len(data['c']) - 1, min_resonance)
-    t = int(compute_trend(idx_c, IDX_MA_FAST, IDX_MA_SLOW)[-1])
-    chg = (idx_c[-1] / idx_prev_close - 1) if idx_prev_close > 0 else 0.0
-    if b_trig and not index_buy_at(t, chg):
-        b_trig = False
-        b_detail = (b_detail + ' | 指数未确认买') if b_detail else '指数未确认买'
-    if s_trig and not index_sell_at(t, chg):
-        s_trig = False
-        s_detail = (s_detail + ' | 指数未确认卖') if s_detail else '指数未确认卖'
-    snap['idx_trend'] = t
-    snap['idx_day_chg'] = round(chg * 100, 3)
-    return b_trig, s_trig, b_detail, s_detail, snap
-
-
-# ========== [P1-1 迭代] 多周期方向标注（纯函数，研究态） ==========
-# 设计：v9.3.0 已证伪 5m/15m 共振作为"策略融合"无泛化 edge（PF 0.605），
-# 故本函数不融合进 1m 信号，仅提供"大方向参考"标注（监控卡片/复盘展示用）。
-# 方向口径：high_level_trend(5m) = 5m EMA20 斜率；low_level_trend(1h 聚合) = 60m 聚合 EMA20 斜率。
-#   返回 +1 多头 / -1 空头 / 0 震荡；配合 day_chg 供人工判断"顺周期做T vs 逆周期抓反弹"。
-
-def high_level_trend(c, fast=5, slow=20):
-    """5m 级别大方向：EMA 快慢线 + 斜率。返回末 bar trend (+1/-1/0)。"""
-    t = compute_trend(c, fast, slow)
-    return int(t[-1]) if len(t) else 0
-
-
-def aggregate_60m_direction(c_1m, slow=20):
-    """把 1m 收盘序列聚合成 60m 近似（每 60 根取末值），再算 EMA20 斜率方向。
-    用于"长周期 1h 方向"参考（PPT S14-16 的长周期因子语义）。
-    返回 (+1/-1/0, 聚合点数)。"""
-    import numpy as _np
-    c = _np.asarray(c_1m, dtype=float)
-    if len(c) < slow * 2:
-        return 0, 0
-    agg = c[::60]  # 每 60 根取一根（1m→1h 近似）
-    if len(agg) < slow:
-        return 0, len(agg)
-    t = compute_trend(agg, fast=5, slow=slow)
-    return int(t[-1]), len(agg)
-
-
-def mtf_direction_snapshot(c_1m):
-    """一次性给出 1m/5m/1h 三级方向快照（纯函数，无数据源依赖）。
-    返回 dict: {'1m': int, '5m': int, '1h': int, 'n_5m_agg': int, 'n_1h_agg': int}
-    注：5m/1h 由 1m 序列聚合近似（每 5/60 根取末值），与真实 5m/1h K 线有轻微差异，
-    仅供方向参考，不作信号触发。
-    [P1-1 迭代 v3] 1h 方向需要 ≥40 个聚合点 ≈ 10 个交易日的 1m 数据；
-    传入单日 240 根时 n_1h_agg=4 <40 → 1h 返回 0 并附 n_1h_agg 提示"数据不足"。
-    调用方应传多日连续 1m 序列（如近 10 交易日）才能得到有效 1h 方向。"""
-    c = _np_asarray(c_1m)
-    def _dir(seq):
-        if len(seq) < 20:
-            return 0
-        return int(compute_trend(seq, 5, 20)[-1])
-    c5 = c[::5]
-    c60 = c[::60]
-    t1m = _dir(c)
-    t5m = _dir(c5)
-    # 1h 方向：≥40 个聚合点（约 10 个交易日）才有效；否则 0 表示数据不足
-    t1h = _dir(c60) if len(c60) >= 40 else 0
-    return {'1m': t1m, '5m': t5m, '1h': t1h,
-            'n_5m_agg': len(c5), 'n_1h_agg': len(c60)}
-
-
-def _np_asarray(x):
-    return np.asarray(x, dtype=float)
 
 
 # ========== monitor 适配器 (T2.3): 沿用 indicators 函数名, monitor 最小改动 ==========

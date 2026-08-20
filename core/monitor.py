@@ -22,6 +22,10 @@ from miji_alpha import (compute_miji_indicators, check_b_trigger, check_s_trigge
 from indicators import stars, K1
 # 出场管理：接 exit_manager 的移动止损/硬止损/S信号出场（P0 待办）
 from exit_manager import make_config
+# 通用算法引擎（2026-08-20 完善方案）：symbol-agnostic 连续评分做T，watchlist 统一驱动。
+# flag 门控（USE_GENERAL_ENGINE）+ miji 兜底，热重载、实时安全。
+from general_signal import (check_general_b_trigger, check_general_s_trigger,
+                             detect_signals_general, GeneralConfig, GENERAL_DEFAULT)
 # ML 信号打分：39 特征单一实现（core/ml_features，模块2.2）
 # fail-open：ml_features.py 缺失（v10.0.0 灾难恢复后未找回，从未入 git）时
 # FEAT_ALL/ml_build_feature_row=None；ml_enable=false 时该路径不执行零影响，
@@ -306,6 +310,27 @@ def _limit_up_threshold(sym):
         return 0.30
     return 0.10
 
+
+def _bar_tradability(sym, data, i, pc):
+    """返回 (locked_up, locked_down, halted)。[2026-08-18 P0 涨跌停/停牌成交可行性过滤]
+
+    判定与 output/research/audit_p1p2.py 口径一致：
+      locked_up    = lo[i] >= 涨停价 - 0.02（整根 bar 无人卖出 → 不可买）
+      locked_down  = h[i]  <= 跌停价 + 0.02（整根 bar 无人接盘 → 不可卖）
+      halted       = high==low 且无量（一字平盘 → 不可成交）
+    纯函数，供 detect_for 与单元测试共用。
+    """
+    if pc <= 0:
+        return False, False, False
+    thr = _limit_up_threshold(sym)
+    lu = round(pc * (1 + thr), 2)
+    ld = round(pc * (1 - thr), 2)
+    locked_up = data['lo'][i] >= lu - 0.02
+    locked_down = data['h'][i] <= ld + 0.02
+    vol_i = (data.get('v') is not None and i < len(data['v']) and float(data['v'][i]) > 0)
+    halted = (data['h'][i] == data['lo'][i]) and (not vol_i)
+    return locked_up, locked_down, halted
+
 def load_targets():
     prompt_file = PROMPT_FILE
     try:
@@ -380,10 +405,35 @@ MONITOR_CONFIG_FILE = _cfg('monitor_config_file', 'TP_MONITOR_CONFIG',
                            os.path.join(BASE_DIR, 'data', 'monitor_config.json'))
 PER_SYMBOL_CFG = {}
 
+# ========== 通用算法引擎开关（2026-08-20 完善方案） ==========
+# flag 来自 data/monitor_config.json 的 _global：
+#   use_general_engine : True → detect_for 用通用算法(check_general_*)替代 miji 触发（异常自动回退 miji）
+#   v4_gray_enable     : True → watchlist_engine 影子跑 v4 候选
+#   v4_promote         : 预留，v4 灰度达标后翻为生产
+USE_GENERAL_ENGINE = False
+GENERAL_ENGINE_CFG = None
+
+
+def _build_general_cfg(g):
+    """由 _global.general_algorithm 构造 GeneralConfig（缺省用 GENERAL_DEFAULT）。"""
+    ga = (g or {}).get('general_algorithm') or {}
+    if not ga:
+        return GeneralConfig()
+    cfg = GeneralConfig()
+    for k, v in ga.items():
+        if k.startswith('_'):
+            continue
+        if hasattr(cfg, k):
+            try:
+                setattr(cfg, k, v)
+            except Exception:
+                pass
+    return cfg
+
 
 def _load_per_symbol_cfg():
     """加载 data/monitor_config.json → 全局 PER_SYMBOL_CFG（每轮热重载调用）。"""
-    global PER_SYMBOL_CFG
+    global PER_SYMBOL_CFG, USE_GENERAL_ENGINE, GENERAL_ENGINE_CFG
     cfg = {}
     try:
         if os.path.exists(MONITOR_CONFIG_FILE):
@@ -394,6 +444,11 @@ def _load_per_symbol_cfg():
     except Exception as e:
         print(f"  ⚠️ 读取 monitor_config.json 失败: {e}")
     PER_SYMBOL_CFG = cfg
+    g = cfg.get('_global') or {}
+    USE_GENERAL_ENGINE = bool(g.get('use_general_engine', False))
+    GENERAL_ENGINE_CFG = _build_general_cfg(g) if USE_GENERAL_ENGINE else None
+    if USE_GENERAL_ENGINE:
+        print(f"🧭 通用算法引擎已启用（watchlist 统一驱动，symbol-agnostic）；v4灰度={bool(g.get('v4_gray_enable', False))}")
     return cfg
 
 
@@ -1187,7 +1242,8 @@ def _risk_gate(sym, name, data, st, sigs, action):
     return sigs
 
 
-def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_pct=None):
+def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_pct=None,
+               trim_frontier=False, vol_ratio_b_max=None):
     """v9 信号检测 + 出场管理（v9.1.3+：自由双向 / 动态仓位 / 持续监控）。
 
     - 取消严格 B/S 交替配对（任务三）：每根 bar 独立评估买卖；同侧累加仓位，
@@ -1220,7 +1276,10 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
     pos = st.get(f'pos_{sym}')  # None 或 {'side','entry_price','entry_idx','max_fav','entry_reason','stop_price','size_pct'}
 
     run_hi_max = -1e9   # 当日截至当前 bar 的最高价（涨停 regime 判定，A2）
-    for i in range(2, n):
+    # [2026-08-18 P0] live 执行模型同根前视修复：trim_frontier=True 时最后一条"进行中"bar
+    # （c/h/lo 仍在形成）不参与判定，只对已收盘 bar 出信号，与 replay（整日已收盘）口径一致。
+    _end = (n - 1) if (trim_frontier and n > 2) else n
+    for i in range(2, _end):
         # [P0 根因修复 2026-08-12] bar 标记加日期维度：旧格式 f"bar_{sym}_{i}" 的 i 是
         # 当日 1m bar 行号(0~239)，跨日必然同名碰撞。若昨日标记未被清理（monitor 跨午夜
         # 连续运行时 load_state 不再执行 → 见 run() 跨日清理注释），今日每根 bar 都会命中
@@ -1233,6 +1292,8 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
             continue
         run_hi_max = max(run_hi_max, data['h'][i])
         near_limit_up = ((run_hi_max - pc) / pc >= _limit_up_threshold(sym)) if pc > 0 else False
+        # [2026-08-18 P0] 涨跌停/停牌成交可行性过滤：锁涨停不可买、锁跌停不可卖、停牌不可成交。
+        locked_up, locked_down, halted = _bar_tradability(sym, data, i, pc)
 
         # ===== 持仓中：出场管理（硬止损 > 反向信号 > 移动止损 > 时间止损） =====
         if pos is not None:
@@ -1243,6 +1304,11 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
             else:
                 if c[i] < pos['max_fav']:
                     pos['max_fav'] = float(c[i])
+            # [2026-08-18 P0] 出场侧成交可行性：锁跌停不可卖(多仓)、锁涨停不可回补(空仓)、停牌不可成交。
+            # 命中则本 bar 不评估出场（继续持仓），下一 bar 再判；EOD 由上层强平兜底。
+            if (side == 'long' and locked_down) or (side == 'short' and locked_up) or halted:
+                st[bar_key] = now
+                continue
             sz = pos['size_pct']
             exited = False
             # 1) 硬止损（生产默认关）
@@ -1260,14 +1326,21 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                         pos = None; exited = True
             # 2) 反向信号自然平仓
             if not exited and EXIT_CFG['s_signal_exit']:
+                # [2026-08-20] 通用算法引擎：USE_GENERAL_ENGINE 时用 check_general_* 替代 miji（异常回退 miji）
+                if USE_GENERAL_ENGINE and GENERAL_ENGINE_CFG is not None:
+                    try:
+                        _ts, _rs = check_general_s_trigger(data, i, GENERAL_ENGINE_CFG)
+                        _tb, _rb = check_general_b_trigger(data, i, GENERAL_ENGINE_CFG)
+                    except Exception:
+                        _ts, _rs = check_s_trigger(data, i); _tb, _rb = check_b_trigger(data, i)
+                else:
+                    _ts, _rs = check_s_trigger(data, i); _tb, _rb = check_b_trigger(data, i)
                 if side == 'long':
-                    ts, rs = check_s_trigger(data, i)
-                    if ts:
+                    if _ts:
                         signals.append(_mk_exit('S', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                         pos = None; exited = True
                 else:
-                    tb, rb = check_b_trigger(data, i)
-                    if tb:
+                    if _tb:
                         signals.append(_mk_exit('B', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                         pos = None; exited = True
             # 3) 移动止损（浮盈保护；多仓/空仓对称；v9.4.1 起 per-symbol 可覆盖）
@@ -1296,9 +1369,32 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
         # ===== 空仓：自由双向 + 动态仓位（任务三/四） =====
         # [方案A+] B 入场判定透传 per-symbol mpr + atr_min_pct（叠加过滤，2026-08-02 实证
         # atr025+mpr_b60 胜率 47.8→56.2%，5/5 达标）；S 判定不过滤（S 信号一个不少）。
-        tb, rb = check_b_trigger(data, i, mpr_enable=mpr_enable, mpr_periods=mpr_periods,
-                                 atr_min_pct=atr_min_pct)
-        ts, rs = check_s_trigger(data, i)
+        # [2026-08-20] 通用算法引擎：USE_GENERAL_ENGINE 时由 check_general_* 替代 miji 触发（异常回退 miji）。
+        _vrb = vol_ratio_b_max
+        if _vrb is None:
+            _vrb = (PER_SYMBOL_CFG.get('_global') or {}).get('vol_ratio_b_max')
+        if USE_GENERAL_ENGINE and GENERAL_ENGINE_CFG is not None:
+            try:
+                tb, rb = check_general_b_trigger(data, i, GENERAL_ENGINE_CFG, vol_ratio_b_max=_vrb)
+                ts, rs = check_general_s_trigger(data, i, GENERAL_ENGINE_CFG)
+            except Exception:
+                tb, rb = check_b_trigger(data, i, mpr_enable=mpr_enable, mpr_periods=mpr_periods,
+                                         atr_min_pct=atr_min_pct)
+                ts, rs = check_s_trigger(data, i)
+        else:
+            tb, rb = check_b_trigger(data, i, mpr_enable=mpr_enable, mpr_periods=mpr_periods,
+                                     atr_min_pct=atr_min_pct)
+            ts, rs = check_s_trigger(data, i)
+        # [2026-08-18 P0] 成交可行性过滤（仅作用于新入场）：锁涨停不可买、锁跌停不可卖、停牌不可成交。
+        if tb and (locked_up or halted):
+            tb = False; rb = ''
+        if ts and (locked_down or halted):
+            ts = False; rs = ''
+        # [2026-08-18 P1 池级因子] vol_ratio_b_low 量能确认门控：B 需缩量回调(量比<=阈值)。
+        # 池级开关：monitor_config.json 顶层 _global.vol_ratio_b_max；逐标的 vol_ratio_b_max 入参覆盖。
+        # 演化引擎实测(纯池级)：全池 total_ret -15.51% → +3.71%（+19.22pp），wr 53.4%→56.2%。
+        if tb and _vrb is not None and vol_ratio[i] > _vrb:
+            tb = False; rb = ''
         if not (tb or ts):
             st[bar_key] = now
             continue
@@ -1913,8 +2009,16 @@ def run():
                         sigs = _risk_gate(sym, name, data, st,
                                           detect_for(sym, name, data, st,
                                                      mpr_enable=_mpr_e, mpr_periods=_mpr_p,
-                                                     atr_min_pct=_atr_p),
+                                                     atr_min_pct=_atr_p,
+                                                     trim_frontier=True),
                                           override_action)
+                        # [v10.2.0 shadow] v3 影子旁路：并行算 v3 信号 + 落日志（只读，不触碰下单链路）
+                        try:
+                            from shadow_v3 import shadow_v3_log
+                            _pc = STATE.get(sym, {}).get('PC')
+                            shadow_v3_log(sym, name, data.get('df'), _pc)
+                        except Exception:
+                            pass  # 影子模式故障绝不影响生产
                         # [P0 防复发哨兵 2026-08-12] 「零评估」自证伪：detect_for 真正评估过的 bar
                         # 必定被打上 bar_{sym}_{今日}_{i} 标记。若当日已有 >=30 根分钟K 而一条标记
                         # 都没有 → 所有 bar 都在入口被判「已处理」或 detect_for 提前 return（PC 缺失

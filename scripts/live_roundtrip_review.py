@@ -120,6 +120,47 @@ def pair_trips(sym, pushes, closes, times, use_push_price=True):
     return trips, orphans
 
 
+def _quality_score(trip, max_fav_pct):
+    """信号质量评分（0-100），v9.4.0 新增四维加权模型。
+    维权：方向正确性(30) + 时机精准度(25) + 波动捕获(25) + 持有效率(20)。
+    """
+    sc = 0
+    # 1) 方向正确性 30分
+    if trip['valid']:
+        sc += 30
+    else:
+        g = trip['gross_ret_pct']
+        if g > 0:
+            sc += round(20 * min(abs(g) / trip['cost_pct'], 1), 1)  # 毛正但未覆盖成本
+        # g <= 0 → 0分
+    # 2) 时机精准度 25分（滑点越低越好）
+    slips = [abs(s) for s in (trip.get('entry_slip_pct'), trip.get('exit_slip_pct'))
+             if s is not None]
+    avg_slip = sum(slips) / len(slips) if slips else 0
+    sc += round(max(0, 25 - avg_slip * 100), 1)  # 0%滑点=25分, 0.25%滑点=0分
+    # 3) 波动捕获 25分（最大有利波动的利用率）
+    if max_fav_pct is not None and max_fav_pct > 0:
+        captured = max(trip['gross_ret_pct'], 0)
+        util = captured / max_fav_pct if max_fav_pct > 0 else 0
+        sc += round(min(util, 1) * 25, 1)
+    elif trip['valid']:
+        sc += 20  # 盈利但无 fav 数据 → 给基础分
+    # 4) 持有效率 20分（短持有+高盈利最优）
+    hb = trip.get('hold_bars', 99)
+    if trip['valid']:
+        # 最佳持有区间 3-10 根 bar
+        if 3 <= hb <= 10:
+            eff = 20
+        elif hb < 3:
+            eff = round(10 + hb * 2, 1)
+        else:
+            eff = round(max(5, 20 - (hb - 10)), 1)
+        sc += eff
+    else:
+        sc += max(0, 5 - hb)  # 亏损持有越久扣越多
+    return round(max(0, min(sc, 100)), 1)
+
+
 def _close_trip(sym, pos, exit_idx, exit_price, exit_bar, exit_push, reason):
     e, x = pos['entry_price'], exit_price
     gross = ((x - e) / e * 100) if pos['dir'] == '正T' else ((e - x) / e * 100)
@@ -140,13 +181,16 @@ def _close_trip(sym, pos, exit_idx, exit_price, exit_bar, exit_push, reason):
         'hold_bars': exit_idx - pos['entry_idx'], 'exit_reason': reason,
         'gross_ret_pct': round(gross, 3), 'cost_pct': round(cost, 3),
         'net_ret_pct': round(net, 3), 'valid': net > 0,
+        # v9.4.0: quality_score 在 main() 中回填（需 max_fav_pct）
+        'quality_score': None,
     }
 
 
-def attribute_loss(trip, max_fav_pct):
-    """亏损 T 单根因分类。"""
+def attribute_loss(trip, max_fav_pct, atr_pct=None):
+    """亏损 T 单根因分类（v9.4.0: 四维→六维，新增波动率环境+时间因子）。"""
     g, net = trip['gross_ret_pct'], trip['net_ret_pct']
     tags = []
+    # ---- 原有四维 ----
     if g > 0 and net <= 0:
         tags.append('毛差不足以覆盖双边成本（成本线附近抖动单）')
     if g <= 0:
@@ -161,6 +205,21 @@ def attribute_loss(trip, max_fav_pct):
     slips = [s for s in (trip.get('entry_slip_pct'), trip.get('exit_slip_pct')) if s is not None and abs(s) > 0.15]
     if slips:
         tags.append('推送价与信号bar收盘价偏离>0.15%（推送延迟/行情源差异）')
+    # ---- v9.4.0 新增两维 ----
+    # 5) 波动率环境失配
+    if atr_pct is not None:
+        if atr_pct < 0.8:  # 低波动日
+            tags.append(f'低波动环境（日内ATR={atr_pct:.2f}%）：固定成本占比过高，信号毛差难以覆盖成本线')
+        elif atr_pct > 3.0:  # 高波动日
+            tags.append(f'高波动环境（日内ATR={atr_pct:.2f}%）：TRAIL激活过早/回撤过紧，大波段提前下车')
+    # 6) 时间因子
+    et = trip.get('entry_time', '')
+    if et:
+        hh = int(et.split(':')[0]) if ':' in et else 0
+        if 9 <= hh <= 10:
+            tags.append('早盘进场（09-10点）：开盘竞价噪声大，方向确认度低')
+        elif hh >= 14:
+            tags.append('尾盘进场（14点后）：交易时间不足，被迫EOD概率高')
     return tags if tags else ['未归类']
 
 
@@ -384,7 +443,15 @@ def main():
             continue
         pushes = [r for r in today_push if r['sym'] == sym]
         trips, orphans = pair_trips(sym, pushes, closes, times, use_push_price=(src == 'mootdx'))
-        # 每单最大有利波动（出场规则失效判据）
+        # 每单最大有利波动（出场规则失效判据）+ v9.4.0 quality_score + ATR
+        # ATR 计算：当日 1m True Range 均值%
+        _atr_vals = []
+        for ci in range(1, len(closes)):
+            _tr = abs(closes[ci] - closes[ci - 1])
+            _atr_vals.append(_tr / closes[ci] * 100)
+        day_atr = round(sum(_atr_vals) / len(_atr_vals), 3) if _atr_vals else None
+        per_sym[sym] = {'day_atr_pct': day_atr}
+
         for t in trips:
             i0 = t['entry_time']; seg = closes
             try:
@@ -400,16 +467,34 @@ def main():
                     t['max_fav_pct'] = None
             except Exception:
                 t['max_fav_pct'] = None
-            t['loss_tags'] = [] if t['valid'] else attribute_loss(t, t.get('max_fav_pct'))
+            # v9.4.0: 六维归因（传入 ATR）+ 质量评分回填
+            t['loss_tags'] = [] if t['valid'] else attribute_loss(t, t.get('max_fav_pct'), atr_pct=day_atr)
+            t['quality_score'] = _quality_score(t, t.get('max_fav_pct'))
             t['name'] = wl[sym]
         trips_all.extend(trips)
         orphans_all.extend([{'sym': sym, **o} for o in orphans])
-        per_sym[sym] = {'n_push': len(pushes), 'n_trips': len(trips), 'data_src': src}
+        per_sym[sym] = {'n_push': len(pushes), 'n_trips': len(trips), 'data_src': src,
+                         'day_atr_pct': day_atr}
         vol[sym] = analyze_capture(sym, closes, times, pushes, trips)
         vol[sym]['name'] = wl[sym]
         vol[sym]['data_src'] = src
 
     n_valid = sum(1 for t in trips_all if t['valid'])
+    # v9.4.0: 质量评分汇总
+    qs_list = [t.get('quality_score', 0) for t in trips_all if t.get('quality_score') is not None]
+    avg_qs = round(sum(qs_list) / len(qs_list), 1) if qs_list else None
+    # v9.4.0: Regime 分类（基于全标的 ATR 均值）
+    atrs = [v.get('day_atr_pct') for v in per_sym.values() if v.get('day_atr_pct') is not None]
+    pool_atr = sum(atrs) / len(atrs) if atrs else None
+    if pool_atr is not None:
+        if pool_atr >= 2.0:
+            regime = 'high_vol'
+        elif pool_atr >= 0.8:
+            regime = 'normal'
+        else:
+            regime = 'low_vol'
+    else:
+        regime = 'unknown'
     summary = {
         'n_pushes': len(today_push), 'n_trips': len(trips_all),
         'n_valid': n_valid, 'valid_rate_pct': round(n_valid / len(trips_all) * 100, 1) if trips_all else None,
@@ -417,6 +502,9 @@ def main():
         'gross_sum_pct': round(sum(t['gross_ret_pct'] for t in trips_all), 3),
         'avg_net_pct': round(sum(t['net_ret_pct'] for t in trips_all) / len(trips_all), 3) if trips_all else None,
         'n_loss': len(trips_all) - n_valid, 'orphans': orphans_all,
+        # v9.4.0 新增
+        'avg_quality_score': avg_qs,
+        'regime': regime, 'pool_atr_pct': pool_atr,
     }
 
     # 近5交易日基线（实盘推送 round-trip 口径；历史数据 F盘兜底）
@@ -457,6 +545,7 @@ def main():
     out = {
         'date': date, 'generated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'cost_model': '佣金万1+印花(仅股票万5.641卖边)+滑点2bps/边；有效=净盈亏>0',
+        'version': 'v9.4.0',  # v9.4.0: quality_score + 六维归因 + regime
         'trips': trips_all, 'summary': summary, 'per_sym': per_sym,
         'baseline': baseline, 'volatility': vol,
         'opportunities': build_opportunities(vol, per_sym),
@@ -466,7 +555,9 @@ def main():
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
     print(f'[ok] {path}')
-    print(f"  推送 {summary['n_pushes']} → 配对 {summary['n_trips']}（有效 {n_valid}，净盈亏合计 {summary['net_sum_pct']}%)")
+    regime_cn = {'high_vol': '高波动', 'normal': '常态', 'low_vol': '低波动'}.get(regime, regime)
+    print(f"  推送 {summary['n_pushes']} → 配对 {summary['n_trips']}（有效 {n_valid}，净盈亏合计 {summary['net_sum_pct']}%）"
+          f" | 质量均分 {avg_qs} | Regime={regime_cn}(ATR={pool_atr}%)")
     for sym, v in vol.items():
         print(f"  {sym}: 有效段{v['n_valid_segs']} 幅度{v['total_amp_pct']}% 捕获{v['captured_pct']}% 率{v['capture_rate_pct']}%")
 

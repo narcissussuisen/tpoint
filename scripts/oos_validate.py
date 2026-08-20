@@ -182,6 +182,14 @@ def validate_one(sym, param, value, split=SPLIT, cache={}, baseline=None):
         verdict, reason = 'PASS', (
             f'OOS total_ret Δ{d_ret_oos}pp、wr Δ{d_wr_oos}pp（n={oc["n"]}），样本外仍成立')
 
+    # [2026-08-17 AQuA 第三点] 逐年稳健性提示: OOS 段若"逐年存在负年", 即便聚合
+    # 夏普/收益达标, 也提示样本外分布漂移风险(IC≠夏普)。仅作提示, 不单独改 verdict。
+    if isinstance(oc, dict) and oc.get('yearly') is not None:
+        yc = oc.get('yearly_consistent')
+        wy = oc.get('worst_year')
+        tag = '逐年全正' if yc else f'逐年存在负年({wy})'
+        reason = f"{reason}｜OOS {tag}"
+
     # 可复算指纹（对齐「底稿可复算性」要求：区间 + 源数据版本必须落盘）
     try:
         csvp = os.path.join(FO.F_DATA, f'{sym}_1m.csv')

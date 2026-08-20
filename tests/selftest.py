@@ -175,6 +175,29 @@ def run():
     p("注: 合成行情验证算法逻辑正确性, 实盘表现需用真实数据回测确认")
     p("=" * 72)
 
+    # ===== 前视偏差防护栅栏(2026-08-17 引入, 源自 AQuA 论文) =====
+    p("\n" + "=" * 72)
+    p("前视偏差防护栅栏 — 未来扰动测试 (lookahead leak guard)")
+    p("=" * 72)
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'core'))
+        from leak_guard import (check_indicators_no_lookahead, check_miji_no_lookahead)
+        for tag, fn in (('v9 特征栈', check_indicators_no_lookahead),
+                        ('miji 特征栈', check_miji_no_lookahead)):
+            try:
+                r = fn()
+                if r['ok']:
+                    p(f"  ✅ {tag}: 无前视 (n_checks={r['n_checks']}, "
+                      f"worst_diff={r['worst']['max_abs_diff']:.2e})")
+                else:
+                    p(f"  ❌ {tag}: 检出前视 {r['worst']}")
+            except Exception as e:
+                p(f"  ❌ {tag}: 栅栏异常 {e}")
+        p("  说明: 往'未来'bar灌噪声后重算历史特征, 历史值不变=无泄漏;")
+        p("        任何新增含未来数据的特征都会在此变红(防回归)。")
+    except Exception as e:
+        p(f"  ⚠️ 栅栏不可用(跳过): {e}")
+
     # 写报告文件
     report_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'selftest_report.md')
     with open(report_path, 'w', encoding='utf-8') as f:

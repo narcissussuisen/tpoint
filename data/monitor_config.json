@@ -1,68 +1,29 @@
 {
-  "161129.SZ": {
-    "comment": "原油LOF T+0；ATR中位0.163%（F盘66d）→高波动档，B侧mpr60 + ATR0.25（叠加回测胜率63.2%+8.8pp）；ML 影子模式试点（ml_shadow=true，只打分不干预）",
-    "mpr_enable": "B",
-    "mpr_periods": [
-      60
-    ],
-    "atr_min_pct": 0.25,
-    "ml_enable": true,
-    "ml_model": "v1.0.0-ml-20260802",
-    "vol_confirm": false,
-    "_vol_note": "v10.0.0 量能确认启用（0805消融全指标改善）",
-    "trail_activate_pct": 0.5,
-    "trail_pct": 0.6,
-    "_trail_note": "2026-08-05 最优因子上线：total_ret优先口径 ret 4.02%→4.14% wr 49.4%→51.9% n=77（deploy_optimal.py）",
-    "_vol_note_20260811": "2026-08-11 置为 false（纪律性关闭，行为中性）。根因：core/monitor.py 的量能确认过滤块原先缩进在 settle_rules 的 except 分支内，而 split_enabled() 正常返回 False 不抛异常，故该过滤器自 08-05 v10.0.0 「上线」起从未执行过一次 —— 本项一直是死配置。本轮已把过滤块 dedent 回主路径（结构修复），若继续保留 true 会让一道从未验证的过滤器突然生效。修复后口径重验（output/research/caliber_fix_impact.json）：161129 全样本 ret 10.86→10.99 仅 Δ+0.13pp（< RET_MIN_IMPROVE 0.2pp 门槛）、wr 60.0→61.5 Δ+1.5pp，但会抑制 41.7%(40/96) 的信号；OOS 段 trip on=9 < 20 → 判定 INCONCLUSIVE，按「样本不足不得视为通过」纪律不出手。08-05 支持它的 v10_grid 证据是在「闸门全关+trail硬编码0.4/0.6」旧口径下产生的，已随口径修复失效。待 OOS 样本积累到 >=20 trip 再复评。"
-  },
-  "513310.SH": {
-    "comment": "中韩半导体ETF T+0；ATR中位0.203%（F盘66d）→高波动档，B侧mpr60 + ATR0.25（叠加50.0%踩线，保留37%）；ML 默认关",
-    "mpr_enable": "B",
-    "mpr_periods": [
-      60
-    ],
-    "atr_min_pct": 0.25,
-    "ml_enable": false,
-    "ml_model": "v1.0.0-ml-20260802",
-    "trail_activate_pct": 0.3,
-    "trail_pct": 0.5,
-    "_trail_note": "2026-08-05 回退0.4/0.6：含今日数据复核 wr 较基线下降（513310 -1.2pp/688111 -0.3pp），不达上线硬约束（wr不降），撤回v10.0.1调参；161129/300308 双优保留",
-    "_trail_note_20260811": "2026-08-11 终态 0.3/0.5（口径修复后重新上线，经历 applied→rolled_back→applied 三步，详见 auto_tune_state.json）。链条：①当日 auto_tune 依F盘全样本网格改0.3/0.5（ret -8.21→-2.53 Δ+5.68pp、wr +1.4pp、n=71）；②当晚新增样本外OOS复核，首测 wr Δ-2.0pp 疑似样本内过拟合 → 按『wr不降』硬约束回滚0.4/0.6；③随即发现同参数两跑结果相反(n=33/31、Δwr -2.0/+3.2pp)，定位根因为**配置状态泄漏**：core/monitor.py:1188 信号重放会读 exit_param(sym,'trail_*') 生成出场提示信号，而网格只在 simulate_day 侧换 trail，形成『生产trail信号 + 网格trail出场』混合口径，结果随当时 monitor_config 而变；④修复 oos_validate 使信号侧与出场侧同参后结果稳定可复现：OOS(70/30) total_ret Δ+2.51pp、wr Δ+0.7pp、n=33，IS/OOS 双改善且满足严格 wr 不降 → auto_tune 在严格档自主重新应用。⚠️ 遗留：08-05『wr -1.2pp 即回退』的历史结论同样出自未修复的混合口径，可信度存疑，需用修复口径重验；factor_optimizer.py 仍带同一泄漏（P0 已回灌 feedback_backlog），故 factor_opt 报告仅作候选粗筛，最终放行以修复后 OOS 为准。"
-  },
-  "688111.SH": {
-    "comment": "金山办公；ATR中位0.148%（F盘145d）→高波动档，B侧mpr60 + ATR0.25（叠加56.2%+9.8pp）；ML 默认关",
-    "mpr_enable": "B",
-    "mpr_periods": [
-      60
-    ],
-    "atr_min_pct": 0.25,
-    "ml_enable": false,
-    "ml_model": "v1.0.0-ml-20260802",
-    "_trail_note": "2026-08-05 回退0.4/0.6：含今日数据复核 wr 较基线下降（513310 -1.2pp/688111 -0.3pp），不达上线硬约束（wr不降），撤回v10.0.1调参；161129/300308 双优保留",
-    "vol_confirm": false,
-    "_vol_note": "v10.0.0 量能确认启用（0805消融全指标改善）",
-    "trail_activate_pct": 0.4,
-    "trail_pct": 0.6,
-    "_vol_note_20260811": "2026-08-11 置为 false（纪律性关闭，行为中性）。根因：core/monitor.py 的量能确认过滤块原先缩进在 settle_rules 的 except 分支内，而 split_enabled() 正常返回 False 不抛异常，故该过滤器自 08-05 v10.0.0 「上线」起从未执行过一次 —— 本项一直是死配置。本轮已把过滤块 dedent 回主路径（结构修复），若继续保留 true 会让一道从未验证的过滤器突然生效。修复后口径重验（output/research/caliber_fix_impact.json）：161129 全样本 ret 10.86→10.99 仅 Δ+0.13pp（< RET_MIN_IMPROVE 0.2pp 门槛）、wr 60.0→61.5 Δ+1.5pp，但会抑制 41.7%(40/96) 的信号；OOS 段 trip on=9 < 20 → 判定 INCONCLUSIVE，按「样本不足不得视为通过」纪律不出手。08-05 支持它的 v10_grid 证据是在「闸门全关+trail硬编码0.4/0.6」旧口径下产生的，已随口径修复失效。待 OOS 样本积累到 >=20 trip 再复评。"
-  },
   "_global": {
     "settle_split_enable": false,
-    "_note": "2026-08-05 用户指令：T1不做单次往返限制，全量信号实时推送，实盘观察信号质量；settle_rules 模块保留（开关随时可恢复）"
+    "_note": "2026-08-05 用户指令：T1不做单次往返限制，全量信号实时推送，实盘观察信号质量；settle_rules 模块保留（开关随时可恢复）",
+    "vol_ratio_b_max": 1.2,
+    "_note_20260818_vol": "池级量能确认门控(vol_ratio_b_low)：B 需缩量回调(量比<=1.2x)。门控内建 detect_for 后简易回测：纯池级 total_ret -15.51% → -0.98%（Δ+14.5pp），且比旧 per-symbol 调参(-11.13%)好 +10.15pp。逐标的可覆盖。",
+
+    "_note_20260820_engine": "2026-08-20 完善方案：watchlist 改由通用算法(core/general_signal.GeneralConfig)统一驱动全标的(symbol-agnostic)；v4(composite_scorer_v4full)纳入灰度影子测试。全部 flag 默认关，热重载。",
+    "use_general_engine": true,
+    "v4_gray_enable": true,
+    "v4_promote": false,
+    "bidirectional_enable": false,
+    "general_algorithm": {
+      "_note": "通用算法统一配置（全标的适用，比率口径，无逐标的特例）。实时 monitor.detect_for 与批量 watchlist_engine 共用。",
+      "buy_threshold": 0.45,
+      "sell_threshold": 0.45,
+      "signal_gap": 6,
+      "b_downtrend_reversal": true,
+      "s_uptrend_guard": false,
+      "vol_ratio_b_max": null
+    }
   },
-  "300308.SZ": {
-    "comment": "中际旭创；0805新进watchlist（用户指令）；F盘98d回填；F2消融 ret 5.24→26.41/wr 52.6→56.3/dd 18.67→10.77/sharpe 0.24→1.78 全面改善",
-    "mpr_enable": "B",
-    "mpr_periods": [
-      60
-    ],
-    "atr_min_pct": 0.25,
-    "ml_enable": false,
-    "ml_model": "v1.0.0-ml-20260802",
-    "vol_confirm": false,
-    "_vol_note": "v10.0.0 量能确认启用（0805验证全面优于基线）",
-    "trail_activate_pct": 0.5,
-    "trail_pct": 0.6,
-    "_trail_note": "2026-08-05 最优因子上线：total_ret优先口径 ret 5.24%→14.1% wr 52.6%→58.3% n=218（deploy_optimal.py）",
-    "_vol_note_20260811": "2026-08-11 置为 false（纪律性关闭，行为中性）。根因：core/monitor.py 的量能确认过滤块原先缩进在 settle_rules 的 except 分支内，而 split_enabled() 正常返回 False 不抛异常，故该过滤器自 08-05 v10.0.0 「上线」起从未执行过一次 —— 本项一直是死配置。本轮已把过滤块 dedent 回主路径（结构修复），若继续保留 true 会让一道从未验证的过滤器突然生效。修复后口径重验（output/research/caliber_fix_impact.json）：161129 全样本 ret 10.86→10.99 仅 Δ+0.13pp（< RET_MIN_IMPROVE 0.2pp 门槛）、wr 60.0→61.5 Δ+1.5pp，但会抑制 41.7%(40/96) 的信号；OOS 段 trip on=9 < 20 → 判定 INCONCLUSIVE，按「样本不足不得视为通过」纪律不出手。08-05 支持它的 v10_grid 证据是在「闸门全关+trail硬编码0.4/0.6」旧口径下产生的，已随口径修复失效。待 OOS 样本积累到 >=20 trip 再复评。"
+  "603039.SH": {
+    "comment": "泛微网络；沪市主板T+1；[2026-08-18] 用户改持仓，watchlist 切换至此；实盘用纯池级默认(trail 0.4/0.6 + 无ATR + 无MPR)。"
+  },
+  "688111.SH": {
+    "comment": "金山办公；科创板T+1(20%涨跌停)；[2026-08-18] 用户改持仓移入(移除四方股份)；实盘用纯池级默认(trail 0.4/0.6 + 无ATR + 无MPR)。"
   }
 }
