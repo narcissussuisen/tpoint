@@ -83,12 +83,12 @@ def time_to_idx(times, hhmmss):
 # --------------------------------------------------------------------------- #
 # round-trip 配对（实盘语义：单仓位；B→S/X/EOD 正T；S→B回补/EOD 反T）
 # --------------------------------------------------------------------------- #
-def pair_trips(sym, pushes, closes, times, use_push_price=True):
+def pair_trips(sym, pushes, closes, times, use_push_price=False):
     """pushes: [{ts,type,price}]（已按时间排序、仅当日 ok 记录）。
-    价格口径（2026-08-04 晚修正）：当日同源行情（mootdx）→ **用推送价**（用户真实可成交价；
-    实证 688111 反T 推277.28/补275.00=+0.82% 盈利，bar close 口径会错判为 -0.15% 亏损）；
-    历史日 F盘兜底（复权差可达2.6%）→ 用信号 bar close。EOD 强平恒用收盘 bar close。
-    另一口径价格记入 *_bar_close 与 *_slip_pct 供参考。"""
+    价格口径（2026-08-21 P0 B5 修正）：entry/exit 价格**统一使用信号 bar 的 close**
+    （与 monitor 实时 `pos['entry_price']=c[i]` 及 `prod_vs_bt_reconcile.py` 对账口径对齐）。
+    推送价仅作为 `*_push_price` 与 `*_slip_pct` 参考，不再用于盈亏计算。
+    历史 F盘兜底与当日 mootdx 均统一为 bar close；EOD 强平恒用收盘 bar close。"""
     n = len(closes)
     trips, orphans = [], []
     pos = None
@@ -442,7 +442,7 @@ def main():
             per_sym[sym] = {'error': src}
             continue
         pushes = [r for r in today_push if r['sym'] == sym]
-        trips, orphans = pair_trips(sym, pushes, closes, times, use_push_price=(src == 'mootdx'))
+        trips, orphans = pair_trips(sym, pushes, closes, times)
         # 每单最大有利波动（出场规则失效判据）+ v9.4.0 quality_score + ATR
         # ATR 计算：当日 1m True Range 均值%
         _atr_vals = []
@@ -521,7 +521,7 @@ def main():
             closes, times, pc, src = fetch_day(ds, sym, d)
             if closes is None:
                 continue
-            tt, _ = pair_trips(sym, sp, closes, times, use_push_price=(src == 'mootdx'))
+            tt, _ = pair_trips(sym, sp, closes, times)
             dtrips.extend(tt)
         nv = sum(1 for t in dtrips if t['valid'])
         baseline_days.append({
