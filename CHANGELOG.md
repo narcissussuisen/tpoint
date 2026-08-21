@@ -7,6 +7,59 @@
 > 方法论版本号与算法版本号**解耦**：方法论 bump 由方法论文档驱动，算法 bump 由 `VERSION` 驱动；
 > 两者对齐索引见 `docs/methodology_framework.md` §11。
 
+## v10.5.0（2026-08-21）R2P 全链路闭环交付版（P0→P5 固化）
+> 本次为「Research-to-Prod gap-closing」6 阶段路线图的**固化交付版**：P0 地基(DET) → P1.1/P1.2/P1.3 噪声与门控 → P2 出场盈亏比治理 → P3 配对/反T → P4 regime门控+OOS → P5 固化+监控+说明。
+> 每个阶段均经**量化专家 agent 独立评审 gate（PASS）** 方可进入下一阶段（loop engineering）。
+
+### 核心变更（相对 v10.4.0）
+- **P1.1 节奏降噪**：`general_algorithm.signal_gap` 6→8（冗余 B/S 47/57%→30/36%，DA/TEP 质量持平），已写入 `monitor_config.json`。
+- **P1.2 评判口径**：信号有效性主判据 δ=0.5%（EHR 跳至 B 68.7%/S 63.5%），仅改评判标准（`tpoint_signal_validity_criteria_v1.md`），零风险。
+- **P1.3 量比门控复核**：DET 三重证据（含 ATR/实盘无ATR 双口径）证伪旧 +14.5pp 收益（基于被证伪 WR 口径），`vol_ratio_b_max` 置 `null`（移除）。
+- **P2 出场盈亏比治理（核心）**：
+  - P2.2 实盘移植 FIXSTOP=1.5% 固定硬止损（EV 中性尾端断路器，封尾端 -8.5%→-1.5%）+ `run()` 15:00 EOD 强制平仓 `can_sell` 闭环（commit `d1ec1ae`）。
+  - P2.1 `core/exit_v3.py` 三条件止损（硬/趋势/时间）适配正T，镜像 `simulate_bidirectional.py` 反T出场。
+- **P3 配对/反T层**：`bidirectional_enable=true` 启用；出场按持仓方向解耦——空仓(反T)走 `EXIT_CFG_SHORT`(DEFAULT类: 硬止损atr1.5+时间90+trail0.4/0.6, FIXSTOP off，保留正期望)，多仓(正T)走 `EXIT_CFG`(PROD: trail0.4/0.6+FIXSTOP1.5)；修复 `bidir=False+空仓遇S` 的 `pos['side']` None 崩溃（commit `ab88137`）。
+  - 验收（faithful 双向解耦回测，161129+513310 各79天）：反T 池级 n=594 WR=37.4% **净 +51.7%**（≥0 PASS）；双向合计净 -77.28% ≥ 正T -128.98%（增量正贡献 PASS）。
+- **P4 regime 门控（OOS 验证）**：`GeneralConfig` 新增 `regime_gate`(默认关=fail-safe)；`_regime_suppress_b` 平滑趋势门控——持续下行 regime（窗口内 -1 占比≥阈）抑制 B（仅影响 B，S 不动，fail-open）；经 `_build_general_cfg` 热重载传播到实时。参数固定(lookback40/thresh0.5)、未在 train 寻优，OOS 验证启用（commit `81a9c8c`）。
+  - 验收（时间切 train60%/test40%，正T PROD出场）：池级 TRAIN net -66.49%→-17.34%(+49.15pp) | TEST(OOS) -54.06%→-15.07%(+38.99pp)；方向一致 → 启用 `regime_gate=true`。
+- **P5 固化**：本版本统一提交 P0–P4 全部改动；监控 `scripts/selfcheck_daily.py` 周期自检完好；本说明文件（`docs/tpoint_v10.5.0_release.md`）随版交付。
+
+### 量化验收总览（DET Framework v1.0 + OOS）
+- **信号质量成立（P0）**：全池 192 标的/6024 日/90323 信号，B-DA@60 69.5%/S-DA@60 72.7%，TEP pos_rate 100%（每笔理论净值全正）→ 找极端顶底能力系统性成立。
+- **反T 净期望正（P3）**：+51.7%，按「期望值启用」决策成立。
+- **regime 门控 OOS 正（P4）**：样本外净 +38.99pp，未过拟合。
+- **长侧（正T）原始信号净仍为负（WR 37.6% / 净 -128.98% raw）**：v5 通用引擎原始信号（无冷却/ML/regime 过滤）既有问题，非 P3/P4 引入；regime 门控已显著止血（正T OOS 净 -15%），但长侧 alpha 仍待 R2P 后续治理（因子 OOS / 买点确认升级）。
+
+### 已知限制 / 上线硬门槛（须上线前闭环）
+- **B5 入账价对账（硬门槛）**：对账/recalc 应使用「信号 bar close 价」而非 `signal.txt` 推送价，历史差距可达 2.6%。monitor 实时 `pos['entry_price']` 已取 `c[i]`(bar close) 正确；缺口在**对账工具读取 signal.txt 推送价**处——须改对账入口按信号时间戳锚定 bar close。本版未改对账工具，标记硬门槛，上线前必做。
+- **个股泛化**：P4 OOS 池仅聚合 161129/513310（各79天），4 只个股样本<40天未入 OOS；regime 门控个股泛化待扩样本复现。
+- **口径提示**：反T +51.7% 来自 166天/3标的全样本，正T OOS -15% 仅 32天/2标的，二者不可直接相加得"系统净"；真实双向系统净须以统一口径重算。
+- **因子 OOS 调参**：路线图原 P4「压 δ 误差因子调参」因过拟合风险延后，信号已 DET 验证成立故不强制；如需做须在 OOS 框架下进行。
+
+## v10.4.0（2026-08-20）通用算法 v5/GT 转正 + 双向反T + 离线长回测
+> 统一命名：**做T策略 v5 / 引擎 GT v1.0**（`core/general_signal.py` 常量 `STRATEGY_VERSION='v5'`、
+> `ENGINE_NAME='GT'`、`ENGINE_VERSION='1.0'`；`data/monitor_config.json._global.general_algorithm`
+> 补 `strategy_version/engine` 字段）。v5 承接 v3(v10.2.0)→v4(死锁中间产物) 迭代链，v4 保留为灰度候选。
+
+### 核心变更（软切换，不破坏既有兼容）
+- **通用算法转正为 watchlist 生产驱动**（`use_general_engine=true`）：`core/general_signal.py`
+  symbol-agnostic 连续评分（比率口径参数，无逐标的特例），B 侧防接飞刀（trend==-1 需局部底+超卖反转确认），
+  S 侧全 regime 放行；`core/watchlist_engine.py` 统一驱动 + v4 影子灰度（`v4_gray_compare_*.json` 兼容保留）。
+- **双向做T**（Track D / G-F3）：新增 `core/simulate_bidirectional.py` S→B 反T 配对（镜像正T出场规则，
+  收益方向翻转），`simulate_dual` 合成双向。回测量化 S 侧：**反T 池级 WR 43.5% / 净 +331.77%**（正T 24.1% / −335.75%），
+  双向合计净 −3.98% —— S 侧信号显著强于 B 侧。
+- **signal.txt 引擎标记**：新增 `🔷 v5/GT` 独立注释行（`ENGINE_TAG`），不污染复盘 RE_TS/RE_SIG/RE_PX 整行匹配。
+- **离线长回测基建**：`scripts/backtest_general_v5.py` 读 F:/keyfactor_data/1m（tickflow 真实 1m），
+  支持 `--dual` 双向模式，输出 JSON+HTML。
+- `general_signals_*.json` 顶层补 `strategy_version/engine_full` 字段（兼容 `engine=general` 旧值）。
+
+### 离线长回测结论（6 标的 / 589 交易日 / 2651 trips）
+- G1（WR≥55%，n≥20）：**FAIL，池级 WR 24.1%**（与 v2 离线 22.5% 同口径可比，生产 56.2% 含完整状态机：
+  冷却/regime 门控/仓位）。
+- 相对基线：v5 WR 24.1% > v2 22.5%（+1.6pp），单笔 −0.127% 优于 v2 −0.166%；但信号量 14.6× 放大总亏损。
+- **结论**：v5 裸信号质量未达标，S 侧强 B 侧弱；下一迭代 = regime 门控 + 参数收紧（如 buy_threshold 0.45→0.55）
+  压缩噪声信号，再验 G1。
+
 ## v10.3.0（2026-08-20）综合评分模型 v4 —— 三神技 + RSI 连续加权融合
 > 用户要求「基于三大核心策略设计可供上线评估的核心算法指标体系，整合三大策略信号与 RSI 超买超卖，
 > 构建综合评分模型并输出交易信号」。本版本**纯增量**：新增 `core/composite_scorer.py` 与 `detect_signals_v4`，

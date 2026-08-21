@@ -196,6 +196,7 @@ def run_watchlist(date: Optional[str] = None, ds=None) -> Dict[str, Any]:
     gen_path = os.path.join(OUT_DIR, f"general_signals_{date}.json")
     with open(gen_path, 'w', encoding='utf-8') as f:
         json.dump({'date': date, 'engine': 'general',
+                   'strategy_version': 'v5', 'engine_full': 'GT-1.0',
                    'use_general_engine': flags['use_general_engine'],
                    'v4_gray_enable': v4_gray, 'v4_promote': v4_promote,
                    'symbols': prod}, f, ensure_ascii=False, indent=2)
