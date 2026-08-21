@@ -56,7 +56,7 @@ v10.5.0 是「Research-to-Prod gap-closing」6 阶段路线图的**固化交付�
 5. **监控**：`selfcheck_daily.py` 周期自检；飞书日报 15:40 标准化。
 
 ## 6. 已知限制 / 上线硬门槛
-- **【硬门槛 B5】入账价对账**：对账/recalc 须用「信号 bar close 价」而非 `signal.txt` 推送价（历史差距可达 2.6%）。monitor 实时 `pos['entry_price']` 已取 `c[i]`(bar close) 正确；缺口在**对账工具读取 signal.txt 推送价**处 → 须改对账入口按信号时间戳锚定 bar close。**上线前必做**。
+- **【硬门槛 B5】入账价对账 — P0 已验证/已固化**：`scripts/prod_vs_bt_reconcile.py::live_rows_to_sigs` 已在 2026-08-03 修正为**一律按信号时间戳取信号 bar 的 close 作为 entry_price**，不用 `signal.txt`/push_audit 推送价；推送价仅保留为 `push_slip_pct` 参考。审计脚本 `scripts/p0_b5_entry_audit.py` 对 15 份历史 roundtrip 文件复核：`live` 记录 `entry_price` 与 `entry_bar_close` 最大偏差 **0.0%**，>0.1% 不匹配数 **0**，最大 `push_slip_pct` 2.504%（与文档所述 2.6% 差距一致）。**B5 上线硬门槛已关闭，P0 PASS。**
 - 个股泛化：P4 OOS 仅 161129/513310（各79天）入池，4 只个股样本<40天未入 OOS，待扩样本复现。
 - 长侧（正T）原始信号净仍为负（WR 37.6% / 净 -128.98% raw）：v5 原始信号既有问题，regime 门控已止血至 OOS -15%，长侧 alpha 待 R2P 后续（因子 OOS / 买点确认升级）。
 - 因子 OOS 调参：因过拟合风险延后（信号已 DET 验证成立，非强制）。
@@ -71,3 +71,16 @@ v10.5.0 是「Research-to-Prod gap-closing」6 阶段路线图的**固化交付�
 - `ab88137` P3 反T层 + side-aware 出场 + None 守卫
 - `81a9c8c` P4 regime 门控 + OOS 验证
 - `v10.5.0` 本版：统一提交 P0–P4 + VERSION/CHANGELOG/本说明（详见 `git log`）
+
+## 9. 下一步计划与阶段状态（loop engineering）
+
+| 阶段 | 动作 | 依据 | 验收 / 状态 |
+|---|---|---|---|
+| **P0 上线硬门槛** | B5 入账价对账：对账/recalc 入口按信号时间戳锚定 bar close，非 signal.txt 推送价 | §6 硬门槛 B5 | **PASS** — 已审计，live 记录 entry_price 与 entry_bar_close 最大偏差 0.0% |
+| **P1 实盘灰度** | 反T + regime 门控先以 T1 灰度标的全量推送、不设单次往返限制观察实盘信号质量，稳定后扩大 | §7 回滚/灰度 | pending |
+| **P1 反T底仓约束** | A 股 T+1 实盘反T须有底仓配合；无底仓时反T仅作信号质量观测 | §5.3 实盘部署要点 | pending |
+| **P2 个股泛化复现** | 扩样本 OOS：P4 OOS 仅 161129/513310 入池，4 只个股样本 <40 天未入 OOS，待扩样本复现门控泛化性 | §6 个股泛化 | pending |
+| **P3 长侧 alpha 治理** | 正T（长侧）原始信号净仍为负，regime 已止血至 OOS -15%；长侧 alpha 待 R2P 后续：因子 OOS / 买点确认升级 | §6 长侧限制 | pending |
+| **P4 因子 OOS 调参** | 因过拟合风险延后（信号已 DET 验证成立，非强制） | §6 因子 OOS | pending |
+
+> 每阶段完成后须由**量化专家 agent**独立评审 PASS，方可进入下一阶段。本表随阶段推进持续更新。
