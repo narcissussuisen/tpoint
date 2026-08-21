@@ -37,6 +37,16 @@ from composite_scorer import CompositeConfig, score_components_at, _macd_hist
 from primitives import compute_rsi
 
 
+# ========== 版本标识（2026-08-20 统一命名：做T策略 v5 / 引擎 GT v1.0） ==========
+# 版本脉络：v3(v10.2.0, 太噪) → v4(composite_scorer, B死锁) → v5 = 通用算法 GT 驱动的做T策略。
+# 引擎名 GT（General T-maker）与策略版本解耦；GT v1.0 = 当前 symbol-agnostic 连续评分引擎。
+STRATEGY_VERSION = 'v5'
+ENGINE_NAME = 'GT'
+ENGINE_VERSION = '1.0'
+ENGINE_FULL = f'{ENGINE_NAME}-{ENGINE_VERSION}'   # "GT-1.0"
+# 兼容旧标识：general_signals_*.json 的 engine 字段沿用 "general"，另加 strategy_version 字段。
+
+
 @dataclass
 class GeneralConfig(CompositeConfig):
     """通用算法全部可配参数（继承 v4 连续评分内核，增加双向门控）。
@@ -65,6 +75,16 @@ class GeneralConfig(CompositeConfig):
     # —— 可选量能确认门控（默认关=纯通用；如需对齐生产 vol_ratio_b_max 可设 1.2）——
     vol_ratio_b_max: Optional[float] = None
 
+    # —— [P4] regime 门控（更高时段平滑趋势，抑制接飞刀）——
+    # 与 per-bar b_downtrend_reversal 区别：后者仅在 trend==-1 时要求局部底+超卖才放 B；
+    # 本门控在「平滑趋势持续下行」(窗口内 -1 占比超阈) 时直接抑制 B（含超卖反弹），
+    # 因持续下行 regime 中抄底反弹多失败（用户关注 2026H1 dip-buying 失效局部 regime）。
+    # 仅影响 B（正T 方向）；S 全 regime 放行（与 s_signal_exit 口径一致）。OOS 验证后默认关。
+    regime_gate: bool = False
+    regime_lookback: int = 40          # 平滑窗口（分钟 bar 数）
+    regime_downtrend_suppress: bool = True
+    regime_downtrend_thresh: float = 0.5  # 窗口内 -1 占比阈值（≥则抑制 B）
+
 
 GENERAL_DEFAULT = GeneralConfig()
 
@@ -76,6 +96,26 @@ def _composite_at(data, i, cfg: GeneralConfig, rsi_arr, macd_hist_arr):
     ws = cfg.weight_sum()
     comp = (cfg.w_vwap * cv + cfg.w_vol_div * cvd + cfg.w_macd_div * cmd + cfg.w_rsi * cr) / ws if ws > 0 else 0.0
     return comp, cv, cvd, cmd, cr
+
+
+def _regime_suppress_b(data, i, cfg: GeneralConfig) -> bool:
+    """[P4] regime 门控：sustained downtrend 抑制 B。返回 True=应抑制 B。
+
+    基于 data['trend'] 在 regime_lookback 窗口内的平滑方向（占比超阈即判定持续下行）。
+    仅作用于 B 侧；data 无 trend 字段或窗口不足时退化为不抑制（fail-open）。
+    """
+    if not (cfg.regime_gate and cfg.regime_downtrend_suppress):
+        return False
+    tr = data.get('trend')
+    if tr is None:
+        return False
+    L = max(2, int(cfg.regime_lookback))
+    lo = max(0, i - L + 1)
+    seg = tr[lo:i + 1]
+    if len(seg) < max(2, int(L * 0.5)):
+        return False
+    frac_down = float((seg == -1).sum()) / len(seg)
+    return frac_down >= cfg.regime_downtrend_thresh
 
 
 def check_general_b_trigger(data, i, cfg: GeneralConfig = GENERAL_DEFAULT,
@@ -94,6 +134,10 @@ def check_general_b_trigger(data, i, cfg: GeneralConfig = GENERAL_DEFAULT,
     macd_hist_arr = _macd_hist(data['c'], cfg.macd_fast, cfg.macd_slow, cfg.macd_signal)
     comp, cv, cvd, cmd, cr = _composite_at(data, i, cfg, rsi_arr, macd_hist_arr)
     trend_i = int(data['trend'][i]) if 'trend' in data else 0
+
+    # [P4] regime 门控：持续下行 regime 直接抑制 B（含超卖反弹），防接飞刀
+    if _regime_suppress_b(data, i, cfg):
+        return False, ''
 
     # 可选量能确认（默认关）
     _vrb = vol_ratio_b_max if vol_ratio_b_max is not None else cfg.vol_ratio_b_max
@@ -188,6 +232,9 @@ def detect_signals_general(data, pc, cfg: GeneralConfig = GENERAL_DEFAULT,
                 # 否则防接飞刀拦截
             else:
                 emit = 'B'
+            # [P4] regime 门控：持续下行 regime 抑制 B（含超卖反弹），防接飞刀
+            if emit == 'B' and _regime_suppress_b(data, i, cfg):
+                emit = None
         elif (composite <= -cfg.sell_threshold and sc < max_s
               and (i - s_last) >= gap and (i - b_last) >= gap):
             if trend_i == 1 and cfg.s_uptrend_guard:

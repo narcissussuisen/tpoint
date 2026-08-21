@@ -20,7 +20,11 @@
       "signal_gap": 8,
       "b_downtrend_reversal": true,
       "s_uptrend_guard": false,
-      "vol_ratio_b_max": null
+      "vol_ratio_b_max": null,
+      "regime_gate": true,
+      "regime_lookback": 40,
+      "regime_downtrend_suppress": true,
+      "regime_downtrend_thresh": 0.5
     }
   },
   "603039.SH": {
