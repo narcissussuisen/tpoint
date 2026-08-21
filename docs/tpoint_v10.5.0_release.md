@@ -80,8 +80,8 @@ v10.5.0 是「Research-to-Prod gap-closing」6 阶段路线图的**固化交付�
 | 阶段 | 动作 | 依据 | 验收 / 状态 |
 |---|---|---|---|
 | **P0 上线硬门槛** | B5 入账价对账：对账/recalc 入口按信号时间戳锚定 bar close，非 signal.txt 推送价 | §6 硬门槛 B5 | **PASS** — 已审计，live 记录 entry_price 与 entry_bar_close 最大偏差 0.0% |
-| **P1 实盘灰度** | 反T + regime 门控先以 T1 灰度标的全量推送、不设单次往返限制观察实盘信号质量，稳定后扩大 | §7 回滚/灰度 | pending |
-| **P1 反T底仓约束** | A 股 T+1 实盘反T须有底仓配合；无底仓时反T仅作信号质量观测 | §5.3 实盘部署要点 | pending |
+| **P1 实盘灰度** | 反T + regime 门控先以 T1 灰度标的全量推送、不设单次往返限制观察实盘信号质量，稳定后扩大 | §7 回滚/灰度 | **observing** — 配置已激活（bidirectional=true, regime_gate=true, settle_split=false）；新增 `scripts/p1_gray_monitor.py`；2026-08-21 初始数据：push 8 → paired 5 → valid 2(40%) → net -0.708%，regime=low_vol，antiT trips=0；待更多交易日累积后判定稳定 |
+| **P1 反T底仓约束** | A 股 T+1 实盘反T须有底仓配合；无底仓时反T仅作信号质量观测 | §5.3 实盘部署要点 | **已文档化** — 灰度期实盘反T开空前须确认底仓机制就位；当前仅作信号质量观测 |
 | **P2 个股泛化复现** | 扩样本 OOS：P4 OOS 仅 161129/513310 入池，4 只个股样本 <40 天未入 OOS，待扩样本复现门控泛化性 | §6 个股泛化 | pending |
 | **P3 长侧 alpha 治理** | 正T（长侧）原始信号净仍为负，regime 已止血至 OOS -15%；长侧 alpha 待 R2P 后续：因子 OOS / 买点确认升级 | §6 长侧限制 | pending |
 | **P4 因子 OOS 调参** | 因过拟合风险延后（信号已 DET 验证成立，非强制） | §6 因子 OOS | pending |
