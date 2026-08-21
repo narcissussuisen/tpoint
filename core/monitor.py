@@ -110,6 +110,11 @@ PUSH_PENDING_FILE = os.path.join(BASE_DIR, 'data', 'push_pending.jsonl')
 EXIT_CFG = make_config(use_stop=False, use_time=False, use_trailing=True,
                        trail_activate_pct=0.4, trail_pct=0.6, s_signal_exit=True,
                        use_fixed_stop=True, fixed_stop_pct=1.5)
+# [P3.2] 反T/空仓出场配置（DEFAULT 类，保留正期望）：反T 信号期望值本为正
+# (回测 DEFAULT 出场净+52.7%)，但正T 那套紧 trail(PROD) 会把反T 期望值打负(净-9.4%)且虚高 WR。
+# 故反T 单独用 DEFAULT 类出场(硬止损atr1.5 + 时间止损90 + trail0.4/0.6, use_fixed_stop=False)，
+# 与正T 的 EXIT_CFG 解耦。detect_for 出场块按 side 选 ecfg。
+EXIT_CFG_SHORT = make_config()  # 默认 = 硬止损on + 时间止损on + trail0.4/0.6 + FIXSTOP off
 # 如需调参（如开硬止损/时间止损），改这里或经 config.json 的 exit_config 传入
 
 def exit_param(sym, key):
@@ -1333,10 +1338,13 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                 continue
             sz = pos['size_pct']
             exited = False
+            # [P3.2] 出场配置按持仓方向解耦：空仓(反T)用 EXIT_CFG_SHORT(DEFAULT类保留正期望)，
+            # 多仓(正T)用 EXIT_CFG(PROD 紧trail)。避免正T 出场配置污染反T 期望值。
+            ecfg = EXIT_CFG_SHORT if side == 'short' else EXIT_CFG
             # 0) [P2.2] 固定百分比硬止损(FIXSTOP)：独立于 ATR，亏到 -fixed_stop_pct% 即砍，封住尾部暴跌。
             # 优先级最高(在硬止损/反向信号/移动止损之前)；受成交可行性门控(can_sell)。
-            if not exited and exit_param(sym, 'use_fixed_stop'):
-                _fs_pct = exit_param(sym, 'fixed_stop_pct')
+            if not exited and ecfg.get('use_fixed_stop', False):
+                _fs_pct = ecfg.get('fixed_stop_pct', 1.5)
                 _can_sell_fs = not ((side == 'long' and locked_down) or (side == 'short' and locked_up) or halted)
                 _fs_price = pos['entry_price'] * (1 - _fs_pct / 100.0)
                 if side == 'long':
@@ -1350,8 +1358,8 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                         signals.append(_mk_exit('FIXSTOP', name, _fs_price, pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                         pos = None; exited = True
             # 1) 硬止损（生产默认关）
-            if not exited and EXIT_CFG['use_stop']:
-                if EXIT_CFG['stop_mode'] == 'trend':
+            if not exited and ecfg['use_stop']:
+                if ecfg['stop_mode'] == 'trend':
                     if trend is not None and ((side == 'long' and trend[i] == -1) or (side == 'short' and trend[i] == 1)):
                         signals.append(_mk_exit('STOP', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                         pos = None; exited = True
@@ -1363,7 +1371,7 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                         signals.append(_mk_exit('STOP', name, pos['stop_price'], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                         pos = None; exited = True
             # 2) 反向信号自然平仓
-            if not exited and EXIT_CFG['s_signal_exit']:
+            if not exited and ecfg['s_signal_exit']:
                 # [2026-08-20] 通用算法引擎：USE_GENERAL_ENGINE 时用 check_general_* 替代 miji（异常回退 miji）
                 if USE_GENERAL_ENGINE and GENERAL_ENGINE_CFG is not None:
                     try:
@@ -1382,23 +1390,23 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                         signals.append(_mk_exit('B', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                         pos = None; exited = True
             # 3) 移动止损（浮盈保护；多仓/空仓对称；v9.4.1 起 per-symbol 可覆盖）
-            if not exited and EXIT_CFG['use_trailing']:
+            if not exited and ecfg['use_trailing']:
                 if side == 'long':
                     fav_ret = (pos['max_fav'] - pos['entry_price']) / pos['entry_price'] * 100
-                    if fav_ret >= exit_param(sym, 'trail_activate_pct'):
-                        trail_stop = pos['max_fav'] * (1 - exit_param(sym, 'trail_pct') / 100.0)
+                    if fav_ret >= ecfg.get('trail_activate_pct', 0.4):
+                        trail_stop = pos['max_fav'] * (1 - ecfg.get('trail_pct', 0.6) / 100.0)
                         if c[i] <= trail_stop and trail_stop > pos['stop_price']:
                             signals.append(_mk_exit('TRAIL', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                             pos = None; exited = True
                 else:
                     fav_ret = (pos['entry_price'] - pos['max_fav']) / pos['entry_price'] * 100
-                    if fav_ret >= exit_param(sym, 'trail_activate_pct'):
-                        trail_stop = pos['max_fav'] * (1 + exit_param(sym, 'trail_pct') / 100.0)
+                    if fav_ret >= ecfg.get('trail_activate_pct', 0.4):
+                        trail_stop = pos['max_fav'] * (1 + ecfg.get('trail_pct', 0.6) / 100.0)
                         if c[i] >= trail_stop and trail_stop < pos['stop_price']:
                             signals.append(_mk_exit('TRAIL', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                             pos = None; exited = True
             # 4) 时间止损
-            if not exited and EXIT_CFG['use_time'] and (i - pos['entry_idx']) >= EXIT_CFG['time_stop_bars']:
+            if not exited and ecfg['use_time'] and (i - pos['entry_idx']) >= ecfg['time_stop_bars']:
                 signals.append(_mk_exit('TIME', name, c[i], pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
                 pos = None; exited = True
             st[bar_key] = now
@@ -1437,6 +1445,7 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
             st[bar_key] = now
             continue
         # 买入 / 开多（或加多 / 平空回补）
+        _bidir = bool((PER_SYMBOL_CFG.get('_global') or {}).get('bidirectional_enable', False))
         if tb:
             # [模块2.3] ML 信号后置打分（B 侧；fail-open：异常/未启用→keep）
             # ctx：FEAT_CTX 用 check_miji_trigger 的 snapshot 精确 factors（与训练同源，
@@ -1520,14 +1529,14 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                 chg = (c[i] - pc) / pc * 100
                 tag = f'[{rs}]' if rs and rs != '反弹遇阻' else ''
                 upper_std = vwap[i] + K1 * atr[i]
-                if pos is None:
+                if pos is None and _bidir:
                     signals.append(('S', c[i], chg, upper_std, '触及上轨',
                                     rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', s_pct))
                     pos = {'side': 'short', 'entry_price': float(c[i]), 'entry_idx': i,
                             'max_fav': float(c[i]), 'entry_reason': rs or '',
-                            'stop_price': _compute_stop_price(float(c[i]), atr, i, EXIT_CFG), 'size_pct': s_pct,
+                            'stop_price': float(c[i]) + EXIT_CFG_SHORT.get('stop_atr_mult', 1.5) * atr[i], 'size_pct': s_pct,
                             'trail_pct': exit_param(sym, 'trail_pct')}
-                elif pos['side'] == 'short':   # 加仓（累加同侧）
+                elif pos is not None and pos['side'] == 'short' and _bidir:   # 加仓（累加同侧）
                     add = min(s_pct, MAX_SIZE_PCT - pos['size_pct'])
                     if add > 0:
                         ns = pos['size_pct'] + add
@@ -1536,7 +1545,7 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                         pos['size_pct'] = ns
                         signals.append(('S', c[i], chg, upper_std, '触及上轨',
                                         rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', add))
-                else:   # 多仓中遇S → 平多（卖出），按 min(信号强度, 多仓规模)
+                elif pos is not None and pos['side'] == 'long':   # 多仓中遇S → 平多（卖出），按 min(信号强度, 多仓规模）
                     sz = min(s_pct, pos['size_pct'])
                     if sz > 0:
                         chg2 = (c[i] - pos['entry_price']) / pos['entry_price'] * 100

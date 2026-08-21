@@ -2,19 +2,22 @@
   "_global": {
     "settle_split_enable": false,
     "_note": "2026-08-05 用户指令：T1不做单次往返限制，全量信号实时推送，实盘观察信号质量；settle_rules 模块保留（开关随时可恢复）",
-    "vol_ratio_b_max": 1.2,
-    "_note_20260818_vol": "池级量能确认门控(vol_ratio_b_low)：B 需缩量回调(量比<=1.2x)。门控内建 detect_for 后简易回测：纯池级 total_ret -15.51% → -0.98%（Δ+14.5pp），且比旧 per-symbol 调参(-11.13%)好 +10.15pp。逐标的可覆盖。",
+    "vol_ratio_b_max": null,
+    "_note_20260821_p13": "2026-08-21 P1.3 复核：DET + 全池 round-trip A/B(含ATR/实盘无ATR双口径)三重证据一致——量比门控不提升信号质量、不改善单笔出场(实盘口径净WR反略降0.9pp)，仅削 19-32% B 覆盖。原 _note_20260818_vol 的 +14.5pp 基于被证伪 WR 口径+per-symbol 简易回测，失效。门控已移除(置 null)。",
+    "_note_20260818_vol": "（已失效，见 _note_20260821_p13）池级量能确认门控(vol_ratio_b_low)：B 需缩量回调(量比<=1.2x)。门控内建 detect_for 后简易回测：纯池级 total_ret -15.51% → -0.98%（Δ+14.5pp）。",
 
     "_note_20260820_engine": "2026-08-20 完善方案：watchlist 改由通用算法(core/general_signal.GeneralConfig)统一驱动全标的(symbol-agnostic)；v4(composite_scorer_v4full)纳入灰度影子测试。全部 flag 默认关，热重载。",
     "use_general_engine": true,
     "v4_gray_enable": true,
     "v4_promote": false,
-    "bidirectional_enable": false,
+    "bidirectional_enable": true,
     "general_algorithm": {
-      "_note": "通用算法统一配置（全标的适用，比率口径，无逐标的特例）。实时 monitor.detect_for 与批量 watchlist_engine 共用。",
+      "_note": "通用算法统一配置（全标的适用，比率口径，无逐标的特例）。实时 monitor.detect_for 与批量 watchlist_engine 共用。2026-08-20 统一命名：做T策略 v5 / 引擎 GT v1.0（v3→v4→v5 迭代链；v4 为 B死锁中间产物，保留为灰度候选）。",
+      "strategy_version": "v5",
+      "engine": "GT-1.0",
       "buy_threshold": 0.45,
       "sell_threshold": 0.45,
-      "signal_gap": 6,
+      "signal_gap": 8,
       "b_downtrend_reversal": true,
       "s_uptrend_guard": false,
       "vol_ratio_b_max": null
