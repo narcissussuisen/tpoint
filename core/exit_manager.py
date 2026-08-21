@@ -22,11 +22,12 @@ import numpy as np
 def make_config(use_stop=True, stop_atr_mult=1.5, stop_mode='atr',
                 use_time=True, time_stop_bars=90,
                 use_trailing=True, trail_activate_pct=0.4, trail_pct=0.6,
-                s_signal_exit=True):
+                s_signal_exit=True,
+                use_fixed_stop=False, fixed_stop_pct=1.5):
     """构造出场配置。所有开关独立, 便于做消融实验(看哪个规则贡献最大)。
 
     参数说明:
-      use_stop        是否启用硬止损
+      use_stop        是否启用硬止损(ATR/trend 模式)
       stop_atr_mult   止损距离 = 入场价 - stop_atr_mult * ATR(入场bar), ATR自适应波动
       stop_mode       'atr'  : 盘中最低价触及 stop_price 即止损(紧, 对均值回归易噪音止损)
                       'trend': 仅当趋势确认翻空(trend==-1)才止损(宽, 只在"升势判错/破位"时出场)
@@ -37,6 +38,10 @@ def make_config(use_stop=True, stop_atr_mult=1.5, stop_mode='atr',
       trail_activate_pct  浮盈≥该百分比才激活移动止损(避免噪音触发)
       trail_pct       从浮动高点回撤该百分比触发移动止损
       s_signal_exit   是否把S信号作为出场源(默认开, 即原v9自然出场保留)
+      use_fixed_stop  是否启用固定百分比硬止损(独立于 ATR，亏到 -fixed_stop_pct% 即砍)
+                       —— P2.1 新增：实盘 use_stop=False 时无下行封顶，尾部暴跌拖垮 P/L；
+                          固定止损给一个简单稳健的亏损上限，不被 ATR 噪音困扰。
+      fixed_stop_pct  固定止损幅度(%)（正数，按亏损计，如 1.5 = -1.5% 砍）。P2 返工结论：FIXSTOP 为 EV 中性的"尾端断路器"（不提升每笔期望/夏普，仅把最差单笔从 -8.5% 上界到约 -1.5%），选 1.5% 作平衡档（尾端封 -1.62%、对 WR/EV 影响最小、止损频次低于 1.2%）
     """
     return {
         'use_stop': use_stop,
@@ -48,6 +53,8 @@ def make_config(use_stop=True, stop_atr_mult=1.5, stop_mode='atr',
         'trail_activate_pct': trail_activate_pct,
         'trail_pct': trail_pct,
         's_signal_exit': s_signal_exit,
+        'use_fixed_stop': use_fixed_stop,
+        'fixed_stop_pct': fixed_stop_pct,
     }
 
 
@@ -162,9 +169,17 @@ def simulate_day(signals, prices, config, cost=None):
                        'stop_price': stop_price, 'max_fav': entry_price}
             continue
 
-        # ---- 持仓中, 检查出场(优先级: 硬止损 > S信号 > 移动止损 > 时间止损) ----
+        # ---- 持仓中, 检查出场(优先级: 固定止损 > 硬止损 > S信号 > 移动止损 > 时间止损) ----
         # [2026-08-18 P0 出场侧成交可行性] 锁跌停 bar 卖不出去 → 本 bar 不出场，下一 bar 再判。
         can_sell = (locked_down is None) or (not bool(locked_down[i]))
+        # 0) 固定百分比硬止损(最高优先, 独立于 ATR) —— P2.1：实盘无下行封顶时兜底尾部暴跌
+        if config['use_fixed_stop']:
+            fixed_stop_price = pos['entry_price'] * (1 - config['fixed_stop_pct'] / 100.0)
+            if lo[i] <= fixed_stop_price and can_sell:
+                trips.append(_mk_trip(pos, i, fixed_stop_price, 'FIXSTOP',
+                                      buy_cost, sell_cost, entry_date=day_date))
+                pos = None
+                continue
         # 1) 硬止损(风险兜底, 最高优先)
         if config['use_stop']:
             if config['stop_mode'] == 'trend':
@@ -202,9 +217,14 @@ def simulate_day(signals, prices, config, cost=None):
             pos = None
             continue
 
-    # 收盘仍未平仓 → 强平(EOD)
+    # 收盘仍未平仓 → 强平(EOD)；[P2.2] 受成交可行性门控：跌停封板(正T long 不可卖)时
+    # 跳过，不记不可成交价（与实盘 monitor EOD 兜底口径对齐，闭环评审条件#1）。
     if pos is not None:
-        trips.append(_mk_trip(pos, n - 1, c[n - 1], 'EOD', buy_cost, sell_cost, entry_date=day_date))
+        _can_sell_eod = True
+        if locked_down is not None and bool(locked_down[n - 1]):
+            _can_sell_eod = False
+        if _can_sell_eod:
+            trips.append(_mk_trip(pos, n - 1, c[n - 1], 'EOD', buy_cost, sell_cost, entry_date=day_date))
     return trips
 
 

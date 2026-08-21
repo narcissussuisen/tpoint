@@ -21,7 +21,7 @@ from miji_alpha import (compute_miji_indicators, check_b_trigger, check_s_trigge
                         check_miji_trigger)
 from indicators import stars, K1
 # 出场管理：接 exit_manager 的移动止损/硬止损/S信号出场（P0 待办）
-from exit_manager import make_config
+from exit_manager import make_config, limit_thr
 # 通用算法引擎（2026-08-20 完善方案）：symbol-agnostic 连续评分做T，watchlist 统一驱动。
 # flag 门控（USE_GENERAL_ENGINE）+ miji 兜底，热重载、实时安全。
 from general_signal import (check_general_b_trigger, check_general_s_trigger,
@@ -77,6 +77,10 @@ CST = timezone(timedelta(hours=8))
 SIGNAL_FILE = _cfg('signal_file', 'SIGNAL_FILE', os.path.join(BASE_DIR, 'data', 'signal.txt'))
 STATE_FILE  = _cfg('state_file',  'STATE_FILE',  os.path.join(BASE_DIR, 'data', 'state.json'))
 METRICS_FILE = _cfg('metrics_file', 'METRICS_FILE', os.path.join(BASE_DIR, 'data', 'metrics.json'))
+
+# 引擎版本标识（2026-08-20 统一命名：做T策略 v5 / 引擎 GT v1.0）。
+# signal.txt 中仅以独立注释行出现（🔷 v5/GT），不污染 RE_TS/RE_SIG/RE_PX 的整行匹配。
+ENGINE_TAG = 'v5/GT'
 PROMPT_FILE = _cfg('prompt_file', 'TP_PROMPT_FILE', os.path.join(BASE_DIR, '..', '数据', '股票池', 'prompt-common.md'))
 # 监控标的列表（优先于持仓文件，实现"监控标的"与"持仓"解耦）
 WATCHLIST_FILE = _cfg('watchlist_file', 'TP_WATCHLIST_FILE', os.path.join(BASE_DIR, 'data', 'watchlist.json'))
@@ -98,15 +102,24 @@ PUSH_PENDING_FILE = os.path.join(BASE_DIR, 'data', 'push_pending.jsonl')
 
 # ========== 出场管理配置（生产方向，已锁定） ==========
 # 仅移动止损：浮盈≥0.4% 激活，从浮动高点回撤 0.6% 触发平仓；关硬止损/时间止损；S信号作自然出场
+# [P2.2] 固定百分比硬止损 FIXSTOP 默认开启：实盘 use_stop=False 时无下行封顶，
+# 尾部暴跌拖垮 P/L；FIXSTOP 为 EV 中性"尾端断路器"（不提升每笔期望/夏普，仅把最差单笔
+# 从 -8.5% 上界封到约 -1.5%）。回测返工结论选 1.5% 作平衡档（尾端封 -1.62%、
+# 对 WR/EV 影响最小、止损频次低于 1.2%）。monitor_config.json 顶层 _global 或 per-symbol
+# 加 use_fixed_stop/fixed_stop_pct 可热重载覆盖。
 EXIT_CFG = make_config(use_stop=False, use_time=False, use_trailing=True,
-                       trail_activate_pct=0.4, trail_pct=0.6, s_signal_exit=True)
+                       trail_activate_pct=0.4, trail_pct=0.6, s_signal_exit=True,
+                       use_fixed_stop=True, fixed_stop_pct=1.5)
 # 如需调参（如开硬止损/时间止损），改这里或经 config.json 的 exit_config 传入
 
 def exit_param(sym, key):
     """per-symbol 出场参数覆盖（2026-08-04 v9.4.1：trail 两段式复核 PASS 后灰度用）。
-    monitor_config.json per-symbol 加 trail_activate_pct/trail_pct 即对该标的生效（热重载）；
-    缺省/未配置 → 回退全局 EXIT_CFG（行为与 v9.3.x 完全一致）。"""
+    monitor_config.json per-symbol 加 trail_activate_pct/trail_pct/fixed_stop_pct 即对该标的
+    生效（热重载）；顶层 _global 亦可设（全局默认覆盖）；缺省/未配置 → 回退 EXIT_CFG
+    （行为与 v9.3.x 完全一致）。"""
     v = (PER_SYMBOL_CFG.get(sym) or {}).get(key)
+    if v is None:
+        v = (PER_SYMBOL_CFG.get('_global') or {}).get(key)
     return EXIT_CFG[key] if v is None else v
 
 # ========== ML 信号打分（模块2.3，2026-08-02 接入） ==========
@@ -916,7 +929,7 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
         msg = '\n'.join(lines)
         print(msg)
         with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
-            f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n{msg}\n\n")
+            f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n{msg}\n🔷 {ENGINE_TAG}\n\n")
         return msg
     emoji = '🟢' if sig_type == 'B' else '🔴'
     op_type = 'BUY' if sig_type == 'B' else 'SELL'
@@ -930,7 +943,7 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
     msg = '\n'.join(lines)
     print(msg)
     with open(SIGNAL_FILE, 'a', encoding='utf-8') as f:
-        f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n{msg}\n\n")
+        f.write(f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n{msg}\n🔷 {ENGINE_TAG}\n\n")
     return msg
 
 # ========= 飞书交互卡片（v9.1.2 重建，对齐测试群买卖卡片模板） =========
@@ -968,8 +981,11 @@ def emit_card(s, sym=None, sim=False):
             op, color = '止损', 'blue'
         elif exit_reason == 'B':   # 空仓回补 = 买回
             op, color = '买入', 'green'
-        else:                     # exit_reason == 'S' 平多 = 卖平
-            op, color = '卖出', 'red'
+        else:                     # exit_reason == 'S' 平多 = 卖平；FIXSTOP/EOD 多仓=卖平、空仓(空平)=买回
+            if '空平' in (level_type or ''):
+                op, color = '买入', 'green'
+            else:
+                op, color = '卖出', 'red'
     title = f'{code} {op} {pos_pct}成'
     star = stars(sig_type, temp, vol_r)
     chg_sign = '+' if chg >= 0 else ''
@@ -1046,7 +1062,7 @@ def _append_signal_txt(s):
         print(f"  ⚠️ signal.txt 文本构造失败: {e}")
         return
     _buffered_append(SIGNAL_FILE,
-                     f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n" + '\n'.join(lines) + "\n\n",
+                     f"[{datetime.now(CST).strftime('%H:%M:%S')}]{k_tag}\n" + '\n'.join(lines) + f"\n🔷 {ENGINE_TAG}\n\n",
                      'signal.txt')
 
 def emit_signal(s, sym=None, sim=False):
@@ -1177,6 +1193,12 @@ def _mk_exit(reason, name, price, pos, vwap, atr, rsi14, temp, vol_ratio, i, pc,
     elif reason == 'STOP':
         level_val = pos['stop_price'] if pos['stop_price'] > -1e8 else price
         level_type = '硬止损线'
+    elif reason == 'FIXSTOP':
+        level_val = price
+        level_type = '固定止损线(空平)' if side == 'short' else '固定止损线'
+    elif reason == 'EOD':
+        level_val = price
+        level_type = '收盘强平(空平)' if side == 'short' else '收盘强平'
     else:  # TIME
         level_val = price
         level_type = '超时强平'
@@ -1311,6 +1333,22 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                 continue
             sz = pos['size_pct']
             exited = False
+            # 0) [P2.2] 固定百分比硬止损(FIXSTOP)：独立于 ATR，亏到 -fixed_stop_pct% 即砍，封住尾部暴跌。
+            # 优先级最高(在硬止损/反向信号/移动止损之前)；受成交可行性门控(can_sell)。
+            if not exited and exit_param(sym, 'use_fixed_stop'):
+                _fs_pct = exit_param(sym, 'fixed_stop_pct')
+                _can_sell_fs = not ((side == 'long' and locked_down) or (side == 'short' and locked_up) or halted)
+                _fs_price = pos['entry_price'] * (1 - _fs_pct / 100.0)
+                if side == 'long':
+                    if lo[i] <= _fs_price and _can_sell_fs:
+                        signals.append(_mk_exit('FIXSTOP', name, _fs_price, pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
+                        pos = None; exited = True
+                else:
+                    _fs_price = pos['entry_price'] * (1 + _fs_pct / 100.0)
+                    # [P2.2 评审修复] 空仓尾端用盘中最高价 hi 触发(与多仓用 lo 对称)，避免只在收盘才封
+                    if data['h'][i] >= _fs_price and _can_sell_fs:
+                        signals.append(_mk_exit('FIXSTOP', name, _fs_price, pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times) + (sz,))
+                        pos = None; exited = True
             # 1) 硬止损（生产默认关）
             if not exited and EXIT_CFG['use_stop']:
                 if EXIT_CFG['stop_mode'] == 'trend':
@@ -2012,6 +2050,35 @@ def run():
                                                      atr_min_pct=_atr_p,
                                                      trim_frontier=True),
                                           override_action)
+                        # [P2.2] EOD 强制平仓：收盘后(position 仍开) → 强平，受 can_sell 门控。
+                        # 兜底 detect_for 逐bar 出场（"EOD 由上层强平兜底"的实装），确保日内做T
+                        # 收盘前平仓、避免隔夜持仓；与回测 simulate_day EOD 口径对齐。
+                        # 跌停封板/停牌时跳过，避免发不可成交价（次日跨日清理再处理）。
+                        if st.get(f'pos_{sym}') is not None and (now.hour > 15 or (now.hour == 15)):
+                            _pos = st[f'pos_{sym}']
+                            _side = _pos.get('side', 'long')
+                            _pc_e = STATE.get(sym, {}).get('PC', 0) or 0
+                            _can_sell_eod = True
+                            try:
+                                if _pc_e > 0 and data is not None and data.get('h') is not None and len(data['h']) > 0:
+                                    _h_last = float(data['h'][-1])
+                                    _ld = _h_last <= round(_pc_e * (1 - limit_thr(sym)), 2) + 0.02
+                                    _lu = _h_last >= round(_pc_e * (1 + limit_thr(sym)), 2) - 0.02
+                                    _can_sell_eod = not ((_side == 'long' and _ld) or (_side == 'short' and _lu))
+                            except Exception:
+                                _can_sell_eod = True
+                            if _can_sell_eod:
+                                try:
+                                    _eod_price = float(data['c'][-1]) if (data is not None and data.get('c') is not None and len(data['c']) > 0) else _pos['entry_price']
+                                    _eod_sig = _mk_exit('EOD', name, _eod_price, _pos,
+                                                        data['vwap'], data['atr'], data['rsi'], data['temp'],
+                                                        data['vol_ratio'], (data['n'] - 1) if data.get('n') else 0,
+                                                        _pc_e, None) + (_pos['size_pct'],)
+                                    sigs.append(_eod_sig)
+                                    st[f'pos_{sym}'] = None
+                                    print(f"  🔻 [P2.2 EOD] {name} 收盘强平 {_pos['size_pct']}成 @ {_eod_price:.2f}")
+                                except Exception as _e:
+                                    print(f"  [warning] EOD 强平构造失败 {name}: {_e}")
                         # [v10.2.0 shadow] v3 影子旁路：并行算 v3 信号 + 落日志（只读，不触碰下单链路）
                         try:
                             from shadow_v3 import shadow_v3_log
