@@ -31,7 +31,10 @@
 - **长侧（正T）原始信号净仍为负（WR 37.6% / 净 -128.98% raw）**：v5 通用引擎原始信号（无冷却/ML/regime 过滤）既有问题，非 P3/P4 引入；regime 门控已显著止血（正T OOS 净 -15%），但长侧 alpha 仍待 R2P 后续治理（因子 OOS / 买点确认升级）。
 
 ### 已知限制 / 上线硬门槛（须上线前闭环）
-- **~~B5 入账价对账（硬门槛）~~ → P0 已验证/已固化**：审计 `scripts/prod_vs_bt_reconcile.py` 与 15 份历史 roundtrip 记录（`data/roundtrip/2026-*.jsonl`），`live` 记录 `entry_price` 已严格使用信号 bar close（与 `entry_bar_close` 最大偏差 **0.0%**，>0.1% 不匹配数 **0**），推送价仅作为 `push_slip_pct` 参考（最大 2.504%，与历史 2.6% 差距一致）。新增 `scripts/p0_b5_entry_audit.py` 作为周期性 B5 合规审计。P0 PASS。
+- **~~B5 入账价对账（硬门槛）~~ → P0 已验证/已固化**：
+  - `scripts/prod_vs_bt_reconcile.py` 已按信号时间戳取 bar close 作为 entry_price。
+  - P0  additionally 修正 `scripts/live_roundtrip_review.py::pair_trips`：默认 `use_push_price=True` → `False`，mootdx 当日与 F盘 历史日统一使用 bar close。
+  - 审计 `scripts/p0_b5_entry_audit.py` 对 `data/roundtrip/*.jsonl` + `output/live_review_*.json` 双通道复核：`entry_price` 与 `entry_bar_close` 最大偏差 **0.0%**，>0.1% 不匹配数 **0**，最大 `push_slip_pct` 2.504%（与历史 2.6% 差距一致）。P0 PASS。
 - **个股泛化**：P4 OOS 池仅聚合 161129/513310（各79天），4 只个股样本<40天未入 OOS；regime 门控个股泛化待扩样本复现。
 - **口径提示**：反T +51.7% 来自 166天/3标的全样本，正T OOS -15% 仅 32天/2标的，二者不可直接相加得"系统净"；真实双向系统净须以统一口径重算。
 - **因子 OOS 调参**：路线图原 P4「压 δ 误差因子调参」因过拟合风险延后，信号已 DET 验证成立故不强制；如需做须在 OOS 框架下进行。

@@ -56,7 +56,10 @@ v10.5.0 是「Research-to-Prod gap-closing」6 阶段路线图的**固化交付�
 5. **监控**：`selfcheck_daily.py` 周期自检；飞书日报 15:40 标准化。
 
 ## 6. 已知限制 / 上线硬门槛
-- **【硬门槛 B5】入账价对账 — P0 已验证/已固化**：`scripts/prod_vs_bt_reconcile.py::live_rows_to_sigs` 已在 2026-08-03 修正为**一律按信号时间戳取信号 bar 的 close 作为 entry_price**，不用 `signal.txt`/push_audit 推送价；推送价仅保留为 `push_slip_pct` 参考。审计脚本 `scripts/p0_b5_entry_audit.py` 对 15 份历史 roundtrip 文件复核：`live` 记录 `entry_price` 与 `entry_bar_close` 最大偏差 **0.0%**，>0.1% 不匹配数 **0**，最大 `push_slip_pct` 2.504%（与文档所述 2.6% 差距一致）。**B5 上线硬门槛已关闭，P0 PASS。**
+- **【硬门槛 B5】入账价对账 — P0 已验证/已固化**：
+  - `scripts/prod_vs_bt_reconcile.py::live_rows_to_sigs` 已按信号时间戳取信号 bar 的 close 作为 entry_price，不用 `signal.txt`/push_audit 推送价。
+  - `scripts/live_roundtrip_review.py::pair_trips` 在 P0 中从 `use_push_price=True` 修正为 **False**，mootdx 当日与 F盘 历史日均统一使用 bar close，与 monitor 实时路径及对账口径对齐。
+  - 审计脚本 `scripts/p0_b5_entry_audit.py` 对 `data/roundtrip/*.jsonl` + `output/live_review_*.json` 双通道复核：`entry_price` 与 `entry_bar_close` 最大偏差 **0.0%**，>0.1% 不匹配数 **0**，最大 `push_slip_pct` 2.504%（与文档所述 2.6% 差距一致）。**B5 上线硬门槛已关闭，P0 PASS。**
 - 个股泛化：P4 OOS 仅 161129/513310（各79天）入池，4 只个股样本<40天未入 OOS，待扩样本复现。
 - 长侧（正T）原始信号净仍为负（WR 37.6% / 净 -128.98% raw）：v5 原始信号既有问题，regime 门控已止血至 OOS -15%，长侧 alpha 待 R2P 后续（因子 OOS / 买点确认升级）。
 - 因子 OOS 调参：因过拟合风险延后（信号已 DET 验证成立，非强制）。
