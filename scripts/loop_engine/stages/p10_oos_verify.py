@@ -170,12 +170,16 @@ def run(ctx=None):
         le_core.log(report['msg'])
         return True, report
 
-    # PASS：VERSION bump + CHANGELOG + commit + push
+    # PASS：VERSION bump + CHANGELOG + commit + push（bump 守门）
+    _allowed, _reason = le_core.guard_bump('p10_oos_verify', TARGET_VERSION)
     ver_path = os.path.join(ROOT, 'VERSION')
     cur = open(ver_path, encoding='utf-8').read().strip()
-    if cur != TARGET_VERSION:
+    if _allowed and cur != TARGET_VERSION:
         open(ver_path, 'w', encoding='utf-8').write(TARGET_VERSION + '\n')
         report['version_from'] = cur
+    elif not _allowed:
+        report['bump_blocked'] = _reason
+        le_core.log(f'P10: {_reason}')
     with open(os.path.join(ROOT, 'CHANGELOG.md'), 'a', encoding='utf-8') as f:
         f.write(f'\n## v{TARGET_VERSION}（2026-08-26）P10 全栈 OOS 验证交付（loop_engine 自动合入）\n'
                 f'> P6-P9 全链路闭环：P6 标签解耦(v10.6.0) → P7 证伪(v10.6.0) → P8 tick 基建(v10.7.0) '

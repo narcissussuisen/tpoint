@@ -167,11 +167,15 @@ def run(ctx=None):
     report['msg'] = (f'P9 完成：tick 特征提升顶底捕捉（AUC {ev_base["auc"]}→{ev_full["auc"]}，'
                      f'EHR {ev_base["ehr_pct"]}%→{ev_full["ehr_pct"]}%），模型已落盘 {MODEL_PATH}')
 
+    _allowed, _reason = le_core.guard_bump('p9_topbottom_ml', TARGET_VERSION)
     ver_path = os.path.join(ROOT, 'VERSION')
     cur = open(ver_path, encoding='utf-8').read().strip()
-    if cur != TARGET_VERSION:
+    if _allowed and cur != TARGET_VERSION:
         open(ver_path, 'w', encoding='utf-8').write(TARGET_VERSION + '\n')
         report['version_from'] = cur
+    elif not _allowed:
+        report['bump_blocked'] = _reason
+        le_core.log(f'P9: {_reason}')
     with open(os.path.join(ROOT, 'CHANGELOG.md'), 'a', encoding='utf-8') as f:
         f.write(f'\n## v{TARGET_VERSION}（2026-08-26）P9 顶底捕捉 ML 增强（loop_engine 自动合入）\n'
                 f'> tick 特征提升顶底捕捉：AUC {ev_base["auc"]}→{ev_full["auc"]}，EHR {ev_base["ehr_pct"]}%→{ev_full["ehr_pct"]}%。'

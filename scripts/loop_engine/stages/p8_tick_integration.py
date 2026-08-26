@@ -66,13 +66,17 @@ def run(ctx=None):
         report['msg'] = 'P8 回归测试未通过'
         return False, report
 
-    # 4) VERSION + CHANGELOG
+    # 4) VERSION + CHANGELOG（bump 守门：基建/研究态拦截）
+    _allowed, _reason = le_core.guard_bump('p8_tick_integration', TARGET_VERSION)
     ver_path = os.path.join(ROOT, 'VERSION')
     cur = open(ver_path, encoding='utf-8').read().strip()
-    if cur != TARGET_VERSION:
+    if _allowed and cur != TARGET_VERSION:
         open(ver_path, 'w', encoding='utf-8').write(TARGET_VERSION + '\n')
         report['version_from'] = cur
         report['version_to'] = TARGET_VERSION
+    elif not _allowed:
+        report['bump_blocked'] = _reason
+        le_core.log(f'P8: {_reason}')
     with open(os.path.join(ROOT, 'CHANGELOG.md'), 'a', encoding='utf-8') as f:
         f.write(f"""
 ## v{TARGET_VERSION}（2026-08-26）P8 tick/Level2 数据接入（loop_engine 自动合入）

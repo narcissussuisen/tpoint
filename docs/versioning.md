@@ -44,18 +44,14 @@ v10 家族（2026-08-05 起，通用算法引擎 GT 时代）
   v10.3.0 综合评分 v4（三神技+RSI 连续加权）
   v10.4.0 通用算法 v5/GT 转正 + 双向反T
   v10.5.0 R2P 全链路闭环（P0-P5，2026-08-21）★ 生产基线
-  v10.6.0 P6 止损标签解耦（展示层）★
-  v10.7.0 P8 tick/Level2 数据管道接入（基建）
-  v10.8.0 ⚠️ P9 顶底 ML——研究态错误 bump（见 §3 勘误）
-  v10.9.0 ⚠️ P10 全栈验证——研究态名义版本（GT-TB 策略层名挂此号）
-  v10.10.0 P12 出场配置组合（正T 去 FIXSTOP + 反T 保持 + 推送分级）★ 当前生产
+  v10.6.0 08-26 生产收敛版（P6 标签解耦 + P12 出场配置；合并交付）★ 当前生产
 
 研究线（不占 VERSION）：
   GT-TB v1    = GT v1.0 引擎 + TopBottom ML 过滤（P9 产物，研究态）
   GT-TB v1.1  = + P0 vwap_dev 追高抑制 + P1 ATR 自适应止损（P11 验证 +1.04pp，研究态）
 
 基建（不占 VERSION）：
-  loop_engine v1（状态机 P6-P11 执行器，schtasks 每日 15:05）
+  loop_engine v1（状态机 P6-P12 执行器，schtasks 每日 15:05）
   tick 管道 v1（tick_loader/aggregator/features）
 ```
 
@@ -86,4 +82,6 @@ v10 家族（2026-08-05 起，通用算法引擎 GT 时代）
 | P11 GT-TB v1.1 | 研究 | **不 bump** |
 | P12 出场配置 | 生产旋钮 | bump（MINOR）|
 
-**守门**：loop_engine stage 的 bump 动作前必须检查 `PROD_CONSUMED` 标记（该改动是否被 monitor 实盘消费），未消费 → 禁止 bump。
+**守门（已实现，2026-08-26）**：loop_engine stage 的 bump 动作前必须调用 `core.guard_bump(stage)`；
+`core.PROD_CONSUMED_STAGES` 白名单之外（研究/基建）的 stage 一律拦截 bump 并记录告警。
+当前白名单：`{'p6_exit_label', 'p12_exit_config'}`。

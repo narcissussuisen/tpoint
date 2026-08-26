@@ -85,11 +85,7 @@ def git(*args, env_extra=None):
 
 
 def ensure_ref_after_commit():
-    """commit 后校验：git log 失败 = ref 未落盘 → 从 reflog 恢复分支 tip。
-
-    根因：Windows + Git Bash 下嵌套分支 ref（refs/heads/feat/<name>）文件偶发不落盘，
-    且 commit 尝试写 ref 失败时会清掉旧 loose ref（已多次复现，见 git-loose-ref-recover skill）。
-    """
+    """commit 后校验：git log 失败 = ref 未落盘 → 从 reflog 恢复分支 tip。"""
     rc, out, _ = git('log', '--oneline', '-1')
     if rc == 0 and out.strip():
         return True
@@ -132,6 +128,27 @@ def git_push(*args):
     env = {'GIT_SSH_COMMAND': f'ssh -i {SSH_KEY} -o StrictHostKeyChecking=no '
                               f'-o BatchMode=yes -o ConnectTimeout=15'}
     return git(*args, env_extra=env)
+
+
+# ========== 版本 bump 守门（versioning.md §5，2026-08-26） ==========
+# 只有 monitor 实盘消费的生产改动才允许 bump VERSION；研究/基建阶段一律拦截。
+# 白名单随生产合入阶段扩展（新生产 stage 必须显式加入并过量化评审 gate）。
+PROD_CONSUMED_STAGES = {'p6_exit_label', 'p12_exit_config'}
+
+
+def guard_bump(stage_name, target_version=None):
+    """bump VERSION 前守门。返回 (allowed, reason)。
+    未在白名单（研究/基建）→ 拦截，并推送全局群告警（防静默误 bump）。"""
+    if stage_name in PROD_CONSUMED_STAGES:
+        return True, ''
+    reason = (f'{stage_name} 非生产消费阶段（研究/基建），禁止 bump VERSION'
+              f'{(" 到 " + str(target_version)) if target_version else ""}（versioning.md §0/§5）')
+    log('BYPASS-REJECT: ' + reason)
+    try:
+        push_safe(f'⛔ loop_engine bump 守门拦截：{reason}', HOOK_GLOBAL)
+    except Exception:
+        pass
+    return False, reason
 
 
 # ========== 防重入锁 ==========

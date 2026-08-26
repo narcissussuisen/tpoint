@@ -587,34 +587,19 @@ emit 侧抑制 / 进程崩溃都可能让某根 bar 的信号"被扫描却未推
 - `data/last_pushed_ts.json` 成为新的首扫审计依据（与 `bar_cursor.json` 并存，后者保留作兼容/观察）。
 
 
-## v10.6.0（2026-08-26）P6 止损标签解耦（loop_engine 自动合入）
-> 本版本由 loop_engine 自迭代系统 P6 阶段自动施工：`core/exit_label.py` 作为
-> exit_reason→(中文标签,配色) 唯一真源；`core/monitor.py` 移除旧「止损」坍缩分支，
-> 6 种出场信号（FIXSTOP/STOP/S/TRAIL/TIME/EOD）差异化标签 + 差异化配色。
-> 验证：`tests/test_exit_label.py` 13/13 PASS（TRAIL=移动止盈≠止损 等断言）。
-> 仅展示层变更，不影响信号决策（signal.txt 文本格式不变，卡片 [reason] 标注不变）。
-
-## v10.7.0（2026-08-26）P8 tick/Level2 数据接入（loop_engine 自动合入）
-> loop_engine P8 阶段：接入 data/tick_cache/（381 文件/9 标的，逐笔成交快照）。
-> - 新增 core/tick_loader.py / tick_aggregator.py / tick_features.py（分钟级相对特征：买卖失衡、
->   大单密度、iceberg 代理、方向流）。
-> - 特征落地 data/tick_features/（9 标的 parquet，~8.1 万分钟行），供 P9 顶底捕捉/ML 使用。
-> - 已知约束：tick 价格与 F 盘 1m 复权口径差 ~10x、时间戳仅 HH:MM（无秒）→ 3 秒聚合不可行，
->   特征为相对口径（不依赖绝对价格）。
-> - 验证：tests/test_tick_aggregator.py 11/11 PASS。
-
-## v10.8.0（2026-08-26）P9 顶底捕捉 ML 增强（loop_engine 自动合入）
-> tick 特征提升顶底捕捉：AUC 0.7257→0.759，EHR 77.5%→80.3%。模型 data/ml/topbottom_xgb.json。
-
-## v10.9.0（2026-08-26）P10 全栈 OOS 验证交付（loop_engine 自动合入）
-> P6-P9 全链路闭环：P6 标签解耦(v10.6.0) → P7 证伪(v10.6.0) → P8 tick 基建(v10.7.0) → P9 顶底 ML(v10.8.0) → P10 全栈验证(v10.9.0)。
-> 全栈池级：双向净 -129.14（ML 过滤后 -39.800000000000004）。
-
-## v10.10.0（2026-08-26）P0-P3 出场配置组合落地（loop_engine P12 合入）
-> 依据 2026-08-26 全样本 A/B（4 标的 79~147 日，scripts/stop_exit_ab.py）：
-> - **P0 正T 移除 FIXSTOP**（`monitor.py EXIT_CFG use_fixed_stop=True→False`）：FIXSTOP 1.5% 在正T 上为负贡献（全样本 +29.2pp）。
->   尾部代价：正T 最差单笔 -1.62%→-5.75%（2-3 成仓位组合级约 -1.7%，可接受）；`fixed_stop_pct` 保留热重载旋钮（3.0 档 = +10pp / 尾部 -3.12%）。
-> - **P1 反T 硬止损保持**（`EXIT_CFG_SHORT` 不动）：去掉反T 硬止损 -95.5pp（反T +40.41→-55.09），为反T 正期望生命线。
-> - **P2 推送分级**（`exit_label.py` 增 level 字段）：STOP=action(必推) / FIXSTOP=remind / TRAIL=positive / S·TIME·EOD=info。
-> - **P3 TRAIL/EOD/S 照常推送**（无改动）。
-> 验证：tests/test_exit_label.py 16/16 PASS；全样本池级双向 -129.1% → -100.0%（+29.2pp）。
+## v10.6.0（2026-08-26）08-26 生产收敛版（loop_engine 合并交付，版本治理 v1.0）
+> 版本治理（docs/versioning.md v1.0）：同日多次 MINOR 合并、研究/基建不占生产版本号。
+> 本版本为 v10.5.0 之后 **monitor 实盘消费的全部生产变更** 的合并交付：
+> - **生产·展示层**：P6 止损标签解耦（`core/exit_label.py` 唯一真源，6 种 exit_reason 差异化标签+配色；
+>   `core/monitor.py` 移除「止损」坍缩分支；`tests/test_exit_label.py` 16/16 PASS）。
+> - **生产·出场配置旋钮**：P12 出场配置组合（全样本 A/B 驱动，scripts/stop_exit_ab.py）：
+>   * P0 正T 移除 FIXSTOP（`EXIT_CFG use_fixed_stop=True→False`，正T -169.55→-140.38，+29.2pp；
+>     尾部代价最差单笔 -1.62%→-5.75%，`fixed_stop_pct` 保留热重载旋钮）；
+>   * P1 反T 硬止损保持（`EXIT_CFG_SHORT` 不动，去掉即 -95.5pp）；
+>   * P2 推送分级（`exit_label.py` level 字段：STOP=action/FIXSTOP=remind/TRAIL=positive/S·TIME·EOD=info）；
+>   * P3 TRAIL/EOD/S 照常。
+> - **基建（不占版本号）**：P8 tick/Level2 管道（core/tick_loader/aggregator/features.py，9 标的
+>   相对特征，monitor 未消费）。
+> - **研究线（GT-TB v1/v1.1，不占版本号）**：P9 顶底 ML（AUC 0.726→0.759）+ P10 全栈验证
+>   （ML 过滤双向净 -129.14→-39.80）+ P11 v1.1 改进（+1.04pp）。模型 data/ml/topbottom_xgb.json。
+> - **勘误**：原 P9/P10 曾误 bump v10.8.0/v10.9.0（研究态），已在本版收敛并标注；研究态禁 bump 生产版本。
