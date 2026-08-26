@@ -15,8 +15,8 @@
       "report": null
     },
     "p8_tick_integration": {
-      "status": "pending",
-      "retry": 0,
+      "status": "in_progress",
+      "retry": 1,
       "last_run": null,
       "report": null
     },

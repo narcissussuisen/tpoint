@@ -593,3 +593,12 @@ emit 侧抑制 / 进程崩溃都可能让某根 bar 的信号"被扫描却未推
 > 6 种出场信号（FIXSTOP/STOP/S/TRAIL/TIME/EOD）差异化标签 + 差异化配色。
 > 验证：`tests/test_exit_label.py` 13/13 PASS（TRAIL=移动止盈≠止损 等断言）。
 > 仅展示层变更，不影响信号决策（signal.txt 文本格式不变，卡片 [reason] 标注不变）。
+
+## v10.7.0（2026-08-26）P8 tick/Level2 数据接入（loop_engine 自动合入）
+> loop_engine P8 阶段：接入 data/tick_cache/（381 文件/9 标的，逐笔成交快照）。
+> - 新增 core/tick_loader.py / tick_aggregator.py / tick_features.py（分钟级相对特征：买卖失衡、
+>   大单密度、iceberg 代理、方向流）。
+> - 特征落地 data/tick_features/（9 标的 parquet，~8.1 万分钟行），供 P9 顶底捕捉/ML 使用。
+> - 已知约束：tick 价格与 F 盘 1m 复权口径差 ~10x、时间戳仅 HH:MM（无秒）→ 3 秒聚合不可行，
+>   特征为相对口径（不依赖绝对价格）。
+> - 验证：tests/test_tick_aggregator.py 11/11 PASS。
