@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "current": "p7_bs_balance",
+  "stages": {
+    "p6_exit_label": {
+      "status": "done",
+      "retry": 1,
+      "last_run": null,
+      "report": null
+    },
+    "p7_bs_balance": {
+      "status": "pending",
+      "retry": 0,
+      "last_run": null,
+      "report": null
+    },
+    "p8_tick_integration": {
+      "status": "pending",
+      "retry": 0,
+      "last_run": null,
+      "report": null
+    },
+    "p9_topbottom_ml": {
+      "status": "pending",
+      "retry": 0,
+      "last_run": null,
+      "report": null
+    },
+    "p10_oos_verify": {
+      "status": "pending",
+      "retry": 0,
+      "last_run": null,
+      "report": null
+    }
+  },
+  "history": [
+    {
+      "stage": "p6_exit_label",
+      "ts": "2026-08-26 16:03:19",
+      "result": "PASS",
+      "report": {
+        "stage": "p6_exit_label",
+        "version": "10.6.0",
+        "steps": [
+          {
+            "step": "ensure exit_label.py",
+            "changed": false,
+            "msg": "exit_label.py 已存在"
+          },
+          {
+            "step": "ensure monitor.py ref",
+            "changed": false,
+            "msg": "monitor.py 已引用"
+          }
+        ],
+        "test_output": "= P6 test_exit_label.py ===\n  PASS  6 reasons covered\n  PASS  labels unique\n  PASS  labels non-empty\n  PASS  TRAIL != 止损\n  PASS  STOP != TRAIL\n  PASS  FIXSTOP label\n  PASS  EOD label\n  PASS  colors valid\n  PASS  order covers all\n  PASS  monitor imports EXIT_LABEL_MAP\n  PASS  monitor uses label_for\n  PASS  old collapsed branch removed\n  PASS  label_for fallback\n\nRESULT: PASS (all exit_label tests)\n",
+        "test_pass": true,
+        "version_from": "10.5.0",
+        "version_to": "10.6.0",
+        "commit": "",
+        "push_ok": false,
+        "result": "PASS",
+        "msg": "P6 完成：VERSION 10.5.0→10.6.0，commit ，回归 13/13 PASS，push 失败(见日志)"
+      }
+    },
+    {
+      "stage": "p7_bs_balance",
+      "ts": "2026-08-26 16:03:22",
+      "result": "FAIL",
+      "report": {
+        "stage": "p7_bs_balance",
+        "result": "EXCEPTION",
+        "error": "ModuleNotFoundError(\"No module named 'stages.p7_bs_balance'\")"
+      }
+    }
+  ]
+}
