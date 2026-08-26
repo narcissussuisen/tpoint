@@ -15,7 +15,7 @@
       "report": null
     },
     "p8_tick_integration": {
-      "status": "in_progress",
+      "status": "done",
       "retry": 1,
       "last_run": null,
       "report": null
@@ -461,6 +461,34 @@
         "result": "PASS_VERIFIED_NO_CHANGE",
         "msg": "P7 证伪闭环：A(s_uptrend_guard)/B(反T trend)/F(正T trend) 4 方案全样本均负优化，不采纳任何改动。池级 S/B 本平衡(0.87)，正T 净亏根因在入场侧(B 信号质量)→ P9 治理。",
         "report_file": "C:\\Users\\YZP\\WorkBuddy\\Claw\\tpoint\\docs\\p7_verification_report.md"
+      }
+    },
+    {
+      "stage": "p8_tick_integration",
+      "ts": "2026-08-26 16:35:32",
+      "result": "PASS",
+      "report": {
+        "stage": "p8_tick_integration",
+        "version": "10.7.0",
+        "steps": [
+          {
+            "step": "modules present",
+            "missing": []
+          },
+          {
+            "step": "features generated",
+            "n_files": 9
+          }
+        ],
+        "feature_files": 9,
+        "test_pass": true,
+        "test_out": "ction in {0,1,2}\n  PASS  agg non-empty\n  PASS  h >= max(o,c)\n  PASS  l <= min(o,c)\n  PASS  vwap within [l,h]\n  PASS  large_tape>=1\n  PASS  buy_ratio in [0,1]\n  PASS  feature cols present\n  PASS  vwap_dev finite\n  INFO  tick/F-1m 价格比 ≈ 9.9（复权口径差 ~10x，相对特征可用）\n\nRESULT: PASS (all tick aggregator tests)\n",
+        "version_from": "10.6.0",
+        "version_to": "10.7.0",
+        "commit": "28d1097",
+        "push_ok": true,
+        "result": "PASS",
+        "msg": "P8 完成：tick 管道上线（9 标的特征，单测 11/11），commit 28d1097，push 成功"
       }
     }
   ]

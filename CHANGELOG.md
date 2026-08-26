@@ -602,3 +602,6 @@ emit 侧抑制 / 进程崩溃都可能让某根 bar 的信号"被扫描却未推
 > - 已知约束：tick 价格与 F 盘 1m 复权口径差 ~10x、时间戳仅 HH:MM（无秒）→ 3 秒聚合不可行，
 >   特征为相对口径（不依赖绝对价格）。
 > - 验证：tests/test_tick_aggregator.py 11/11 PASS。
+
+## v10.8.0（2026-08-26）P9 顶底捕捉 ML 增强（loop_engine 自动合入）
+> tick 特征提升顶底捕捉：AUC 0.7257→0.759，EHR 77.5%→80.3%。模型 data/ml/topbottom_xgb.json。
