@@ -78,7 +78,53 @@ def git(*args, env_extra=None):
     r = subprocess.run(['git', '-C', ROOT] + list(args),
                        capture_output=True, text=True, encoding='utf-8', env=env,
                        timeout=120)
+    # [P6.5 防线] commit 成功后自动校验 ref 落盘（本机 NTFS 嵌套 ref 目录偶发 loose-ref 失效）
+    if args and args[0] == 'commit' and r.returncode == 0:
+        ensure_ref_after_commit()
     return r.returncode, (r.stdout or '').strip(), (r.stderr or '').strip()
+
+
+def ensure_ref_after_commit():
+    """commit 后校验：git log 失败 = ref 未落盘 → 从 reflog 恢复分支 tip。
+
+    根因：Windows + Git Bash 下嵌套分支 ref（refs/heads/feat/<name>）文件偶发不落盘，
+    且 commit 尝试写 ref 失败时会清掉旧 loose ref（已多次复现，见 git-loose-ref-recover skill）。
+    """
+    rc, out, _ = git('log', '--oneline', '-1')
+    if rc == 0 and out.strip():
+        return True
+    log('ref check: loose-ref 未落盘，尝试从 reflog 恢复…')
+    rc, branch, _ = git('symbolic-ref', '--short', 'HEAD')
+    if rc != 0 or not branch:
+        return False
+    log_path = os.path.join(ROOT, '.git', 'logs', 'HEAD')
+    tip = None
+    try:
+        with open(log_path, encoding='utf-8', errors='replace') as f:
+            for line in f:
+                parts = line.split()
+                # reflog 行：<old> <new> <name> <email> <ts> <tz> [msg...]
+                if len(parts) >= 7 and ('commit' in line or len(parts[1]) == 40):
+                    tip = parts[1]
+    except Exception as e:
+        log(f'ref repair: 读 reflog 失败 {e}')
+        return False
+    if not tip or len(tip) != 40:
+        log('ref repair: 未找到有效 tip')
+        return False
+    ref_path = os.path.join(ROOT, '.git', 'refs', 'heads', branch.replace('/', os.sep))
+    try:
+        os.makedirs(os.path.dirname(ref_path), exist_ok=True)
+        with open(ref_path, 'w', encoding='ascii') as f:
+            f.write(tip + '\n')
+        # 二次校验
+        rc2, out2, _ = git('log', '--oneline', '-1')
+        if rc2 == 0 and out2.strip():
+            log(f'ref repaired: {branch} -> {tip[:8]} ✓')
+            return True
+    except Exception as e:
+        log(f'ref repair 失败: {e}')
+    return False
 
 
 def git_push(*args):
