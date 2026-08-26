@@ -40,6 +40,13 @@ def main():
     check('labels unique', len(set(labels)) == len(labels), f'dup={[l for l in labels if labels.count(l) > 1]}')
     check('labels non-empty', all(len(l) >= 2 for l in labels))
 
+    # 2b) P12 推送分级：每个 reason 有合法 level（action/remind/positive/info）
+    valid_levels = {'action', 'remind', 'positive', 'info'}
+    lvls = set(v[2] for v in EXIT_LABEL_MAP.values())
+    check('levels valid', lvls <= valid_levels, f'bad={lvls - valid_levels}')
+    check('STOP is action-level', EXIT_LABEL_MAP['STOP'][2] == 'action')
+    check('TRAIL is positive-level', EXIT_LABEL_MAP['TRAIL'][2] == 'positive')
+
     # 3) 核心 bug 修复：TRAIL 语义 = 移动止盈（不是「止损」）；STOP 与 TRAIL 标签不同
     check('TRAIL != 止损', EXIT_LABEL_MAP['TRAIL'][0] != '止损',
           f"got {EXIT_LABEL_MAP['TRAIL'][0]}")
@@ -64,8 +71,8 @@ def main():
     check('old collapsed branch removed', "('STOP', 'TRAIL', 'TIME')" not in src,
           '旧坍缩分支应已移除')
 
-    # 7) label_for 未知 reason 兜底
-    lb, _col = label_for('__unknown__')
+    # 7) label_for 未知 reason 兜底（三元组）
+    lb, _col, _lvl = label_for('__unknown__')
     check('label_for fallback', lb == '卖出')
 
     print()

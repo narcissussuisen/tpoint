@@ -104,14 +104,16 @@ PUSH_PENDING_FILE = os.path.join(BASE_DIR, 'data', 'push_pending.jsonl')
 
 # ========== 出场管理配置（生产方向，已锁定） ==========
 # 仅移动止损：浮盈≥0.4% 激活，从浮动高点回撤 0.6% 触发平仓；关硬止损/时间止损；S信号作自然出场
-# [P2.2] 固定百分比硬止损 FIXSTOP 默认开启：实盘 use_stop=False 时无下行封顶，
-# 尾部暴跌拖垮 P/L；FIXSTOP 为 EV 中性"尾端断路器"（不提升每笔期望/夏普，仅把最差单笔
-# 从 -8.5% 上界封到约 -1.5%）。回测返工结论选 1.5% 作平衡档（尾端封 -1.62%、
-# 对 WR/EV 影响最小、止损频次低于 1.2%）。monitor_config.json 顶层 _global 或 per-symbol
-# 加 use_fixed_stop/fixed_stop_pct 可热重载覆盖。
+# [P2.2→P12] 固定百分比硬止损 FIXSTOP：v10.5.0 曾开 1.5%（尾端断路器：把最差单笔 -8.5%→-1.5%），
+# 但 2026-08-26 A/B 全样本（4 标的 79~147 日）证伪其在正T 上的 EV 中性假设：
+#   - 移除 FIXSTOP 正T 净 -169.55→-140.38（+29.2pp），因 1.5% 过紧砍掉大量本可回本的盈利单
+#   - 尾部代价：正T 最差单笔 -1.62%→-5.75%（2-3 成仓位下组合级约 -1.7%，可接受）
+#   - 反T（EXIT_CFG_SHORT）硬止损保持（去掉反T 硬止损 -95.5pp，为反T 正期望生命线）
+# 结论：正T 关 FIXSTOP（use_fixed_stop=False）；fixed_stop_pct 保留为 monitor_config.json
+# 热重载旋钮（如需尾部保护可改回，如 3.0 档 = +10pp / 尾部 -3.12%）。
 EXIT_CFG = make_config(use_stop=False, use_time=False, use_trailing=True,
                        trail_activate_pct=0.4, trail_pct=0.6, s_signal_exit=True,
-                       use_fixed_stop=True, fixed_stop_pct=1.5)
+                       use_fixed_stop=False, fixed_stop_pct=1.5)
 # [P3.2] 反T/空仓出场配置（DEFAULT 类，保留正期望）：反T 信号期望值本为正
 # (回测 DEFAULT 出场净+52.7%)，但正T 那套紧 trail(PROD) 会把反T 期望值打负(净-9.4%)且虚高 WR。
 # 故反T 单独用 DEFAULT 类出场(硬止损atr1.5 + 时间止损90 + trail0.4/0.6, use_fixed_stop=False)，
@@ -986,8 +988,8 @@ def emit_card(s, sym=None, sim=False):
     else:
         if exit_reason == 'B':   # 空仓回补 = 买回
             op, color = '买入', 'green'
-        elif exit_reason in EXIT_LABEL_MAP:   # P6: 差异化标签（FIXSTOP/STOP/S/TRAIL/TIME/EOD）
-            op, color = label_for(exit_reason)
+        elif exit_reason in EXIT_LABEL_MAP:   # P6/P12: 差异化标签（FIXSTOP/STOP/S/TRAIL/TIME/EOD）
+            op, color, _lvl = label_for(exit_reason)   # level 供推送分级（当前全部推送，未来按级过滤）
         else:                     # exit_reason == 'S' 平多 = 卖平；未知 reason 保守兜底
             if '空平' in (level_type or ''):
                 op, color = '买入', 'green'

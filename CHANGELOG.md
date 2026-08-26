@@ -609,3 +609,12 @@ emit 侧抑制 / 进程崩溃都可能让某根 bar 的信号"被扫描却未推
 ## v10.9.0（2026-08-26）P10 全栈 OOS 验证交付（loop_engine 自动合入）
 > P6-P9 全链路闭环：P6 标签解耦(v10.6.0) → P7 证伪(v10.6.0) → P8 tick 基建(v10.7.0) → P9 顶底 ML(v10.8.0) → P10 全栈验证(v10.9.0)。
 > 全栈池级：双向净 -129.14（ML 过滤后 -39.800000000000004）。
+
+## v10.10.0（2026-08-26）P0-P3 出场配置组合落地（loop_engine P12 合入）
+> 依据 2026-08-26 全样本 A/B（4 标的 79~147 日，scripts/stop_exit_ab.py）：
+> - **P0 正T 移除 FIXSTOP**（`monitor.py EXIT_CFG use_fixed_stop=True→False`）：FIXSTOP 1.5% 在正T 上为负贡献（全样本 +29.2pp）。
+>   尾部代价：正T 最差单笔 -1.62%→-5.75%（2-3 成仓位组合级约 -1.7%，可接受）；`fixed_stop_pct` 保留热重载旋钮（3.0 档 = +10pp / 尾部 -3.12%）。
+> - **P1 反T 硬止损保持**（`EXIT_CFG_SHORT` 不动）：去掉反T 硬止损 -95.5pp（反T +40.41→-55.09），为反T 正期望生命线。
+> - **P2 推送分级**（`exit_label.py` 增 level 字段）：STOP=action(必推) / FIXSTOP=remind / TRAIL=positive / S·TIME·EOD=info。
+> - **P3 TRAIL/EOD/S 照常推送**（无改动）。
+> 验证：tests/test_exit_label.py 16/16 PASS；全样本池级双向 -129.1% → -100.0%（+29.2pp）。
