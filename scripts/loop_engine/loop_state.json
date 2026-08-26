@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "current": "p7_bs_balance",
+  "current": "p10_oos_verify",
   "stages": {
     "p6_exit_label": {
       "status": "done",
@@ -21,10 +21,13 @@
       "report": null
     },
     "p9_topbottom_ml": {
-      "status": "pending",
+      "status": "done",
       "retry": 0,
       "last_run": null,
-      "report": null
+      "report": {
+        "result": "PASS",
+        "msg": "AUC 0.726→0.759 EHR 77.5→80.3%"
+      }
     },
     "p10_oos_verify": {
       "status": "pending",
