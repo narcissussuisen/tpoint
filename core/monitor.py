@@ -26,6 +26,8 @@ from exit_manager import make_config, limit_thr
 # flag 门控（USE_GENERAL_ENGINE）+ miji 兜底，热重载、实时安全。
 from general_signal import (check_general_b_trigger, check_general_s_trigger,
                              detect_signals_general, GeneralConfig, GENERAL_DEFAULT)
+# 出场信号标签映射（P6 单一真源）：exit_reason -> (中文标签, 配色)
+from exit_label import EXIT_LABEL_MAP, label_for
 # ML 信号打分：39 特征单一实现（core/ml_features，模块2.2）
 # fail-open：ml_features.py 缺失（v10.0.0 灾难恢复后未找回，从未入 git）时
 # FEAT_ALL/ml_build_feature_row=None；ml_enable=false 时该路径不执行零影响，
@@ -982,11 +984,11 @@ def emit_card(s, sym=None, sim=False):
     elif is_s:
         op, color = '卖出', 'red'
     else:
-        if exit_reason in ('STOP', 'TRAIL', 'TIME'):
-            op, color = '止损', 'blue'
-        elif exit_reason == 'B':   # 空仓回补 = 买回
+        if exit_reason == 'B':   # 空仓回补 = 买回
             op, color = '买入', 'green'
-        else:                     # exit_reason == 'S' 平多 = 卖平；FIXSTOP/EOD 多仓=卖平、空仓(空平)=买回
+        elif exit_reason in EXIT_LABEL_MAP:   # P6: 差异化标签（FIXSTOP/STOP/S/TRAIL/TIME/EOD）
+            op, color = label_for(exit_reason)
+        else:                     # exit_reason == 'S' 平多 = 卖平；未知 reason 保守兜底
             if '空平' in (level_type or ''):
                 op, color = '买入', 'green'
             else:

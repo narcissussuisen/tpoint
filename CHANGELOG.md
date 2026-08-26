@@ -586,3 +586,10 @@ emit 侧抑制 / 进程崩溃都可能让某根 bar 的信号"被扫描却未推
   下次首扫都会以 last_pushed 为界补发；同时严格 `>` 判定保证不会重发已推送信号。
 - `data/last_pushed_ts.json` 成为新的首扫审计依据（与 `bar_cursor.json` 并存，后者保留作兼容/观察）。
 
+
+## v10.6.0（2026-08-26）P6 止损标签解耦（loop_engine 自动合入）
+> 本版本由 loop_engine 自迭代系统 P6 阶段自动施工：`core/exit_label.py` 作为
+> exit_reason→(中文标签,配色) 唯一真源；`core/monitor.py` 移除旧「止损」坍缩分支，
+> 6 种出场信号（FIXSTOP/STOP/S/TRAIL/TIME/EOD）差异化标签 + 差异化配色。
+> 验证：`tests/test_exit_label.py` 13/13 PASS（TRAIL=移动止盈≠止损 等断言）。
+> 仅展示层变更，不影响信号决策（signal.txt 文本格式不变，卡片 [reason] 标注不变）。
