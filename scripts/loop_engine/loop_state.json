@@ -9,8 +9,8 @@
       "report": null
     },
     "p7_bs_balance": {
-      "status": "pending",
-      "retry": 0,
+      "status": "done",
+      "retry": 2,
       "last_run": null,
       "report": null
     },
@@ -71,6 +71,396 @@
         "stage": "p7_bs_balance",
         "result": "EXCEPTION",
         "error": "ModuleNotFoundError(\"No module named 'stages.p7_bs_balance'\")"
+      }
+    },
+    {
+      "stage": "p7_bs_balance",
+      "ts": "2026-08-26 16:30:10",
+      "result": "PASS",
+      "report": {
+        "pool": [
+          "161129.SZ",
+          "513310.SH",
+          "300759.SZ",
+          "600721.SH"
+        ],
+        "per_sym": [
+          {
+            "sym": "161129.SZ",
+            "days": 79,
+            "base": {
+              "b": 686,
+              "s": 467,
+              "sb_ratio": 0.68,
+              "long_wr": 36.2,
+              "long_net": -65.27,
+              "short_net": 12.9
+            },
+            "A": {
+              "b": 686,
+              "s": 338,
+              "sb_ratio": 0.49,
+              "long_wr": 35.4,
+              "long_net": -65.78,
+              "short_net": -0.34
+            },
+            "B": {
+              "b": 686,
+              "s": 338,
+              "sb_ratio": 0.49,
+              "long_wr": 35.4,
+              "long_net": -65.78,
+              "short_net": -4.91
+            },
+            "F": {
+              "b": 686,
+              "s": 467,
+              "sb_ratio": 0.68,
+              "long_wr": 31.9,
+              "long_net": -75.47,
+              "short_net": 12.9
+            }
+          },
+          {
+            "sym": "513310.SH",
+            "days": 79,
+            "base": {
+              "b": 453,
+              "s": 465,
+              "sb_ratio": 1.03,
+              "long_wr": 40.5,
+              "long_net": -65.28,
+              "short_net": 7.43
+            },
+            "A": {
+              "b": 454,
+              "s": 296,
+              "sb_ratio": 0.65,
+              "long_wr": 40.5,
+              "long_net": -65.05,
+              "short_net": 2.95
+            },
+            "B": {
+              "b": 454,
+              "s": 296,
+              "sb_ratio": 0.65,
+              "long_wr": 40.5,
+              "long_net": -65.05,
+              "short_net": -8.42
+            },
+            "F": {
+              "b": 453,
+              "s": 465,
+              "sb_ratio": 1.03,
+              "long_wr": 22.4,
+              "long_net": -64.72,
+              "short_net": 7.43
+            }
+          },
+          {
+            "sym": "300759.SZ",
+            "days": 147,
+            "base": {
+              "b": 1149,
+              "s": 986,
+              "sb_ratio": 0.86,
+              "long_wr": 52.8,
+              "long_net": -30.48,
+              "short_net": 3.0
+            },
+            "A": {
+              "b": 1149,
+              "s": 817,
+              "sb_ratio": 0.71,
+              "long_wr": 53.4,
+              "long_net": -29.02,
+              "short_net": -6.64
+            },
+            "B": {
+              "b": 1149,
+              "s": 817,
+              "sb_ratio": 0.71,
+              "long_wr": 53.4,
+              "long_net": -29.02,
+              "short_net": -0.6
+            },
+            "F": {
+              "b": 1149,
+              "s": 986,
+              "sb_ratio": 0.86,
+              "long_wr": 11.4,
+              "long_net": -121.32,
+              "short_net": 3.0
+            }
+          },
+          {
+            "sym": "600721.SH",
+            "days": 147,
+            "base": {
+              "b": 1161,
+              "s": 1052,
+              "sb_ratio": 0.91,
+              "long_wr": 57.6,
+              "long_net": -8.52,
+              "short_net": 17.08
+            },
+            "A": {
+              "b": 1162,
+              "s": 943,
+              "sb_ratio": 0.81,
+              "long_wr": 58.2,
+              "long_net": -8.39,
+              "short_net": 13.42
+            },
+            "B": {
+              "b": 1162,
+              "s": 943,
+              "sb_ratio": 0.81,
+              "long_wr": 58.2,
+              "long_net": -8.39,
+              "short_net": 12.43
+            },
+            "F": {
+              "b": 1161,
+              "s": 1052,
+              "sb_ratio": 0.91,
+              "long_wr": 16.8,
+              "long_net": -144.4,
+              "short_net": 17.08
+            }
+          }
+        ],
+        "summary": {
+          "base": {
+            "sb_ratio": 0.87,
+            "long_wr": 46.8,
+            "long_net": -169.55,
+            "short_net": 40.41
+          },
+          "A": {
+            "sb_ratio": 0.67,
+            "long_wr": 46.9,
+            "long_net": -168.24,
+            "short_net": 9.39
+          },
+          "B": {
+            "sb_ratio": 0.67,
+            "long_wr": 46.9,
+            "long_net": -168.24,
+            "short_net": -1.5
+          },
+          "F": {
+            "sb_ratio": 0.87,
+            "long_wr": 20.6,
+            "long_net": -405.91,
+            "short_net": 40.41
+          }
+        },
+        "gate": {
+          "sb_ratio_ok": true,
+          "long_improved": false,
+          "short_not_worse": true,
+          "pass": false
+        },
+        "target_version": "10.7.0",
+        "result": "PASS_VERIFIED_NO_CHANGE",
+        "msg": "P7 证伪闭环：A(s_uptrend_guard)/B(反T trend)/F(正T trend) 4 方案全样本均负优化，不采纳任何改动。池级 S/B 本平衡(0.87)，正T 净亏根因在入场侧(B 信号质量)→ P9 治理。",
+        "report_file": "C:\\Users\\YZP\\WorkBuddy\\Claw\\tpoint\\docs\\p7_verification_report.md"
+      }
+    },
+    {
+      "stage": "p7_bs_balance",
+      "ts": "2026-08-26 16:30:38",
+      "result": "PASS",
+      "report": {
+        "pool": [
+          "161129.SZ",
+          "513310.SH",
+          "300759.SZ",
+          "600721.SH"
+        ],
+        "per_sym": [
+          {
+            "sym": "161129.SZ",
+            "days": 79,
+            "base": {
+              "b": 686,
+              "s": 467,
+              "sb_ratio": 0.68,
+              "long_wr": 36.2,
+              "long_net": -65.27,
+              "short_net": 12.9
+            },
+            "A": {
+              "b": 686,
+              "s": 338,
+              "sb_ratio": 0.49,
+              "long_wr": 35.4,
+              "long_net": -65.78,
+              "short_net": -0.34
+            },
+            "B": {
+              "b": 686,
+              "s": 338,
+              "sb_ratio": 0.49,
+              "long_wr": 35.4,
+              "long_net": -65.78,
+              "short_net": -4.91
+            },
+            "F": {
+              "b": 686,
+              "s": 467,
+              "sb_ratio": 0.68,
+              "long_wr": 31.9,
+              "long_net": -75.47,
+              "short_net": 12.9
+            }
+          },
+          {
+            "sym": "513310.SH",
+            "days": 79,
+            "base": {
+              "b": 453,
+              "s": 465,
+              "sb_ratio": 1.03,
+              "long_wr": 40.5,
+              "long_net": -65.28,
+              "short_net": 7.43
+            },
+            "A": {
+              "b": 454,
+              "s": 296,
+              "sb_ratio": 0.65,
+              "long_wr": 40.5,
+              "long_net": -65.05,
+              "short_net": 2.95
+            },
+            "B": {
+              "b": 454,
+              "s": 296,
+              "sb_ratio": 0.65,
+              "long_wr": 40.5,
+              "long_net": -65.05,
+              "short_net": -8.42
+            },
+            "F": {
+              "b": 453,
+              "s": 465,
+              "sb_ratio": 1.03,
+              "long_wr": 22.4,
+              "long_net": -64.72,
+              "short_net": 7.43
+            }
+          },
+          {
+            "sym": "300759.SZ",
+            "days": 147,
+            "base": {
+              "b": 1149,
+              "s": 986,
+              "sb_ratio": 0.86,
+              "long_wr": 52.8,
+              "long_net": -30.48,
+              "short_net": 3.0
+            },
+            "A": {
+              "b": 1149,
+              "s": 817,
+              "sb_ratio": 0.71,
+              "long_wr": 53.4,
+              "long_net": -29.02,
+              "short_net": -6.64
+            },
+            "B": {
+              "b": 1149,
+              "s": 817,
+              "sb_ratio": 0.71,
+              "long_wr": 53.4,
+              "long_net": -29.02,
+              "short_net": -0.6
+            },
+            "F": {
+              "b": 1149,
+              "s": 986,
+              "sb_ratio": 0.86,
+              "long_wr": 11.4,
+              "long_net": -121.32,
+              "short_net": 3.0
+            }
+          },
+          {
+            "sym": "600721.SH",
+            "days": 147,
+            "base": {
+              "b": 1161,
+              "s": 1052,
+              "sb_ratio": 0.91,
+              "long_wr": 57.6,
+              "long_net": -8.52,
+              "short_net": 17.08
+            },
+            "A": {
+              "b": 1162,
+              "s": 943,
+              "sb_ratio": 0.81,
+              "long_wr": 58.2,
+              "long_net": -8.39,
+              "short_net": 13.42
+            },
+            "B": {
+              "b": 1162,
+              "s": 943,
+              "sb_ratio": 0.81,
+              "long_wr": 58.2,
+              "long_net": -8.39,
+              "short_net": 12.43
+            },
+            "F": {
+              "b": 1161,
+              "s": 1052,
+              "sb_ratio": 0.91,
+              "long_wr": 16.8,
+              "long_net": -144.4,
+              "short_net": 17.08
+            }
+          }
+        ],
+        "summary": {
+          "base": {
+            "sb_ratio": 0.87,
+            "long_wr": 46.8,
+            "long_net": -169.55,
+            "short_net": 40.41
+          },
+          "A": {
+            "sb_ratio": 0.67,
+            "long_wr": 46.9,
+            "long_net": -168.24,
+            "short_net": 9.39
+          },
+          "B": {
+            "sb_ratio": 0.67,
+            "long_wr": 46.9,
+            "long_net": -168.24,
+            "short_net": -1.5
+          },
+          "F": {
+            "sb_ratio": 0.87,
+            "long_wr": 20.6,
+            "long_net": -405.91,
+            "short_net": 40.41
+          }
+        },
+        "gate": {
+          "sb_ratio_ok": true,
+          "long_improved": false,
+          "short_not_worse": true,
+          "pass": false
+        },
+        "target_version": "10.7.0",
+        "result": "PASS_VERIFIED_NO_CHANGE",
+        "msg": "P7 证伪闭环：A(s_uptrend_guard)/B(反T trend)/F(正T trend) 4 方案全样本均负优化，不采纳任何改动。池级 S/B 本平衡(0.87)，正T 净亏根因在入场侧(B 信号质量)→ P9 治理。",
+        "report_file": "C:\\Users\\YZP\\WorkBuddy\\Claw\\tpoint\\docs\\p7_verification_report.md"
       }
     }
   ]
