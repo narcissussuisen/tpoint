@@ -7,6 +7,20 @@
 > 方法论版本号与算法版本号**解耦**：方法论 bump 由方法论文档驱动，算法 bump 由 `VERSION` 驱动；
 > 两者对齐索引见 `docs/methodology_framework.md` §11。
 
+## v10.9.1（2026-09-03）自迭代闭环硬化 T0/T1：运行身份 + 失败语义透传（方案 v2 首批交付）
+> 依据 `docs/self_iteration_loop_hardening_plan.md` v2（09-02 外部审计 + 评审 7 修正整合 + 用户四项拍板）。
+> PATCH 级基建：不改任何信号语义。⚠️ VERSION 文件存在历史欠账（当前 10.6.0，loop_engine v10.6.0→v10.9.0 阶段未同步 bump），本条目按生产主线 v10.9.0 + PATCH 记；runtime_identity 落盘的 version 字段以 VERSION 文件实际值为准（身份记录忠实原则）。版本锚点对齐列入待办。
+
+### 核心变更
+- **T0 运行身份**（新增 `scripts/runtime_identity.py`）：每次流水线头部生成 run_id（YYYYMMDD-HHMMSS-pid），落盘 git commit/dirty、VERSION、strategy_version、execution_model_version（samebar-legacy，T3 后切 nextbar-v1）、config_hash / watchlist_hash / model_hash / effective_strategy_hash（canonical hash 唯一实现源，T4 effect_ledger 必须 import 复用）；watchlist vs monitor_config per-symbol 一致性校验（warn 不阻断）。解决"文件生成了，但不知道是哪套算法/哪套配置生成的"。
+- **T1 失败语义透传**（新增 `scripts/pipeline_status.py` + `run_daily_review.bat` 接入 + `daily_report_push.py` [DEGRADED] 前缀）：
+  - 七态 RUNNING/OK/DEGRADED/FAILED/SKIPPED/NOT_RUN/INTERRUPTED；每步开始前预写 RUNNING——进程中途被杀可识别（INTERRUPTED），不再残留上一轮成功态。
+  - record 带 run_id + expected_outputs 产物存在性校验（rc==0 但产物缺失=DEGRADED；rc==77 约定=SKIPPED）；summarize 只读当前日期+当前 run_id——手工补跑两次不互相污染。
+  - 关键步（live_review/reconcile/daily_report/daily_iterate/closed_loop/auto_tune）任一 FAILED/INTERRUPTED/NOT_RUN → 推 b4eba7a9 全局群 + bat `exit /b 2`（schtasks Last Result 显示失败，终结"任务永远显示成功"的吞错）。
+  - 日报标题 [DEGRADED] 前缀 + 风险节列异常步骤明细（流水线中段检查语义，含前置步骤 RUNNING 残留检测；daily_report 自身排除）。
+- 验收：注入 daily_iterate rc=2 → summarize exit 2 + 飞书告警 ✅；DEGRADED（缺产物）/INTERRUPTED（RUNNING 残留）/run_id 隔离（跨 run 零泄漏）边界测试 ✅；bat 三铁律（CRLF 零孤立 LF / usebackq 无新增双引号 / 15 个引用脚本存在性）✅。
+- 硬门槛提醒：**T2 未通过：禁止任何自动调参**（下一任务：寻优同参 + 两层确定性验收）。
+
 ## v10.5.0（2026-08-21）R2P 全链路闭环交付版（P0→P5 固化）
 > 本次为「Research-to-Prod gap-closing」6 阶段路线图的**固化交付版**：P0 地基(DET) → P1.1/P1.2/P1.3 噪声与门控 → P2 出场盈亏比治理 → P3 配对/反T → P4 regime门控+OOS → P5 固化+监控+说明。
 > 每个阶段均经**量化专家 agent 独立评审 gate（PASS）** 方可进入下一阶段（loop engineering）。

@@ -33,6 +33,52 @@ RT_GLOB = os.path.join(BASE, 'data', 'roundtrip', '*.jsonl')
 REPORT_HOOK = 'https://open.feishu.cn/open-apis/bot/v2/hook/a35d7f52-9ed2-47df-a929-f11aaf89025d'
 GLOBAL_HOOK = 'https://open.feishu.cn/open-apis/bot/v2/hook/b4eba7a9-0504-4bd6-8aa3-a60fc8154103'
 
+
+def pipeline_health(today):
+    """T1 失败语义透传（2026-09-03 自迭代闭环硬化方案 v2）：
+    只读当日 step_status 中当前 run_id 的已有终态记录；任一 FAILED/DEGRADED/INTERRUPTED
+    → 日报标题加 [DEGRADED] 前缀 + 风险节列明细。
+    注意：本脚本在流水线中段执行（daily_iterate/closed_loop/auto_tune 尚未跑），
+    NOT_RUN 不算异常；无 step_status 记录（T1 上线前历史重跑）时静默跳过。"""
+    try:
+        cur_path = os.path.join(BASE, 'data', 'step_status', 'current_run.json')
+        with open(cur_path, encoding='utf-8') as f:
+            rid = json.load(f).get('run_id')
+        if not rid or not str(rid).startswith(today.replace('-', '')):
+            return '', []
+        day_path = os.path.join(BASE, 'data', 'step_status', f'{today}.jsonl')
+        if not os.path.exists(day_path):
+            return '', []
+        finals = {}
+        with open(day_path, encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                if r.get('run_id') == rid:
+                    finals[r.get('step')] = r
+        bad = []
+        for step, rec in finals.items():
+            st = rec.get('status')
+            if st in ('FAILED', 'INTERRUPTED'):
+                rc = rec.get('rc')
+                bad.append(f"{step}={st}" + (f"(rc={rc})" if rc is not None else ''))
+            elif st == 'DEGRADED':
+                miss = [os.path.basename(m) for m in (rec.get('missing_outputs') or [])]
+                bad.append(f"{step}=DEGRADED" + (f"(缺产物:{','.join(miss)})" if miss else ''))
+            elif st == 'RUNNING' and step != 'daily_report':
+                # 本步骤之前的步骤残留 RUNNING = record 丢失（进程中断）；daily_report 自身正在运行，排除
+                bad.append(f'{step}=RUNNING残留(疑似中断)')
+        if not bad:
+            return '', []
+        return '[DEGRADED] ', [f"⚠️ 流水线异常步骤（run={rid}）：{'、'.join(bad)}"]
+    except Exception:
+        return '', []
+
 HOLIDAYS_2026 = {
     '2026-01-01', '2026-01-02', '2026-01-26', '2026-01-27', '2026-01-28', '2026-01-29', '2026-01-30',
     '2026-02-02', '2026-02-03', '2026-04-06', '2026-05-01', '2026-05-04', '2026-05-05',
@@ -209,8 +255,9 @@ def main():
     if is_friday:
         plans = [p.replace('次日', '下周一') for p in plans] + [WEEKLY_REVIEW_LINE]
 
+    dg_prefix, dg_lines = pipeline_health(today)
     lines = [
-        f'【tpoint 自迭代日报】{today}（{week_cn}·交易日）｜当前轮次 {rnd} {rname} D{d_in_round}',
+        f'{dg_prefix}【tpoint 自迭代日报】{today}（{week_cn}·交易日）｜当前轮次 {rnd} {rname} D{d_in_round}',
         '',
         '■ 一、目标达成度',
         '· 终极目标（阶段一）：WR_prod_exec(滚动20日)≥55% 且 |G1|≤1pp（对齐回测 C_prod 56.2%）',
@@ -226,6 +273,7 @@ def main():
         '',
         '■ 三、主要阻碍/风险',
         ('1. 无' if rec_ok else '1. 当日 reconcile 缺失 → 需人工检查 run_daily_review.bat 日志'),
+        *dg_lines,
         '',
         f'■ {sec4_title}',
         *[f'{i + 1}. {p}' for i, p in enumerate(plans)],
