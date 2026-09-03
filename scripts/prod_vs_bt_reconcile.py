@@ -38,6 +38,7 @@ import numpy as np
 import daily_signal_review as R   # 复用数据加载/复算/计数/审计解析（口径与复盘一致）
 from datasource import MootdxDataSource
 from exit_manager import make_config, cost_for_symbol, simulate_day, aggregate_metrics
+from simulate_position_sm import simulate_position_sm  # [T1.5] 单一仓位状态机
 from backtest_screener import load_1m_csv, group_by_day, day_prev_close  # F盘兜底加载
 
 F_DATA = r'F:\keyfactor_data\1m'   # tickflow 1m 历史库（历史日兜底；mootdx 仅3-4天上限）
@@ -46,6 +47,42 @@ F_DATA = r'F:\keyfactor_data\1m'   # tickflow 1m 历史库（历史日兜底；m
 PROD_CONFIG = dict(use_stop=False, use_time=False,
                    use_trailing=True, trail_activate_pct=0.4, trail_pct=0.6,
                    s_signal_exit=True)
+# [T1.5 2026-09-03] 反T 出场配置 = monitor EXIT_CFG_SHORT（DEFAULT 类：硬止损atr1.5 +
+# 时间止损90 + trail0.4/0.6 + FIXSTOP off）。此前 recalc/live 只用 simulate_day（纯多头）
+# ——反T 日的 S 被忽略、B 回补被误判正T 建仓持到 EOD（09-03 603318 实证：live +2.067%
+# vs recalc -2.348%，符号相反）。现统一切换 simulate_position_sm 单一仓位状态机
+# （P0-20260903-reverseT-not-modeled 根治）。
+PROD_CONFIG_SHORT = dict(use_stop=True, stop_atr_mult=1.5, stop_mode='atr',
+                         use_time=True, time_stop_bars=90,
+                         use_trailing=True, trail_activate_pct=0.4, trail_pct=0.6,
+                         s_signal_exit=True, use_fixed_stop=False)
+
+# 底仓 ledger（方案 A 跨日续算，用户 09-03 拍板）：记录复算侧各标的底仓状态。
+# 语义：反T = 卖底仓→B 回补（底仓不变）；反T EOD 强平 = 底仓卖出未回补 → has_base=false；
+# 正T 不影响底仓。首见标的默认 false（保守禁反T），需人工 seed（603318 用户实际持有）。
+BASE_LEDGER = os.path.join(ROOT, 'data', 'base_position_ledger.json')
+
+
+def load_base_ledger():
+    try:
+        with open(BASE_LEDGER, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_base_ledger(ledger):
+    tmp = BASE_LEDGER + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(ledger, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, BASE_LEDGER)
+
+
+def has_base_of(ledger, sym, date):
+    rec = ledger.get(sym)
+    if not rec or not isinstance(rec, dict):
+        return False  # 保守：未知底仓禁反T（防裸卖空）
+    return bool(rec.get('has_base'))
 
 SIG_TXT   = os.path.join(ROOT, 'data', 'signal.txt')
 AUDIT     = os.path.join(ROOT, 'data', 'push_audit.jsonl')
@@ -278,9 +315,12 @@ def main():
 
     ds = MootdxDataSource()
     mcfg = make_config(**PROD_CONFIG)
+    mcfg_short = make_config(**PROD_CONFIG_SHORT)
+    base_ledger = load_base_ledger()
 
     result = {'date': date, 'generated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-              'config': 'PROD_CONFIG(trail0.4/0.6+s_exit, no stop/time) + cost_for_symbol',
+              'config': 'PROD_CONFIG(trail0.4/0.6+s_exit) + PROD_CONFIG_SHORT(DEFAULT类) + position_sm-v1 + cost_for_symbol',
+              'position_model': 'simulate_position_sm-v1（T1.5 单一仓位状态机，一笔信号一个动作）',
               'symbols': {}, 'pool': {}}
     rt_records = []
 
@@ -302,19 +342,45 @@ def main():
         tt = df['trade_time'].values if 'trade_time' in df.columns else None
         cost = cost_for_symbol(sym)
         prices = {'o': data['o'], 'h': data['h'], 'lo': data['lo'], 'c': data['c'],
-                  'atr': data['atr'], 'trend': data.get('trend'), 'n': data['n']}
+                  'atr': data['atr'], 'trend': data.get('trend'), 'n': data['n'],
+                  'pc': pc, 'sym': sym, 'date': date}
+
+        # [T1.5] has_base 从底仓 ledger（方案 A 跨日续算）；未知标的保守 False
+        hb = has_base_of(base_ledger, sym, date)
+        rec['has_base'] = hb
 
         recalc_sigs  = recalc_rows_to_sigs(rows, tt, data['n'])
-        recalc_trips = simulate_day(recalc_sigs, prices, mcfg, cost=cost)
+        sm_recalc = simulate_position_sm([(date, recalc_sigs)], [(date, prices)],
+                                         config_long=mcfg, config_short=mcfg_short,
+                                         cost=cost, has_base=hb)
+        recalc_trips = sm_recalc['trips']
+
+        # [T1.5] 底仓状态转移：反T EOD 强平 = 卖底仓未回补 → 次日起 has_base=false；
+        # 正常 B 回补 / 正T 不影响底仓。写回复算侧 ledger（live 侧不写——ledger 记录
+        # 复算世界线的底仓流；实盘底仓是用户事实，由 watchlist 注释/用户确认维护）。
+        eod_short = [t for t in recalc_trips if t['side'] == 'S' and t['exit_reason'] == 'EOD']
+        base_ledger[sym] = {'has_base': (not eod_short) if hb else hb,
+                            'updated': date,
+                            'note': 'T1.5 复算侧底仓状态流（反T EOD 强平丢底仓）'
+                            if eod_short or hb else 'T1.5 首见标的保守 False，需人工 seed'}
+        if eod_short:
+            base_ledger[sym]['eod_short_events'] = len(eod_short)
 
         # ---- 实盘（WR_prod_exec 口径）----
         live_sigs  = live_rows_to_sigs(live_sym, sym, tt, data['n'], data['c'])
-        live_trips = simulate_day(live_sigs, prices, mcfg, cost=cost) if live_sigs else []
+        sm_live = simulate_position_sm([(date, live_sigs)], [(date, prices)],
+                                       config_long=mcfg, config_short=mcfg_short,
+                                       cost=cost, has_base=hb) if live_sigs else None
+        live_trips = sm_live['trips'] if sm_live else []
         live_detail_ok = len(live_sigs) > 0
         push_slips = [s['push_slip_pct'] for s in live_sigs if s.get('push_slip_pct') is not None]
 
         m_r = aggregate_metrics(recalc_trips)
         m_l = aggregate_metrics(live_trips)
+        # [T1.5] 方向分解统计（正T/反T 分栏）
+        rec['recalc_side_split'] = sm_recalc['summary']
+        if sm_live:
+            rec['live_side_split'] = sm_live['summary']
 
         n_recalc_bs = len(recalc_sigs)
         rec.update({
@@ -345,6 +411,11 @@ def main():
     # ---- pool 汇总 ----
     mp_r = aggregate_metrics(pool_recalc_trips)
     mp_l = aggregate_metrics(pool_live_trips)
+    # [T1.5] 底仓 ledger 落盘（复算侧世界线；反T EOD 强平丢底仓的转移在主循环内已更新）
+    try:
+        save_base_ledger(base_ledger)
+    except Exception as e:
+        result['base_ledger_warning'] = f'save failed: {e!r}'
     wr_recalc = mp_r['win_rate'] if mp_r['total'] > 0 else None
     wr_prod   = mp_l['win_rate'] if mp_l['total'] > 0 else None
     g1 = round(wr_recalc - wr_prod, 1) if (wr_recalc is not None and wr_prod is not None) else None

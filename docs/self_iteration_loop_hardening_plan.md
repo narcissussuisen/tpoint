@@ -221,7 +221,8 @@ T8 未通过：vol-regime 只能 shadow-only
 
 | backlog id | 落到 | v2 补充 |
 |---|---|---|
-| P0-20260903-reverseT-not-modeled | **T1.5** | v2.1 核心新增（backlog 驱动施工第一单） |
+| P0-20260903-reverseT-not-modeled | **T1.5** | v2.1 核心新增（backlog 驱动施工第一单）；**09-03 夜施工进展：核心已交付**——simulate_position_sm 状态机（11/11 语义测试）+ reconcile 双侧接线 + 底仓 ledger（方案 A）；09-03 实证与 push_audit 逐条对齐 |
+| **P0-20260903-live-review-pairing（新）** | **T1.5 追加项** | **Bug 4（09-03 夜实证）**：live_roundtrip_review 配对忽略 X(TRAIL/EOD) 出场推送——把"反T TRAIL 平仓(10:28) + 正T建仓(10:35) + EOD(15:00)"误配成"反T B回补"，09-03 日报"净 +2.067% 有效"实为 **-1.528%**。影响日报当日数字与有效判定；roll20 wr_prod 经 reconcile 模拟口径（另一失真）。修复：配对状态机化（X 出场为配对边界），修复后重算近端日报 |
 | P1-20260903-capture-rate-59 | T8 前置研究 | 触发灵敏度（atr_min_pct/MHD 阈值进网格）与 vol-regime 同属"低波动日治理"主题，随 T8 一并研究 |
 | P0-20260811-cfg-state-leak | T2 | **修完标 fixed + 用修复后优化器重新生成候选**（不能只修 oos_validate.py）；⚠️ v2.1：T2 复核表必须在 T1.5 之后跑（否则用污染口径复核 = 白跑） |
 | P0-20260811-reverify-0805 | T2 复核步 | 标的= backlog 原文四标的（161129/300308/688111/513310）；⚠️ v2.1：同上，T1.5 后执行 |
@@ -258,7 +259,7 @@ T8 未通过：vol-regime 只能 shadow-only
 | p11 GT-TB v1.1 +1.04pp | ⚠️ 降级参考 | 研究态不入生产；同污染；T1.5 后重跑 |
 | p7 证伪结论（s_uptrend_guard 等全负优化） | ⚠️ 待复核 | 相加口径下的证伪——"负优化"方向可能与污染口径有关；T1.5 后抽验 |
 | factor_opt / oos_validate / auto_tune 寻优结果 | ⚠️ 失真 | 纯正T 目标函数漏 61% 反T 业务（603318）；网格最优解可能系统性偏向正T 友好参数 |
-| 09-03 检验"当日算法判定：有效"（净 +2.067%） | ✅ 保留 | live_roundtrip_review 实盘配对口径，不经回测模拟 |
+| 09-03 检验"当日算法判定：有效"（净 +2.067%） | ❌ 作废 | **Bug 4**：live_review 配对忽略 X(TRAIL) 出场推送，+2.067% 为误配幻觉；真实当日净 **-1.528%**（反T TRAIL +0.82% + 正T EOD -2.348%，与 push_audit 4 条推送逐条对齐） |
 | C_prod 56.2% 基线 / roll20 wr_prod 57.1 | ✅ 保留 | 实盘 live 口径（push_audit→roundtrip） |
 | 生产 monitor 信号行为 / 实盘资金 | ✅ 不受影响 | monitor 侧已强制底仓模型 |
 | T7 shadow 池设计 / C_prod 可比性 | ✅ 保留 | 前提：shadow 复盘用 T1.5 修复后的仓位模型 |
