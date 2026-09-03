@@ -6,7 +6,9 @@ REM   现改为 3 步流水线：复算JSON -> review_charts 画信号标注图 
 REM 编码修复：PYTHONUTF8=1 + chcp 65001 避免 monitor.py emoji 打印在 gbk 代码页下 UnicodeEncodeError。
 REM --- 2026-09-03 T0/T1 失败语义透传（自迭代闭环硬化方案 v2，docs/self_iteration_loop_hardening_plan.md）---
 REM   T0: 流水线头部 runtime_identity --begin 锚定 run_id（git commit/配置hash/成交口径版本 落盘 data/runtime_identity/）。
-REM   T1: 每步前 pipeline_status running <step> 预写 RUNNING；每步后 record <step> <rc>（先 set RC=%ERRORLEVEL% 捕获真实 rc）；
+REM   T1: 每步前 pipeline_status running [step] 预写 RUNNING；每步后 record [step] [rc]（先 set RC=%ERRORLEVEL% 捕获真实 rc）；
+REM   !! 警告：本文件所有 REM 注释禁止出现尖括号（小于号/大于号）—— cmd 在解析阶段会把 [x] 形式的尖括号当输入重定向，
+REM      文件不存在会导致整个 bat 静默中止（2026-09-03 事故：exit 255、日志零写入、流水线全停）。
 REM       record 支持 --expected 分号分隔产物路径（rc=0 但产物缺失=DEGRADED；rc=77 约定=SKIPPED）；
 REM       尾部 summarize --push-fail：关键步(live_review/reconcile/daily_report/daily_iterate/closed_loop/auto_tune)
 REM       任一 FAILED/INTERRUPTED/NOT_RUN → 推 b4eba7a9 全局群 + exit /b 2（计划任务显示失败）。
@@ -23,7 +25,8 @@ for /f "usebackq" %%i in (`%PY_EXE% %ROOT%\scripts\_today.py`) do set D=%%i
 echo [%DATE% %TIME%] === tpoint daily review %D% === >> "%ROOT%\logs\daily_review.log"
 REM --- T0 运行身份锚定（2026-09-03）：失败不阻断流水线（T1 record 会自动兜底重建 run） ---
 "%PY_EXE%" "%ROOT%\scripts\runtime_identity.py" --begin >> "%ROOT%\logs\daily_review.log" 2>&1
-if errorlevel 1 echo [%DATE% %TIME%] [WARN] runtime_identity non-zero >> "%ROOT%\logs\daily_review.log"
+set RC=%ERRORLEVEL%
+"%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" record runtime_identity %RC% >> "%ROOT%\logs\daily_review.log" 2>&1
 REM --- 2026-08-11 闭环迭代：前置自愈守卫（缺失关键脚本自动从 tpoint 外备份恢复；恢复失败推全局群；绝不阻断后续步骤） ---
 "%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" running preflight >> "%ROOT%\logs\daily_review.log" 2>&1
 "%PY_EXE%" "%ROOT%\scripts\pipeline_preflight.py" >> "%ROOT%\logs\daily_review.log" 2>&1

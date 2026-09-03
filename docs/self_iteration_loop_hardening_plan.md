@@ -1,15 +1,16 @@
-# tpoint 自迭代闭环硬化方案 v2（v11.0.0 前置基建）
+# tpoint 自迭代闭环硬化方案 v2.1（v11.0.0 前置基建）
 
-- 日期：2026-09-02（v1 审计响应版）；**2026-09-02 夜 v2**：整合外部评审 7 项修正 + 新增 T0 + 用户四项拍板
-- 依据：2026-09-02 外部审计报告（四对象六断点）+ 6 个关键文件实际核验 + **外部评审报告（7 修正/T0 新增/3 拍板建议）+ 评审引用事实的逐条复核**
-- 定位：**这不是平行新计划，是 R2P 计划 R0（基建）的补强版** —— R2P 原案未覆盖口径泄漏、失败语义、成交口径三个可信性缺陷；R5（regime 门控）因第一性算术论证提前为首个候选变更。R3（ML 灰度）/R4（T0T 借鉴）不变，排后。
+- 日期：2026-09-02（v1 审计响应版）；09-02 夜 v2（评审整合）；**09-03 夜 v2.1：新增 T1.5 仓位模型统一**（闭环系统发现 P0-20260903-reverseT-not-modeled，经代码级核验坐实）
+- 依据：2026-09-02 外部审计报告 + 6 个关键文件实际核验 + 外部评审报告（7 修正/T0 新增/3 拍板建议）+ **2026-09-03 闭环 P0 研判（三套仓位模型并存）逐行核验（6 项全部坐实，另发现寻优链"漏反T"失真模式）**
+- 定位：**这不是平行新计划，是 R2P 计划 R0（基建）的补强版** —— R2P 原案未覆盖口径泄漏、失败语义、成交口径、仓位模型四个可信性缺陷；R5（regime 门控）因第一性算术论证提前为首个候选变更。R3（ML 灰度）/R4（T0T 借鉴）不变，排后。
 
 ## 修订记录
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1 | 09-02 | 审计响应初版：T1-T8 任务卡 |
-| v2 | 09-02 夜 | 评审整合：新增 T0 runtime_identity；T1 加 run_id/产物校验/RUNNING 预写/五态；T2 两层确定性+网格单元级 try/finally+backlog 闭环标记；T3 拆 A/B+exec 四元组；T4 hash 分层+热更测试；T5 七态+deploy gate；T6 daemon_stage+幂等；T7 shadow 池清单纠错（603039/300759→300058/600570）；T8 动作分离+量纲公式；硬门槛六条；用户四项拍板落定 |
+| v2 | 09-02 夜 | 评审整合：新增 T0；T1 run_id/产物校验/RUNNING 预写/五态；T2 两层确定性；T3 拆 A/B+exec 四元组；T4 hash 分层；T5 七态+deploy gate；T6 daemon_stage；T7 shadow 池纠错；T8 动作分离+量纲公式；硬门槛六条；四项拍板 |
+| v2.1 | 09-03 夜 | **新增 T1.5 仓位模型统一**（P0-20260903-reverseT-not-modeled）；硬门槛第七条（仓位模型未统一→回测侧数字只作趋势参考）；排序 T0→T1→**T1.5**→T2→…；新增 §8 口径污染勘误表；T2 复核表明确依赖 T1.5 先行 |
 
 ## 0. 核心诊断
 
@@ -26,9 +27,10 @@
 
 理由：loop_engine 当前空转是"最安全的状态"。若不先修复口径泄漏就让它常驻并自动 promote/rollback，等于让一个产出不可信结论的引擎拿生产做实验。
 
-### 硬门槛六条（各任务验收 gate，violation = 禁止）
+### 硬门槛七条（各任务验收 gate，violation = 禁止）
 
 ```
+T1.5 未通过：回测/对账/门控的净收益数字只作趋势参考，禁止作任何上线/回退/promote 判据
 T2 未通过：禁止任何自动调参
 T3 未通过：禁止使用新收益数字做基线
 T4 未通过：禁止声称线上效果可归因
@@ -60,6 +62,35 @@ T8 未通过：vol-regime 只能 shadow-only
 - `daily_report_push.py`：读当日 step_status（当前 run_id），任一 FAIL → 日报标题前缀 `[DEGRADED]`。
 - 验收：手工注入 daily_iterate 失败（非法参数）→ bat exit 2 + 飞书告警 + schtasks Last Result=0x2；手工杀进程 → 该步显 INTERRUPTED 而非上轮 OK。
 - ⚠️ bat 三铁律：CRLF、usebackq 禁双引号、引用脚本先验证存在；编辑前备份。
+
+### T1.5 仓位模型统一（L0，1.5-2d，P0）【v2.1 新增，09-03 闭环 P0 坐实】
+
+**问题（代码级核验 6/6 坐实）**：三套仓位模型并存，生产/门控/寻优路径全用错——
+
+| 模型 | 语义 | 缺陷 | 被谁误用 |
+|---|---|---|---|
+| `exit_manager.simulate_day` | 纯多头（空仓只认 B，L158-170；S 只作出场，L201） | 反T 日的 S 被忽略、B 回补被误判正T 建仓持到 EOD → **系统性虚亏** | prod_vs_bt_reconcile L308、factor_optimizer L133、oos_validate、auto_tune（**寻优链 = 纯正T 口径，漏反T**） |
+| `simulate_bidirectional` | 空仓遇 S 直接建反向仓（L50-60，无底仓检查） | **裸卖空**，虚高反T | p10_oos_verify L88-89、p11_gt_tb_v11 L177-178、p7_bs_balance L96、backtest_general_v5(simulate_dual)——与 simulate_day **无条件相加 = 同一组信号双重计费** |
+| `simulate_base_position` | 唯一合规底仓模型（base>0 才许反T，正T/反T/持仓盈亏分栏） | 全仓仅 scripts/evaluate_base_position.py 一处引用 | 无人误用——**正确模型没人用** |
+
+**实证（09-03 603318，同一组实盘推送 S@10:05 9.62 / B@10:35 9.41）**：live_roundtrip_review 反T 净 **+2.067%** vs reconcile 伪正T **-2.348%**，差 4.42pp 方向相反。反T 占实盘 trip 61%（22/36）；双非零日符号一致率仅 27.3%；pearson(live, recalc) = -0.184。
+
+**任务内容**：
+1. **接线（结构性改动，非纯接线）**：p10_oos_verify / p11_gt_tb_v11 / p7_bs_balance / backtest_general_v5 / prod_vs_bt_reconcile / factor_optimizer / oos_validate / auto_tune / backtest_screener 的仓位模型统一切到 `simulate_base_position`（跨日连续模拟，带底仓状态）。⚠️ 注意：simulate_base_position 是**跨日**模型（sigs_by_day），p10/p11/reconcile 现为**逐日独立**调用——接线需把调用结构改为按 symbol 收集多日后连续模拟，属中等重构（非零成本）。
+2. **reconcile 底仓状态来源（待拍板）**：单日对账时底仓状态从哪来——
+   - 方案 A：从前一交易日 reconcile 底仓状态续算（ledger 式跨日续传）；
+   - 方案 B：从实盘 monitor 持仓状态读取（最忠实，依赖 pos 状态记录）；
+   - 方案 C：当日无底仓证据时保守禁反T 统计（最保守，牺牲覆盖率）。
+3. **静态断言（防复发）**：tests 增 grep 式检查——全仓禁止 `simulate_day(...) + simulate_bidirectional(...)` 无条件相加模式；新代码引用仓位模拟必须经 simulate_base_position 或显式 base>0 门控。
+4. **重跑复核**：08-04 至今 reconcile + roll20 WR 复核（wr_prod 57.1 保留=实盘口径；wr_recalc 53.8 / g1 -3.3pp 作废重建）+ p10/p11 门重跑。
+5. **勘误标注**：CHANGELOG 对 p10 验收数字（ML 过滤 -129.14→-39.80）加"口径污染勘误"标注——A/B 相对方向或有参考价值，绝对量级不可信。
+6. **过渡期纪律（立即生效）**：reconcile 逐日 net/wr 与 p10/p11 门结果只作趋势参考，禁止作单日上线/回退判据。
+
+**不受影响（缓冲带）**：生产 monitor 信号行为（monitor 侧已强制底仓模型）；live_roundtrip_review（实盘配对 = 真相源）；C_prod 56.2% 基线与 roll20 wr_prod 57.1（均为实盘 live 口径，不经回测口径）。
+
+**验收**：接线后全链路无 simulate_day+bidirectional 相加（静态断言 PASS）；09-03 603318 reconcile 复算结果与 live_review 符号一致（反T 净 +2%±0.5pp）；08-04 至今 reconcile 重跑落盘 + roll20 g1 重建。
+
+**backlog 映射**：P0-20260903-reverseT-not-modeled → 本卡（这是 backlog 驱动施工的第一单，本身即 T5 闭环价值的实战验证）。
 
 ### T2 寻优同参 + 确定性（L0，1.5d，P0）
 
@@ -161,17 +192,19 @@ T8 未通过：vol-regime 只能 shadow-only
 
 ```
 并行组（Day 1 起，互不依赖）：
-  T0 运行身份 ──→ T1 失败语义（T0 的 run_id 是 T1 的锚点，先后紧邻）
+  T0 运行身份 ──→ T1 失败语义（T0 的 run_id 是 T1 的锚点，先后紧邻）✅ 已交付（09-03 首跑验收 PASS）
   T4 effect ledger（hash 地基，不改变交易行为）
   T5 feedback 调度骨架（schtasks + 七态状态机，先做调度骨架）
 
-串行链：
-  T2 寻优同参+确定性 → T3-A/B 成交口径 → T7 shadow 池 → T6 daemon PM → T8 vol-regime
+串行链（v2.1）：
+  T1.5 仓位模型统一 → T2 寻优同参+确定性 → T3-A/B 成交口径 → T7 shadow 池 → T6 daemon PM → T8 vol-regime
+  （T1.5 必须先于 T2/T3/T8：复核表、口径对照、IS/OOS 全部依赖正确仓位模型——
+    否则 T2 复核表用污染口径重跑一遍 = 白跑；T2 的"同参修复"部分与 T1.5 正交可并行）
 ```
 
-- 建议开工序（v2，评审版）：**T0 → T1 → T2 → T3 → T4 → T5 → T7 → T6 → T8**；工程并行：T0/T1 完成后 T4/T5 可与 T2/T3 并行推进。
-- 串行总工期 ~8.5 个工作日（T0 +0.5d）；并行可压至 ~6 天；之后 T8 影子期 10 个交易日。
-- **本轮已开工：T0 + T1（2026-09-02 夜）。**
+- 建议开工序（v2.1）：**T0 → T1 → T1.5 → T2 → T3 → T4 → T5 → T7 → T6 → T8**；工程并行：T0/T1 已完成，T4/T5 可与 T1.5 并行推进。
+- 串行总工期 ~10.5 个工作日（T1.5 +2d）；并行可压至 ~7.5 天；之后 T8 影子期 10 个交易日。
+- **进度：T0/T1 已交付（commit 2c9c595，09-03 首跑验收 PASS：22 条记录 11 步全 OK，run_id 隔离生效，日报无 [DEGRADED]）。**
 
 ## 4. 版本规划（docs/versioning.md 口径）
 
@@ -188,8 +221,10 @@ T8 未通过：vol-regime 只能 shadow-only
 
 | backlog id | 落到 | v2 补充 |
 |---|---|---|
-| P0-20260811-cfg-state-leak | T2 | **修完标 fixed + 用修复后优化器重新生成候选**（不能只修 oos_validate.py） |
-| P0-20260811-reverify-0805 | T2 复核步 | 标的= backlog 原文四标的（161129/300308/688111/513310），v1 的 300759 系笔误 |
+| P0-20260903-reverseT-not-modeled | **T1.5** | v2.1 核心新增（backlog 驱动施工第一单） |
+| P1-20260903-capture-rate-59 | T8 前置研究 | 触发灵敏度（atr_min_pct/MHD 阈值进网格）与 vol-regime 同属"低波动日治理"主题，随 T8 一并研究 |
+| P0-20260811-cfg-state-leak | T2 | **修完标 fixed + 用修复后优化器重新生成候选**（不能只修 oos_validate.py）；⚠️ v2.1：T2 复核表必须在 T1.5 之后跑（否则用污染口径复核 = 白跑） |
+| P0-20260811-reverify-0805 | T2 复核步 | 标的= backlog 原文四标的（161129/300308/688111/513310）；⚠️ v2.1：同上，T1.5 后执行 |
 | P1-20260811-lookahead-samebar | T3 | T3-A/B 分阶段 |
 | P1-20260811-limit-halt | T3 | 一字板按板块涨跌停价 + 成交量 |
 | P2-20260811-cost-sensitivity | T3 | 盈亏平衡滑点进对照报告 |
@@ -212,3 +247,19 @@ T8 未通过：vol-regime 只能 shadow-only
 
 - **vs 审计**：审计建议第 1 优先修复 loop_engine 空转；本方案排至 T6。理由：带口径泄漏的自动闭环比空转更危险——空转只是不进步，自动 promote 不可信结论会主动劣化生产。bat 吞错（T1）与 feedback 调度（T5）提前：零风险纯止血项。
 - **vs 评审**：7 项修正 + T0 全部采纳。评审引用事实复核：3 准确（feedback_loop.py:9 职责边界 / loop_engine.py:46-52 空转 / P0-20260811-cfg-state-leak 仍 open），1 错误——评审建议的 shadow 池清单（603039/688111/161129/513310/300759）系沿用 v1 T7 笔误，按其执行恰好丧失其主张的"历史可比性"；v2 以 reconcile_prod_vs_bt.md §2 铁证纠正为真实 C_prod 池。其余修正（run_id/产物校验/两层确定性/deploy gate/daemon_stage/动作分离/量纲公式）均提升方案严谨性，全文已整合。
+
+## 8. 口径污染勘误表（v2.1，T1.5 完成前的结论信任级别）
+
+| 结论/数字 | 信任级别 | 说明 |
+|---|---|---|
+| roll20 wr_recalc 53.8 / g1 -3.3pp | ❌ 作废 | reconcile 伪正T 口径（反T S 被忽略/B 回补误判建仓） |
+| R2 单元对齐 gap 叙事（"差 1.2pp 基本闭合"） | ❌ 作废重建 | reconcile_prod_vs_bt.md 的对账方法被污染——但该文档的 C_prod 56.2% 实盘基线本身不受污染（live 口径） |
+| p10 验收数字（ML 过滤双向净 -129.14→-39.80） | ⚠️ 降级参考 | 相加口径污染（信号双重计费）；同污染下 A/B 相对方向或可参考，绝对量级不可信；T1.5 后重跑 |
+| p11 GT-TB v1.1 +1.04pp | ⚠️ 降级参考 | 研究态不入生产；同污染；T1.5 后重跑 |
+| p7 证伪结论（s_uptrend_guard 等全负优化） | ⚠️ 待复核 | 相加口径下的证伪——"负优化"方向可能与污染口径有关；T1.5 后抽验 |
+| factor_opt / oos_validate / auto_tune 寻优结果 | ⚠️ 失真 | 纯正T 目标函数漏 61% 反T 业务（603318）；网格最优解可能系统性偏向正T 友好参数 |
+| 09-03 检验"当日算法判定：有效"（净 +2.067%） | ✅ 保留 | live_roundtrip_review 实盘配对口径，不经回测模拟 |
+| C_prod 56.2% 基线 / roll20 wr_prod 57.1 | ✅ 保留 | 实盘 live 口径（push_audit→roundtrip） |
+| 生产 monitor 信号行为 / 实盘资金 | ✅ 不受影响 | monitor 侧已强制底仓模型 |
+| T7 shadow 池设计 / C_prod 可比性 | ✅ 保留 | 前提：shadow 复盘用 T1.5 修复后的仓位模型 |
+| T6 promote 门槛（滚动 20d 净 WR ≥ 基线+2pp） | ⚠️ 数据源需明确 | v2.1 规定：只锚 live 实盘口径 + T1.5 修复后 shadow 账本；禁止用旧 reconcile 口径 |
