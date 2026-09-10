@@ -1687,25 +1687,74 @@ def _clear_stale_lock(lock_file, pid_file):
     return False
 
 
+# [2026-09-10] 预热期间的心跳间隔（秒）。必须显著小于 alert_engine 的 service_stale_s(120)：
+# mootdx「选择最快的服务器」+ 退避重试单次实测可阻塞 172s/174s（09-10 11:48-11:54），
+# 留 4 倍余量取 30s。
+WARMUP_HB_INTERVAL_S = 30.0
+
+
+def _sleep_with_hb(seconds):
+    """退避等待期间保持心跳。
+    禁止在预热窗口内裸 `time.sleep()`：任何长于 WARMUP_HB_INTERVAL_S 的静默窗口都可能
+    被 alert_engine 判成「服务中断」（阈值 service_stale_s=120s）。生产退避 ≤7s 虽小于
+    30s 间隔，但把不变量做成无条件的更安全（改间隔/改退避都不会突然破功）。"""
+    _end = time.time() + max(0.0, seconds)
+    while True:
+        _left = _end - time.time()
+        if _left <= 0:
+            return
+        write_metrics(0.0, 0, 0, 0, len(TARGETS))
+        time.sleep(min(WARMUP_HB_INTERVAL_S, _left))
+
+
 def _warmup_tf():
     """启动预热并校验 tf 连通性（2026-07-21 复盘改进：封初始化窗口）。
     强制触发连接 + 校验（对标 datasource._server_ok）；失败指数退避重试；
-    全失败返回 False，交由静默告警感知，不退出进程（避免与自启机制冲突）。"""
+    全失败返回 False，交由静默告警感知，不退出进程（避免与自启机制冲突）。
+
+    [2026-09-10 修复「tpoint 服务中断」误报]
+    根因：run() 的首轮 write_metrics 在 while 主循环内，而本函数在主循环**之前**；
+    mootdx 服务器探测 + 重试单次可阻塞 ~170s（远超 service_stale_s=120s）→ 预热窗口内
+    心跳停滞，进程明明存活却被 alert_engine 判为「服务中断」
+    （09-10 11:53:39 实证：触发时心跳停滞 424s，last heartbeat=11:46:34=杀旧进程前 1s）。
+    修法：探测放**子线程**跑，主线程每 WARMUP_HB_INTERVAL_S 刷新一次心跳；
+    心跳只在主线程写（write_metrics 非线程安全，避免第二写者与主循环竞争）。
+    心跳口径与午休/盘前 keepalive 分支一致：last_bar_ts=0 → None → 跳过 data_lag_s 规则。
+    """
     global tf
     max_tries = 3
+    write_metrics(0.0, 0, 0, 0, len(TARGETS))   # 锁已持有 = 进程已存活，先声明心跳
     for attempt in range(max_tries):
-        try:
-            tf = TickFlow()
-            _ = tf.client  # 强制建立 mootdx 连接
-            ok = tf.klines.get('600519.SH', period='1d', count=1, as_dataframe=True)
-            if ok is not None and len(ok) > 0:
+        _res = {}
+
+        def _probe():
+            try:
+                _t = TickFlow()
+                _res['tf'] = _t          # 与原实现一致：构造成功即接管（后续校验失败也保留实例）
+                _ = _t.client            # 强制建立 mootdx 连接
+                _res['data'] = _t.klines.get('600519.SH', period='1d', count=1, as_dataframe=True)
+            except Exception as _e:
+                _res['err'] = _e
+
+        _th = threading.Thread(target=_probe, daemon=True)
+        _th.start()
+        while _th.is_alive():                 # 阻塞期间持续打心跳（主线程单写者）
+            write_metrics(0.0, 0, 0, 0, len(TARGETS))
+            _th.join(timeout=WARMUP_HB_INTERVAL_S)
+        write_metrics(0.0, 0, 0, 0, len(TARGETS))
+        if 'tf' in _res:
+            tf = _res['tf']
+
+        if 'err' in _res:
+            print(f"  ⚠️ tf 预热失败(retry {attempt+1}/{max_tries}): {_res['err']}")
+        else:
+            _ok = _res.get('data')
+            if _ok is not None and len(_ok) > 0:
                 print(f"[{datetime.now(CST).strftime('%H:%M:%S')}] ✅ tf 预热成功（数据源连通）")
                 return True
             print(f"  ⚠️ tf 预热: 连接建立但无数据(retry {attempt+1}/{max_tries})")
-        except Exception as e:
-            print(f"  ⚠️ tf 预热失败(retry {attempt+1}/{max_tries}): {e}")
         if attempt < max_tries - 1:
-            time.sleep(min(1.0 * (2 ** attempt), 7.0))
+            _sleep_with_hb(min(1.0 * (2 ** attempt), 7.0))   # 退避期间不停心跳
     _log_event('TF_WARMUP_FAILED all retries exhausted')
     return False
 
