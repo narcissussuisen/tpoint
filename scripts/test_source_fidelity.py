@@ -72,8 +72,12 @@ class _Resp:
         return self._b
 
 
+HTTP_CALLS = []          # [2026-09-10] 记录假 urlopen 的调用，用于验证「兜底惰性化」
+
+
 def _fake_urlopen(url, timeout=None, **kw):
     u = url if isinstance(url, str) else getattr(url, 'full_url', '')
+    HTTP_CALLS.append(u)
     if 'sina' in u:
         return _Resp(_sina_payload())
     if DS._TENCENT_PATH in u:
@@ -145,6 +149,19 @@ def main():
     check('mootdx 仅 3 行(<5) → 走兜底，data_source=sina',
           df_p is not None and df_p.attrs.get('data_source') == 'sina',
           f'got={None if df_p is None else df_p.attrs.get("data_source")}')
+
+    print('\n=== 2b. ★ 兜底惰性化：mootdx 正常时不得发出任何 HTTP 请求 ===')
+    HTTP_CALLS.clear()
+    df_ok = _run_intraday(30, prefer=None)
+    check('mootdx 成功 → data_source=mootdx',
+          df_ok is not None and df_ok.attrs.get('data_source') == 'mootdx')
+    check('mootdx 成功 → **零 HTTP 兜底请求**（旧实现每轮白打一次）',
+          len(HTTP_CALLS) == 0, f'意外请求 {len(HTTP_CALLS)} 次: {HTTP_CALLS[:2]}')
+    HTTP_CALLS.clear()
+    df_fb = _run_intraday(0, prefer=None)
+    check('mootdx 无数据（真降级）→ 才发 HTTP 且命中新浪',
+          df_fb is not None and df_fb.attrs.get('data_source') == 'sina' and len(HTTP_CALLS) >= 1,
+          f'HTTP={len(HTTP_CALLS)}')
 
     print('\n=== 3. 合成变换系统性低估 ATR（确定性构造断言）===')
     n = 60

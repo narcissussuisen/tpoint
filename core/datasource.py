@@ -428,7 +428,12 @@ class MootdxDataSource:
         # 选更优源：真实 OHLC(mootdx) 优先且需>=5 行（compute 要求）；
         # mootdx<5 行时降级腾讯分时；两源均<5 行则 mootdx 3-4 行凑合（compute 会拒收<5）。
         mootdx_ok = df is not None and len(df) >= 5
-        fb = self._tencent_intraday_fallback(sym)
+        # [2026-09-10] 兜底改为**按需取数**：mootdx 正常时不再每轮白打一次 HTTP。
+        # 旧实现无条件调用 `_tencent_intraday_fallback()`，实测 15s 轮询下 = **960 次 HTTP/日**；
+        # 若把扫描间隔提到 3s 会放大到 **4800 次/日** —— 对无 SLA 的免费公共源是不必要的压力
+        # 与限流风险（2026-09-10 已见 mootdx free 源全天失效）。惰性化后 mootdx 正常时 HTTP 恒为 0，
+        # 只在真降级时才打；代价为零（本就在 mootdx 失败后才使用 fb）。
+        fb = None if mootdx_ok else self._tencent_intraday_fallback(sym)
         # [2026-09-10 P0] 兜底实际命中哪个源（_fetch_pool 写在 attrs 里）；缺省按腾讯合成口径
         fb_src = (getattr(fb, 'attrs', None) or {}).get('fallback_source', 'tencent_synth') \
             if fb is not None else None
