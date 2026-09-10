@@ -133,6 +133,13 @@ def main():
     check('行2 浮盈口径为「本笔」', '本笔 -0.4%' in t[2], f'got={t[2]!r}')
     check('行2 不再出现「空头腿/多头腿」术语',
           '空头腿' not in t[2] and '多头腿' not in t[2], f'got={t[2]!r}')
+    # [2026-09-10 标签歧义修正] 出场记录的 tag 是**开仓依据**，标「依据」会与标题动作冲突
+    # （用户实测反馈：标题「买入 2成」+ 依据「…-0.67[S]」看起来自相矛盾）。
+    check('出场卡行3 标为「开仓依据」（消除与标题动作的歧义）',
+          t[3].startswith('开仓依据：'), f'got={t[3]!r}')
+    check('出场卡行3 保留了 S 开仓依据原文（信息不丢）', '[S]' in t[3], f'got={t[3]!r}')
+    check('入场卡行3 仍为「依据：」（入场时它就是本次依据）',
+          _card_text(SIG_S_ENTRY)[3].startswith('依据：'), f'got={_card_text(SIG_S_ENTRY)[3]!r}')
     check('方向与 reason 下沉到底部备注（正T/反T + reason=STOP）',
           any('反T' in x and 'reason=STOP' in x for x in t),
           f'got={[x for x in t if "RSI=" in x]!r}')

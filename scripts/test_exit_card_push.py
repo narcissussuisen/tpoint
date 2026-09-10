@@ -9,6 +9,7 @@
 """
 import os
 import sys
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'core'))
 
@@ -52,9 +53,18 @@ CASES = [
 
 
 def main():
-    print(f'推送 {len(CASES)} 种止损类型测试卡片 → 信号群\n')
+    # [2026-09-10] --only <子串>：只推匹配的用例（避免每次验证都刷满 9 张卡）
+    only = None
+    if '--only' in sys.argv:
+        i = sys.argv.index('--only')
+        only = (sys.argv[i + 1] if i + 1 < len(sys.argv) else '').strip()
+    cases = [c for c in CASES if (only is None or only in c['label'])]
+    if only is not None and not cases:
+        print(f'--only "{only}" 未匹配任何用例'); return 1
+    print(f'推送 {len(cases)} 种止损类型测试卡片 → 信号群'
+          + (f'（过滤 --only "{only}"）' if only else '') + '\n')
     results = []
-    for c in CASES:
+    for c in cases:
         card = emit_card(c['s'], sym=c.get('sym', '600721.SH'), sim=True)
         # 标题加 [TEST] 前缀
         old_title = card['card']['header']['title']['content']
