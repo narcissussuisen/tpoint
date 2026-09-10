@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "status": "draft",
+  "as_of": null,
+  "_note": "[2026-09-10 D] 数据源策略固化入口。`fallback_order` 已由 core/datasource.py 的 _intraday_order() 读取（优先级：env TP_INTRADAY_PREFER > 本文件 > 硬编码默认）。status 转为 \"fixed\" 需 scripts/datasource_benchmark.py 连续 3~5 个交易日达标（见 thresholds）。⚠️ 本文件目前只固化「HTTP 兜底源的顺序」；切换主源（mootdx ↔ 其他）需改 intraday() 的取数顺序代码，属后续独立任务。",
+  "fallback_order": ["sina", "tencent"],
+  "_fallback_order_meaning": "sina = 新浪 1m（真实 OHLC，口径无损）；tencent = 腾讯分时（合成 OHLC，ATR 中位低估 41.8%）。真实 OHLC 必须排在合成口径之前。",
+  "thresholds": {
+    "ok_rate_min": 0.99,
+    "real_ohlc_rate_min": 0.95,
+    "consensus_min": 0.95,
+    "min_trading_days": 3,
+    "_meaning": "可用率 / 真实OHLC率 / 跨源收盘一致率 的下限；连续 min_trading_days 个交易日全部达标才可 fixed"
+  },
+  "benchmark_source": "data/datasource_benchmark.jsonl",
+  "created": "2026-09-10",
+  "history": [
+    {
+      "date": "2026-09-10",
+      "change": "初始 draft：兜底顺序由「腾讯分时(合成OHLC) → 新浪1m」改为「新浪1m(真实OHLC) → 腾讯分时(合成,末位)」。依据：全历史 448 标的-日 A/B，合成/真实 ATR 比值中位 0.582（低估 41.8%），信号总量比 1.077 但逐日 48.4% 组合变化。",
+      "status": "draft"
+    }
+  ]
+}

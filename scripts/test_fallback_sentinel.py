@@ -1,24 +1,28 @@
 # -*- coding: utf-8 -*-
-"""scripts/test_fallback_sentinel.py — 数据源兜底率哨兵回归（2026-09-10 P0）
+"""scripts/test_fallback_sentinel.py — 数据源「合成口径降级」哨兵回归（2026-09-10 P0 → B）
 
-事故：2026-09-10 mootdx 接口级失效（K线+报价返回空），monitor 全天 380/380 轮走腾讯分时兜底，
-**降级跑了 2.5 小时全程静默**——因为 alert_engine 里根本没有「兜底率」这个指标。
-而兜底数据（腾讯分时合成 OHLC）实测 ATR 中位低估 41.8%（448 标的-日），会放大止损被打概率。
+事故：2026-09-10 mootdx 因**服务器选择缺陷**（旧硬编码列表整批僵化 + `pytdx_hosts[:30]` 截断）
+全天返空，monitor 380/380 轮走兜底，**降级 2.5 小时全程静默**。
 
-修复：monitor 每轮把 `fallback_rounds` 写进 metrics.json → alert_engine 在滚动窗口里
-聚合出 `fallback_rate` → config 规则 >0.5 告警（告警群 1d241455）。
+⚠️ 关键语义修正（用户 2026-09-10 决策）：「兜底」**不等于**「降级」——
+  - 落到 `sina`（新浪 1m）：**真实 OHLC**，与 mootdx 同质量 ⇒ **口径无损，不告警**
+  - 落到 `tencent_synth`（腾讯分时）：**合成 OHLC**（丢弃真实分钟影线）⇒ ATR 中位低估 **41.8%**
+    （448 标的-日实测）、1.5×ATR 反T止损窄 42% ⇒ **这才是真降级，要告警**
+故哨兵从 `fallback_rate` 改为 `synth_rate`（阈值 0.5→0.3，更敏感）；`fallback_rate` 规则
+保留但 `enabled:false`，指标继续落盘供可观测/复盘。
 
-⚠️ 关键设计不变量（本测试锁定）：
-  1. `fallback_rounds is None` 的样本（保活/盘前/午休）**必须排除在分母外**——
-     否则午休积攒的 0 会稀释兜底率，把恢复后的告警拖延一个窗口。
-  2. 阈值比较是**严格 >**，恰好 0.5 不告警。
-  3. `require_up=true` → 心跳不新鲜时不评估（根因统一由 service_up 表达，避免冗余告警）。
+⚠️ 必须保住的三条不变量：
+  1. `*_rounds is None`（保活/盘前/午休）的样本**排除在分母外**——否则午休积攒的 0
+     会稀释比率、把恢复后的告警拖延一个窗口。
+  2. 阈值比较是**严格 >**。
+  3. `require_up=true` → 心跳不新鲜时不评估（根因统一由 service_up 表达）。
 
 运行：venv/Scripts/python.exe scripts/test_fallback_sentinel.py
 """
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -40,106 +44,106 @@ def check(name, cond, detail=''):
 CFG = json.load(io.open(os.path.join(ROOT, 'config', 'monitor_config.json'), encoding='utf-8'))
 AE.is_trading_today = lambda: True          # 消除交易日依赖，保证测试确定性
 
-RULE_NAME = '数据源兜底率过高'
+RULE_NAME = '数据源合成口径过高'
 
 
-def _sample(now, fb, symbols, age=0.0):
+def _sample(now, fb, symbols, age=0.0, synth=None):
+    """synth 缺省 = fb（即兜底就是合成口径）；显式传 0 表示「兜底但口径无损（新浪）」"""
     return {'ts': now - age, 'scan_duration_s': 1.0, 'signals': 0, 'errors': 0,
             'symbols': symbols, 'last_bar_ts': None, 'fallback_rounds': fb,
-            'status': 'running'}
+            'synth_rounds': (fb if synth is None else synth), 'status': 'running'}
 
 
 def fired(alerts):
     return [a for a in alerts if a.get('name') == RULE_NAME]
 
 
-def val_of(alert):
-    """alert['value'] 是**格式化后的展示串**（可能带单位），取前导数值部分。"""
-    import re as _re
-    m = _re.match(r'^\s*(-?[\d.]+)', str(alert.get('value', '')))
+def rate_of(alerts):
+    """跑一次 evaluate 并返回该规则的展示值（无告警 → None）"""
+    a = fired(alerts)
+    if not a:
+        return None
+    m = re.match(r'^\s*(-?[\d.]+)', str(a[0].get('value', '')))
     return float(m.group(1)) if m else None
+
+
+def run(buf):
+    return AE.evaluate(buf[0], buf, time.time(), CFG)
 
 
 def main():
     now = time.time()
 
-    print('\n=== 1. config 规则已按用户口径落地（告警群 1d241455 / 滚动20轮 / >50%）===')
-    rules = [r for r in CFG['alerts'] if r.get('metric') == 'fallback_rate']
-    check('config 中存在 fallback_rate 规则', len(rules) == 1, f'got={len(rules)}')
+    print('\n=== 1. config 规则已按决策落地 ===')
+    rules = [r for r in CFG['alerts'] if r.get('metric') == 'synth_rate']
+    check('config 中存在 synth_rate 规则', len(rules) == 1, f'got={len(rules)}')
     r0 = rules[0] if rules else {}
-    check('阈值 threshold=0.5', r0.get('threshold') == 0.5, f'got={r0.get("threshold")}')
+    check('阈值 threshold=0.3（比兜底率 0.5 更敏感）', r0.get('threshold') == 0.3, f'got={r0.get("threshold")}')
     check('op 为 >（严格大于）', r0.get('op') == '>', f'got={r0.get("op")}')
     check('window_s=300（≈20 轮 @15s）', r0.get('window_s') == 300, f'got={r0.get("window_s")}')
-    check('severity=warning + require_up=true', r0.get('severity') == 'warning'
-          and r0.get('require_up') is True, f'got={r0.get("severity")}/{r0.get("require_up")}')
-    check('webhook 指向告警群 1d241455', '1d241455' in (CFG.get('feishu', {}).get('webhook_url') or ''),
-          str(CFG.get('feishu', {}).get('webhook_url'))[:60])
+    check('severity=warning + require_up=true + enabled=true',
+          r0.get('severity') == 'warning' and r0.get('require_up') is True and r0.get('enabled') is True,
+          f'got={r0.get("severity")}/{r0.get("require_up")}/{r0.get("enabled")}')
+    old = [r for r in CFG['alerts'] if r.get('metric') == 'fallback_rate']
+    check('旧 fallback_rate 规则保留但已停用（可观测不告警）',
+          len(old) == 1 and old[0].get('enabled') is False,
+          f'got={len(old)}/{old[0].get("enabled") if old else None}')
+    check('webhook 指向告警群 1d241455', '1d241455' in (CFG.get('feishu', {}).get('webhook_url') or ''))
 
-    print('\n=== 2. 全兜底 → 触发 ===')
-    buf = [_sample(now - i * 15, 1, 1) for i in range(20)]
-    a = fired(AE.evaluate(buf[0], buf, now, CFG))
-    check('兜底率 1.0 触发告警', len(a) == 1, f'got={len(a)}')
-    if a:
-        check('告警值 = 1.0', abs((val_of(a[0]) or -1) - 1.0) < 1e-9, f'got={a[0]["value"]}')
-        check('severity 透传为 warning', a[0].get('severity') == 'warning', str(a[0].get('severity')))
+    print('\n=== 2. ★ 核心语义：兜底到新浪（真实OHLC）不告警，落到合成口径才告警 ===')
+    buf_sina = [_sample(now - i * 15, 1, 1, synth=0) for i in range(20)]
+    check('100% 走兜底但全是新浪（synth=0）→ **不告警**', rate_of(run(buf_sina)) is None)
+    buf_syn = [_sample(now - i * 15, 1, 1, synth=1) for i in range(20)]
+    v = rate_of(run(buf_syn))
+    check('100% 落到合成口径（synth=1）→ 告警且值=1.0', v is not None and abs(v - 1.0) < 1e-9, f'got={v}')
 
-    print('\n=== 3. 无兜底 → 不触发 ===')
-    buf0 = [_sample(now - i * 15, 0, 1) for i in range(20)]
-    check('兜底率 0.0 不触发', len(fired(AE.evaluate(buf0[0], buf0, now, CFG))) == 0)
+    print('\n=== 3. 阈值边界与梯度 ===')
+    check('合成率 0.00 不触发', rate_of(run([_sample(now - i * 15, 0, 1, synth=0) for i in range(20)])) is None)
+    check('合成率 0.25 不触发',
+          rate_of(run([_sample(now - i * 15, 1, 1, synth=(1 if i < 5 else 0)) for i in range(20)])) is None)
+    check('合成率恰好 0.30 不触发（严格 >）',
+          rate_of(run([_sample(now - i * 15, 1, 1, synth=(1 if i < 6 else 0)) for i in range(20)])) is None)
+    check('合成率 0.35 触发',
+          rate_of(run([_sample(now - i * 15, 1, 1, synth=(1 if i < 7 else 0)) for i in range(20)])) is not None)
 
-    print('\n=== 4. 混合 25% → 不触发；边界恰好 50% → 不触发（严格 >）===')
-    buf25 = [_sample(now - i * 15, (1 if i < 5 else 0), 1) for i in range(20)]
-    a25 = fired(AE.evaluate(buf25[0], buf25, now, CFG))
-    check('兜底率 0.25 不触发', len(a25) == 0, f'got={len(a25)}')
-    buf50 = [_sample(now - i * 15, (1 if i < 10 else 0), 1) for i in range(20)]
-    a50 = fired(AE.evaluate(buf50[0], buf50, now, CFG))
-    check('兜底率恰好 0.50 不触发', len(a50) == 0, f'got={len(a50)}')
-    buf51 = [_sample(now - i * 15, (1 if i < 11 else 0), 1) for i in range(20)]
-    check('兜底率 0.55 触发', len(fired(AE.evaluate(buf51[0], buf51, now, CFG))) == 1)
+    print('\n=== 4. 不变量①：非扫描样本(保活/午休)必须排除在分母外 ===')
+    buf_mix = ([_sample(now - i * 15, 1, 1, synth=1) for i in range(10)]
+               + [_sample(now - (10 + i) * 15, None, 1, synth=None) for i in range(10)])
+    v_mix = rate_of(run(buf_mix))
+    check('保活样本不稀释合成率（值仍为 1.0 并触发）', v_mix is not None and abs(v_mix - 1.0) < 1e-9,
+          f'got={v_mix}')
 
-    print('\n=== 5. 关键不变量：非扫描样本(保活/午休)必须排除在分母外 ===')
-    # 10 轮真扫描(全兜底) + 10 轮保活(fallback_rounds=None)
-    buf_mix = ([_sample(now - i * 15, 1, 1) for i in range(10)]
-               + [_sample(now - (10 + i) * 15, None, 1) for i in range(10)])
-    a_mix = fired(AE.evaluate(buf_mix[0], buf_mix, now, CFG))
-    check('保活样本不稀释兜底率（仍应为 1.0 并触发）', len(a_mix) == 1, f'got={len(a_mix)}')
-    if a_mix:
-        check('告警值仍为 1.0（未被子样本拉低）',
-              abs((val_of(a_mix[0]) or -1) - 1.0) < 1e-9, f'got={a_mix[0]["value"]}')
-    # 反证：若误把 None 当 0 计，会得到 10/20=0.5 → 不触发
-    check('（反证）若误计 None 为 0 则应为 0.5 不触发 → 说明该分支确实生效',
-          len(fired(AE.evaluate(buf_mix[0], buf_mix, now, CFG))) == 1)
+    print('\n=== 5. 不变量②：require_up —— 心跳不新鲜时不评估 ===')
+    stale = [_sample(now - i * 15, 1, 1, synth=1) for i in range(20)]
+    check('心跳停滞(999s) → 不报合成口径',
+          rate_of(AE.evaluate(_sample(now, 1, 1, age=999, synth=1), stale, now, CFG)) is None)
 
-    print('\n=== 6. require_up：心跳不新鲜时不评估 ===')
-    stale = [_sample(now - i * 15, 1, 1) for i in range(20)]
-    a_stale = fired(AE.evaluate(_sample(now, 1, 1, age=999), stale, now, CFG))
-    check('心跳停滞(999s) → 不报兜底率（根因由 service_up 表达）', len(a_stale) == 0, f'got={len(a_stale)}')
+    print('\n=== 6. 按 symbols 加权（不是按轮次）===')
+    buf4a = [_sample(now - i * 15, 1, 4, synth=1) for i in range(20)]
+    check('4 标的中 1 个落合成 → 0.25 不触发', rate_of(run(buf4a)) is None)
+    buf4b = [_sample(now - i * 15, 4, 4, synth=2) for i in range(20)]
+    v4 = rate_of(run(buf4b))
+    check('4 标的中 2 个落合成 → 0.50 触发', v4 is not None and abs(v4 - 0.5) < 1e-9, f'got={v4}')
 
-    print('\n=== 7. 多标的：按 symbols 加权，不是按轮次 ===')
-    # 4 标的、每轮仅 1 个走兜底 → 25%
-    buf4 = [_sample(now - i * 15, 1, 4) for i in range(20)]
-    check('1/4 标的兜底 → 0.25 不触发', len(fired(AE.evaluate(buf4[0], buf4, now, CFG))) == 0)
-    buf4b = [_sample(now - i * 15, 3, 4) for i in range(20)]
-    check('3/4 标的兜底 → 0.75 触发', len(fired(AE.evaluate(buf4b[0], buf4b, now, CFG))) == 1)
-
-    print('\n=== 8. monitor.write_metrics 正确落盘 fallback_rounds ===')
+    print('\n=== 7. monitor.write_metrics 落盘 fallback_rounds + synth_rounds ===')
     td = tempfile.mkdtemp()
     fp = os.path.join(td, 'metrics.json')
     orig = M.METRICS_FILE
     M.METRICS_FILE = fp
     try:
-        M.write_metrics(1.0, 0, 0, 0, 2, fallback_rounds=3)
+        M.write_metrics(1.0, 0, 0, 0, 2, fallback_rounds=3, synth_rounds=1)
         d1 = json.load(io.open(fp, encoding='utf-8'))
         check('扫描轮：fallback_rounds=3 已落盘', d1.get('fallback_rounds') == 3, str(d1.get('fallback_rounds')))
-        check('扫描轮：symbols=2 同时落盘', d1.get('symbols') == 2, str(d1.get('symbols')))
+        check('扫描轮：synth_rounds=1 已落盘', d1.get('synth_rounds') == 1, str(d1.get('synth_rounds')))
         M.write_metrics(0.0, 0, 0, 0, 2)          # 保活轮：不传 → None
         d2 = json.load(io.open(fp, encoding='utf-8'))
-        check('保活轮：fallback_rounds=null（区别于 0）',
-              d2.get('fallback_rounds', 'MISSING') is None, str(d2.get('fallback_rounds', 'MISSING')))
+        check('保活轮：两个字段均为 null（区别于 0）',
+              d2.get('fallback_rounds', 'MISSING') is None and d2.get('synth_rounds', 'MISSING') is None,
+              f'{d2.get("fallback_rounds", "MISSING")}/{d2.get("synth_rounds", "MISSING")}')
     finally:
         M.METRICS_FILE = orig
 
-    print('\n=== 9. datasource 数据源标记存在（哨兵分子来源）===')
+    print('\n=== 8. datasource 数据源标记存在（哨兵分子来源）===')
     src = io.open(os.path.join(ROOT, 'core', 'datasource.py'), encoding='utf-8').read()
     check("intraday() 写入 df.attrs['data_source']", "df.attrs['data_source'] = src" in src)
     check('四个取值齐备（mootdx/sina/tencent_synth/mootdx_partial）',

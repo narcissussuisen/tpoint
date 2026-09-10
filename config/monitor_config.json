@@ -99,9 +99,22 @@
       "window_s": 300,
       "severity": "warning",
       "require_up": true,
+      "enabled": false,
+      "cooldown_s": 600,
+      "description": "[2026-09-10 P0，已于同日 B 改造中停用] 兜底≠降级：落到 sina(真实OHLC) 口径无损，不该报。保留规则与 fallback_rate 指标供可观测/复盘，改由「数据源合成口径过高」承担告警。用户 2026-09-10 决策：不是故障就不提示。"
+    },
+    {
+      "name": "数据源合成口径过高",
+      "rule": "synth_rate",
+      "metric": "synth_rate",
+      "op": ">",
+      "threshold": 0.3,
+      "window_s": 300,
+      "severity": "warning",
+      "require_up": true,
       "enabled": true,
       "cooldown_s": 600,
-      "description": "[2026-09-10 P0] 滚动 5 分钟（约 20 轮 @15s）内超过一半的标的走了非 mootdx 兜底源（腾讯分时合成OHLC / 新浪1m），疑似 mootdx 接口级失效。实测兜底数据 ATR 中位低估 41.8%（448 标的-日），会放大止损被打概率 —— 请检查数据源，勿在降级期间调参。"
+      "description": "[2026-09-10 B] 滚动 5 分钟（约 20 轮 @15s）内超过 30% 的标的落到 **合成 OHLC**（腾讯分时兜底 tencent_synth）。这是**真降级**：合成 OHLC 丢弃真实分钟影线，实测 ATR 中位低估 41.8%（448 标的-日）、1.5×ATR 反T止损窄 42% ⇒ 会显著放大止损被打概率。落到新浪 1m（真实 OHLC）**不告警**（口径无损）。处置：先查 mootdx 服务器可用性（见 docs/datasource_incident_runbook.md），降级期间禁止调参。"
     }
   ]
 }

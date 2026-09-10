@@ -7,6 +7,75 @@
 > 方法论版本号与算法版本号**解耦**：方法论 bump 由方法论文档驱动，算法 bump 由 `VERSION` 驱动；
 > 两者对齐索引见 `docs/methodology_framework.md` §11。
 
+## v10.10.0（2026-09-10）mootdx 服务器选择根因修复 + 配色统一 + 多源基准固化机制
+> 本版把 09-10 当天暴露的三个问题一次收口：① mootdx **长期出错的真因**（非服务端故障）
+> ② 卡片配色语义 ③ 数据源策略的**固化机制**（不拍脑袋，用连续性数据定）。
+> ⚠️ VERSION 文件欠账同 v10.9.1（文件仍 10.6.0），本条目按生产主线 v10.9.x + MINOR 记。
+
+### A. mootdx 服务器选择根因修复（`core/datasource.py`）— 本版最重要的一项
+**真因（此前长期误判为「mootdx 坏了/免费源不可靠」）**：
+1. `_TDX_SERVERS` 硬编码 10 台（注释称「2026-07-20 实测可用」）**全批退化为「TCP 通 + count 正常 + bars 返空」**；
+2. `tdx_client()` 第②级 `for host in _pytdx_hosts[:30]` **只取前 30 条**，而实测可用的 9 台服务器在
+   103 条列表里的索引是 **[49, 70~77]** ⇒ **0 台进入候选**；
+3. 第③级 `bestip` 只按延迟选服、不保证 bars 可用；第④级**裸 factory 不校验** ⇒ 稳定落到坏服务器上。
+
+**实测证据**：103 台候选中 TCP 可达 31 台，其中 **9 台 bars 完全可用**（`59.36.5.11`、
+`117.34.114.13/.14/.15/.16/.17/.18/.20/.27`）；走生产库 mootdx 0.11.7（底层 **tdxpy 0.2.7**）
+对 `59.36.5.11` 取数正常，且与腾讯/新浪快照核对一致（当日收盘 5.57）⇒ **mootdx 本身完全正常**。
+
+**改动**：
+- `_TDX_SERVERS` → `_TDX_SEED_SERVERS`（实测 9 台）作**快速路径**；
+- `tdx_client()` 改**三级**：种子 → 缓存 `data/tdx_servers.json`(TTL 6h) → **动态全表发现**
+  （`_pytdx_host_candidates()` 全表 + `ThreadPoolExecutor(8)` 并发探测 + 逐个真实验活）；
+- **默认移除第④级「不校验的裸 factory」**，全失败即 `raise`（宁让上层走 HTTP 真实 OHLC 兜底，
+  也不给一个 bars 不通的客户端）；逃生门 env `TP_ALLOW_UNVERIFIED_TDX=1`；
+- 负缓存 `TDX_NEGATIVE_TTL_S=120s`：发现失败后短时不再重扫（防上层重试/重连触发发现风暴）；
+- `_server_ok()` **同时校验 1 分钟线**（`frequency=8`）——信号链路实际消费的是分钟 bar，与日线是不同 opcode；
+- `intraday()/historical_1m()` 对 denormal 垃圾成交量（收盘竞价占位 bar 的 `5.877e-39`）**归零而非删行**
+  （删行会移动 bar 下标 `i`，错位 `bar_key` 与指标数组）。
+
+**验收（生产实测）**：`✅ TDX 服务器可用(种子) 59.36.5.11`；
+**冷启动预热 8分52秒 → 约 12 秒**（13:19 三次重试全失败 → 17:27 一次成功）；
+冷启动+取数 174s → **0.6s**；`data_source=mootdx`、240 根、与独立源核对一致。
+
+### B. 哨兵改判「合成口径」（`monitor.py` + `alert_engine.py` + `config/monitor_config.json`）
+用户决策：**兜底 ≠ 降级**。落到 `sina`（真实 OHLC）口径无损**不该报**；落到 `tencent_synth`
+（合成 OHLC，ATR 中位低估 41.8%）才是真降级。
+- `write_metrics()` 增 `synth_rounds`（None=未扫描）；`fallback_rounds` 保留作可观测；
+- `alert_engine.derived` 增 `synth_rate`（同窗口聚合、排除 None 样本）；
+- 新规则 `metric=synth_rate, >0.3, window_s=300, warning, require_up`；
+  旧 `fallback_rate` 规则**保留但 `enabled:false`**（不删，供复盘观测）。
+
+### C. 配色统一「买入=红 / 卖出=绿」+ 文案最简（`exit_label.py` + `monitor.py` + `daily_signal_review.py`）
+用户决策：**所有买入一色、所有卖出一色**；不要「回补/反T/平多/平空」这类术语。
+- 新增配色单一真源 `color_for_action()` → 买红/卖绿（**A 股惯例**）；`EXIT_LABEL_MAP` 的配色列**停用**
+  （旧的出场 5 色 橙/蓝/灰 不再出现）；
+- 动作词统一为**买入/卖出**（`ACTION_BY_SIDE` 去掉了「买入回补」）；
+- 标题只留 `{代码} {买/卖} {N}成`；原因（突破止损/移动止盈…）移到正文行1；
+  浮盈口径 `空头腿/多头腿` → **本笔**；方向（正T/反T）下沉到卡片底部灰显备注；
+- `daily_signal_review.py` 的买卖配色同步翻转、`_type_cn` 按 side 归买/卖（与卡片同口径）；
+  ⚠️ **同文件的「有效/失效、成功/失败」状态色未动**（外科手术式改，已加回归锁定）。
+- ⚠️ `signal.txt` 的 `🟢/🔴/🔵 + BUY/SELL/EXIT + [STOP]` 是下游解析契约
+  （`prod_vs_bt_reconcile.RE_SIG`、`shadow_v3_review`），**只追加不改语义**。
+
+### D. 多源基准 → 数据源策略固化机制（`scripts/datasource_benchmark.py` + `config/datasource_policy.json`）
+- 基准四源：`mootdx` / `sina` / `tencent_synth` / `tencent_mkline`；`--once` 采样 → `data/datasource_benchmark.jsonl`；
+  `--summarize` → `output/datasource_benchmark_<date>.json`；含**跨源收盘一致率**（当日保真度基准）。
+- 关键指标 **`synth_sig`（合成口径签名）**：合成变换保证 `high=max(前收,今收)`、`low=min(前收,今收)`，
+  故**每根 bar 的 h 或 l 必等于前一根收盘**；真实 OHLC 因 0.01 量化常在 0.55~0.75。
+  实测：腾讯分时 **1.000**、新浪 0.595、mootdx 0.715 ⇒ 阈值 0.95 可干净切开。
+  ⚠️ 反面教材（本基准首版两次自纠）：用「h>l 占比」当真实度指标**无法区分**（合成 0.988 vs 真实 0.968/0.992）；
+  且 `tencent_synth` 探针曾误走 `_fetch_pool` 的新浪优先分支，把新浪数据记成腾讯
+  ⇒ 现已强制 env `TP_INTRADAY_PREFER=tencent` 并校验 `attrs['fallback_source']`。
+- `config/datasource_policy.json`（`status: draft`）：`fallback_order` 由 `datasource._intraday_order()` 读取，
+  优先级 **env `TP_INTRADAY_PREFER` > 策略文件 > 硬编码默认**；字段非法/文件损坏 → 安全回退。
+  判稳标准：可用率≥99% 且 synth_sig<0.90，**连续 3~5 个交易日达标**才转 `fixed`。
+
+### 验收
+- 回归全绿：`test_source_fidelity` **22/22**、`test_fallback_sentinel` **23/23**、`test_exit_label_side` **37/37**、
+  `test_warmup_heartbeat` 12/12、`test_bar_key_crossday` 6/6、`test_first_scan_cutoff` 6/6、`test_last_pushed_cutoff` 15/15。
+- 推送 9 张 `[TEST]` 卡片到信号群人工确认配色（9/9 success）。
+
 ## v10.9.4（2026-09-10）数据源兜底率哨兵 + 兜底链口径修正（真实 OHLC 优先）
 > 事故驱动：2026-09-10 mootdx **接口级失效**（`get_security_bars`/`get_security_quotes` 全返回空，
 > 而 `count/list/finance/minute_time` 正常；TCP 5/10 服务器可达 ⇒ 非本机网络）。monitor 全天

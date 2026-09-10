@@ -196,6 +196,7 @@ def replay_symbol(sym, name, data, pc, gates='prod', atr_min_pct='auto', mpr='au
         op = s[0]; price = float(s[1]); bar_tt = s[12] if len(s) > 12 else ''
         tag = s[9] if len(s) > 9 else ''
         exit_reason = s[10] if len(s) > 10 else ''
+        side = s[13] if len(s) > 13 else 'long'   # [2026-09-10] s[13]=side（见 monitor 元组口径）
         # [2026-09-10] 元组口径变更（配合 exit_label 方向感知）：s[13]=side，s[14]=仓位成数。
         # 旧写法 s[13] 会把 'long'/'short' 当成仓位成数写进复盘 HTML。
         pos_pct = s[14] if len(s) > 14 else POS_PCT
@@ -230,7 +231,7 @@ def replay_symbol(sym, name, data, pc, gates='prod', atr_min_pct='auto', mpr='au
                 max_fav = None; valid = None
                 reason = f'持仓盈亏 {chg:.2f}%（{exit_reason} 出场）'
         rows.append({
-            'time': str(bar_tt), 'type': op, 'type_cn': _type_cn(op, exit_reason),
+            'time': str(bar_tt), 'type': op, 'type_cn': _type_cn(op, exit_reason, side),
             'price': round(price, 3), 'pos_pct': pos_pct,
             'day_chg': round(float(day_chg), 3) if day_chg is not None else None,
             'tag': tag, 'exit_reason': exit_reason,
@@ -244,17 +245,16 @@ def replay_symbol(sym, name, data, pc, gates='prod', atr_min_pct='auto', mpr='au
     return rows, stats
 
 
-def _type_cn(op, exit_reason):
+def _type_cn(op, exit_reason, side='long'):
+    """信号 → 中文方向。统一为**买入/卖出**两个词，与飞书卡片的实际下单动作口径一致
+    （用户 2026-09-10 决策：不要「回补/平多」这类术语）。出场原因（突破止损/移动止盈…）
+    由本表末尾的「说明」列单独展示，不塞进方向列。"""
     if op == 'B':
         return '买入'
     if op == 'S':
         return '卖出'
-    # X 出场
-    if exit_reason == 'B':
-        return '回补(买)'
-    if exit_reason == 'S':
-        return '平多(卖)'
-    return '止损/出场'
+    # X 出场：按持仓方向归到实际动作——多头平仓=卖出，空头平仓=买入
+    return '买入' if side == 'short' else '卖出'
 
 
 def day_stats(df, data, pc):
@@ -447,8 +447,10 @@ def build_html(target, sym_results, baseline, comparison, live_counts=None, audi
             vtag = '<span style="color:#d4380d;font-weight:700">失效</span>'
         else:
             vtag = '<span style="color:#888">—</span>'
-        col = {'买入': '#0a8f3c', '卖出': '#d4380d', '回补(买)': '#0a8f3c',
-               '平多(卖)': '#d4380d', '止损/出场': '#1677ff'}.get(r['type_cn'], '#333')
+        # [2026-09-10 C] 买红/卖绿（A股惯例），与飞书卡片 color_for_action() 同口径。
+        # ⚠️ 只改这一处「买卖方向」配色；本文件别处的 #0a8f3c/#d4380d 是**状态语义**
+        #（有效/失效、成功/失败、一致/不一致），不得翻转。
+        col = {'买入': '#d4380d', '卖出': '#0a8f3c'}.get(r['type_cn'], '#333')
         cond = esc((r['tag'] or '').strip('[]') or r['band'] or '')
         extra = f"｜当日 {r['day_chg']:+.2f}%" if r['day_chg'] is not None else ''
         note = esc(r['reason']) if r['reason'] else ''

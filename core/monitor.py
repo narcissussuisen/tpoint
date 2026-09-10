@@ -29,8 +29,10 @@ from general_signal import (check_general_b_trigger, check_general_s_trigger,
 # 出场信号标签映射（P6 单一真源）：exit_reason + side -> (中文标签, 配色)
 # [2026-09-10 方向感知] 新增 action_for/leg_for/direction_for/close_leg_for/entry_direction_for，
 # 修复「空头被向上突破止损」被标成「破位止损」+ 卡片不显方向导致的误读事故。
-from exit_label import (EXIT_LABEL_MAP, label_for, action_for, action_short_for,
-                        leg_for, direction_for, close_leg_for, entry_direction_for)
+# [2026-09-10 C 配色统一] 卡片配色改由 color_for_action() 单一真源决定（买红/卖绿，A股惯例），
+# 不再使用 EXIT_LABEL_MAP 的配色列；方向（正T/反T）从正文移到卡片底部灰显备注。
+from exit_label import (EXIT_LABEL_MAP, label_for, action_for, direction_for,
+                        color_for_action)
 # ML 信号打分：39 特征单一实现（core/ml_features，模块2.2）
 # fail-open：ml_features.py 缺失（v10.0.0 灾难恢复后未找回，从未入 git）时
 # FEAT_ALL/ml_build_feature_row=None；ml_enable=false 时该路径不执行零影响，
@@ -932,7 +934,6 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
     标签/动作/腿名经 exit_label 方向感知取表，与卡片口径完全一致。
     """
     k_tag = f' [K:{bar_trade_time[11:16]}]' if bar_trade_time and len(bar_trade_time) >= 16 else ''
-    dirn = direction_for(side)
     _pct = pos_pct if pos_pct is not None else POS_PCT
     # 出场管理推送（接 exit_manager）：B开仓后跟踪，TRAIL/S触发平仓提醒
     if sig_type == 'X':
@@ -941,9 +942,9 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
         day_sign = '+' if (day_chg or 0) >= 0 else ''
         day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
         lines = [
-            f"🔵 {name} EXIT{reason} {_pct}成 {dirn}{close_leg_for(side)}·{action_short_for(side)}"
+            f"🔵 {name} EXIT{reason} {_pct}成 {action_for(side)}"
             f"{(' ' + tag) if tag else ''}{k_tag}",
-            f"现价 {price:.2f}（当日 {day_str} / {leg_for(side)} {chg_sign}{chg_pct:.1f}%）",
+            f"现价 {price:.2f}（当日 {day_str} / 本笔 {chg_sign}{chg_pct:.1f}%）",
             f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}"
         ]
         msg = '\n'.join(lines)
@@ -956,7 +957,7 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
     chg_sign = '+' if chg_pct >= 0 else ''
     star = stars(sig_type, temp, vol_r)
     lines = [
-        f"{emoji} {name} {op_type} {_pct}成 {entry_direction_for(sig_type)} {star}"
+        f"{emoji} {name} {op_type} {_pct}成 {star}"
         f"{(' ' + tag) if tag else ''}{k_tag}",
         f"现价 {price:.2f}（{chg_sign}{chg_pct:.1f}%）",
         f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}"
@@ -1000,56 +1001,55 @@ def emit_card(s, sym=None, sim=False):
     side = s[13] if len(s) >= 14 else 'long'
     pos_pct = s[14] if len(s) >= 15 else POS_PCT
     is_b, is_s, is_x = sig_type == 'B', sig_type == 'S', sig_type == 'X'
-    # 标题 + 配色（用户约定：买绿 / 卖红 / 出场按 exit_reason 配色）
+    # 标题 + 配色（用户 2026-09-10 决策：**所有买入一色、所有卖出一色** → 买红/卖绿，A股惯例）
+    # ⚠️ 不再按 exit_reason 分散配色（旧橙/蓝/灰已弃用）；配色单一真源 = color_for_action()
     code = (sym.split('.')[0] if sym else (name or ''))
-    dirn = direction_for(side)          # 正T / 反T
-    act = action_for(side)              # 卖出 / 买入回补
+    act = action_for(side)              # 实际下单动作：卖出（平多）/ 买入（平空）
     if is_b:
-        op, color = '买入', 'green'
+        op = '买入'
     elif is_s:
-        op, color = '卖出', 'red'
+        op = '卖出'
     else:
-        if exit_reason == 'B':            # 空头遇 B 信号回补 = 买入
-            op, color = '信号回补', 'green'
-        elif exit_reason in EXIT_LABEL_MAP:   # P6/P12 + 方向感知：FIXSTOP/STOP/S/TRAIL/TIME/EOD
-            op, color, _lvl = label_for(exit_reason, side)  # level 供推送分级（当前全部推送）
+        if exit_reason == 'B':            # 空头遇 B 信号平空 = 买入
+            op = '买入'
+        elif exit_reason in EXIT_LABEL_MAP:   # P6/P12 标签：突破止损/破位止损/移动止盈/信号平仓/时间止损/收盘强平
+            op, _c, _lvl = label_for(exit_reason, side)   # 只取中文标签（配色已改由动作决定）
         elif exit_reason == 'S':          # 多头遇 S 信号平多 = 卖出
-            op, color = '信号平仓', 'blue'
+            op = '信号平仓'
         else:                             # 未知 reason 保守兜底：按 side 判买卖动作
-            op, color = ('买入', 'green') if side == 'short' else ('卖出', 'red')
-    # 标题：出场卡带「实际动作 + 仓位 + 原因」，买卖卡保持「动作 + 仓位」
-    if is_x:
-        title = f'{code} {act} {pos_pct}成 · {op}'
-    else:
-        title = f'{code} {op} {pos_pct}成'
+            op = '买入' if side == 'short' else '卖出'
+    # 标题：**只留「买/卖 + 仓位」**（原因移到正文行1，方向语义交给颜色）
+    _op_final = act if is_x else op
+    title = f'{code} {_op_final} {pos_pct}成'
+    color = color_for_action(_op_final)
     star = stars(sig_type, temp, vol_r)
     chg_sign = '+' if chg >= 0 else ''
     sample = _map_sample(sig_type, tag)
     bt = bar_tt[11:16] if bar_tt and len(bar_tt) >= 16 else ''
-    # 行1：标的·方向动作｜做T仓位 ★
-    #   出场：ST豆神·反T平空｜突破止损 ★☆☆☆   （先看方向与动作，再看原因）
-    #   买卖：ST豆神·正T买入｜做T·2成 ★☆☆☆   （反T=卖底仓做T，必须显式标出）
+    # 行1：出场卡=标的·原因（突破止损/移动止盈…）；买卖卡=标的·动作｜做T·N成
     if is_x:
-        line1 = f"{name}·{dirn}{close_leg_for(side)}｜{op} {star}"
+        line1 = f"{name}·{op} {star}"
     else:
-        line1 = f"{name}·{entry_direction_for(sig_type)}{op}｜做T·{pos_pct}成 {star}"
-    # 行2：操作点位（买卖用动态 level_type；出场用「当日 / 本腿」双口径）
+        line1 = f"{name}·{op}｜做T·{pos_pct}成 {star}"
+    # 行2：操作点位（买卖用动态 level_type；出场用「当日 / 本笔」双口径）
     if is_x:
         day_sign = '+' if (day_chg or 0) >= 0 else ''
         day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
-        reason = f" [{exit_reason}]" if exit_reason else ''
-        line2 = f"现价 {price:.2f}（当日 {day_str} / {leg_for(side)} {chg_sign}{chg:.1f}%）{reason}"
+        line2 = f"现价 {price:.2f}（当日 {day_str} / 本笔 {chg_sign}{chg:.1f}%）"
     else:
         line2 = f"现价 {price:.2f}（{chg_sign}{chg:.1f}%）｜{level_type} {level_val:.2f}"
     # 行3：操作依据
     line3 = f"依据：{sample}"
     # 行4：信号K时间戳
     line4 = f"信号K：{bt}"
-    # 备注（底部折叠，灰显）：调试参数
+    # 备注（底部折叠，灰显）：调试参数 + 方向。方向（正T/反T）从指令正文移到此处——
+    # 用户 2026-09-10：正文要「一眼看懂买还是卖」，术语不该干扰指令。
     trigger_pct = (level_val - price) / price * 100 if price > 0 else 0.0
     trig_sign = '+' if trigger_pct >= 0 else ''
+    _dirn = direction_for(side)          # 正T / 反T（诊断用）
+    _rsn = f'reason={exit_reason} ' if exit_reason else ''
     footer = (f"RSI={rsi:.0f} 温={temp:.0f} 量比={vol_r:.1f} "
-              f"距触发{trig_sign}{trigger_pct:.1f}% 原tag=\"{tag}\" ｜ "
+              f"距触发{trig_sign}{trigger_pct:.1f}% {_dirn} {_rsn}原tag=\"{tag}\" ｜ "
               f"v9 ({VERSION})·SIM·仅供参考非投资建议")
     if sim:
         footer += " [SIM]"
@@ -1085,7 +1085,6 @@ def _append_signal_txt(s):
         sig_type, price, chg, level_val, level_type, rsi, temp, vol_r, name, tag, exit_reason, day_chg, bar_tt = s[:13]
         side = s[13] if len(s) >= 14 else 'long'
         pos_pct = s[14] if len(s) >= 15 else POS_PCT
-        dirn = direction_for(side)
         k_tag = f' [K:{bar_tt[11:16]}]' if bar_tt and len(str(bar_tt)) >= 16 else ''
         chg_sign = '+' if (chg or 0) >= 0 else ''
         if sig_type == 'X':
@@ -1093,9 +1092,9 @@ def _append_signal_txt(s):
             day_sign = '+' if (day_chg or 0) >= 0 else ''
             day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
             lines = [
-                f"🔵 {name} EXIT{reason} {pos_pct}成 {dirn}{close_leg_for(side)}·{action_short_for(side)}"
+                f"🔵 {name} EXIT{reason} {pos_pct}成 {action_for(side)}"
                 f"{(' ' + tag) if tag else ''}{k_tag}",
-                f"现价 {price:.2f}（当日 {day_str} / {leg_for(side)} {chg_sign}{chg:.1f}%）",
+                f"现价 {price:.2f}（当日 {day_str} / 本笔 {chg_sign}{chg:.1f}%）",
                 f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}",
             ]
         else:
@@ -1103,7 +1102,7 @@ def _append_signal_txt(s):
             op_type = 'BUY' if sig_type == 'B' else 'SELL'
             star = stars(sig_type, temp, vol_r)
             lines = [
-                f"{emoji} {name} {op_type} {pos_pct}成 {entry_direction_for(sig_type)} "
+                f"{emoji} {name} {op_type} {pos_pct}成 "
                 f"{star}{(' ' + tag) if tag else ''}{k_tag}",
                 f"现价 {price:.2f}（{chg_sign}{chg:.1f}%）",
                 f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}",
@@ -1174,7 +1173,8 @@ def save_state(s):
         except Exception as e2:
             print(f"  ⚠️ state.json 写入失败 open_errno={getattr(e,'errno','?')} ctypes降级也失败={e2} (内存态保持,下轮重试)")
 
-def write_metrics(duration_s, signals, errors, last_bar_ts, symbols, fallback_rounds=None):
+def write_metrics(duration_s, signals, errors, last_bar_ts, symbols, fallback_rounds=None,
+                  synth_rounds=None):
     """每轮扫描末写入 metrics.json，供告警引擎(watchdog)采集。
     包含：扫描耗时 / 本轮信号数 / 本轮错误数 / 最新行情棒时间 / 标的数。
     2026-07-20 fix: 改用原子写入（先写 .tmp 再 os.replace），消除 Windows 文件锁竞争导致
@@ -1201,6 +1201,9 @@ def write_metrics(duration_s, signals, errors, last_bar_ts, symbols, fallback_ro
                     # ⚠️ None = 本轮**未扫描**（保活/盘前/午休），alert_engine 会跳过该样本，
                     #    避免非扫描轮次稀释兜底率（否则午休积攒的 0 会把恢复后的告警延迟 5 分钟）。
                     'fallback_rounds': (None if fallback_rounds is None else int(fallback_rounds)),
+                    # [2026-09-10 B] 真降级分子：只有落到**合成 OHLC**（tencent_synth）才算口径降级
+                    # （ATR 中位低估 41.8%）。None = 本轮未扫描。哨兵只看这一个指标。
+                    'synth_rounds': (None if synth_rounds is None else int(synth_rounds)),
                 }
                 # [模块2.3] ML 推理指标（infer_cnt/err/过滤/放大/均耗）
                 _m['ml'] = _ml_metrics()
@@ -2039,6 +2042,10 @@ def run():
         # [2026-09-10 P0 兜底率哨兵] 本轮走非 mootdx 源（兜底）的标的数；分子。
         # 分母 = len(TARGETS)。口径：滚动窗口内 Σfallback_rounds / Σsymbols（见 alert_engine）。
         fb_rounds = 0
+        # [2026-09-10 B] 兜底**不等于**降级：落到 sina(真实OHLC) 口径无损；落到 tencent_synth
+        # (合成OHLC) 才会 ATR 中位低估 41.8%。故哨兵只对 synth_rounds 报警，
+        # fallback_rounds 保留作可观测性（复盘看"有没有走兜底"）。
+        synth_rounds = 0
         # 先补发上一轮失败的推送（频限11232等），再扫描新信号——根治"失败即丢推"
         try:
             _drain_pending()
@@ -2116,6 +2123,8 @@ def run():
                             _src = (getattr(data.get('df'), 'attrs', None) or {}).get('data_source', 'mootdx')
                             if _src != 'mootdx':
                                 fb_rounds += 1
+                            if _src == 'tencent_synth':
+                                synth_rounds += 1
                         except Exception:
                             pass
                         try:
@@ -2332,7 +2341,7 @@ def run():
                 pass
             write_metrics(time.time() - loop_start, len(batch),
                           err_count + (1 if outer_err else 0), max_bar_ts, len(TARGETS),
-                          fallback_rounds=fb_rounds)
+                          fallback_rounds=fb_rounds, synth_rounds=synth_rounds)
             if not batch:
                 print(f"  🔄 [{now.strftime('%H:%M:%S')}] 本轮无信号 ({len(TARGETS)}标的扫描完成)")
         except Exception as e:
@@ -2349,7 +2358,7 @@ def run():
             try:
                 write_metrics(time.time() - loop_start, 0,
                               err_count + 1, max_bar_ts, len(TARGETS),
-                              fallback_rounds=fb_rounds)
+                              fallback_rounds=fb_rounds, synth_rounds=synth_rounds)
             except Exception:
                 pass
             print(f"  🔄 {SCAN_INTERVAL}秒后恢复扫描...")

@@ -300,8 +300,12 @@ def evaluate(sample, buffer, now, cfg):
         # [2026-09-10 P0 兜底率哨兵] 滚动窗口内「走非 mootdx 源(兜底)的标的数 / 扫描标的总数」。
         # 只在 rule 带 window_s 时计算（与 signals_window/errors_window 同机制）；默认 None。
         'fallback_rate': None,
+        # [2026-09-10 B] **真降级**指标：落到合成 OHLC（tencent_synth）的占比。
+        # 兜底不等于降级——sina 是真实 OHLC、口径无损；只有 tencent_synth 会 ATR 低估 41.8%。
+        # 哨兵规则只看 synth_rate；fallback_rate 保留作可观测性（规则已 enabled:false）。
+        'synth_rate': None,
     }
-    # 窗口聚合（信号突增 / 扫描异常 / 数据源兜底率）
+    # 窗口聚合（信号突增 / 扫描异常 / 数据源兜底率 / 合成口径降级率）
     for rule in cfg.get('alerts', []):
         win = rule.get('window_s')
         if not win:
@@ -312,14 +316,15 @@ def evaluate(sample, buffer, now, cfg):
             derived['signals_window'] = sig_sum
         elif rule['metric'] == 'errors_window':
             derived['errors_window'] = err_sum
-        elif rule['metric'] == 'fallback_rate':
-            # ⚠️ 只统计**真正扫描过**的样本（fallback_rounds 非 null）——保活/盘前/午休轮次
-            #    没有扫描语义，计入分母会稀释兜底率、把恢复后的告警拖延一个窗口。
+        elif rule['metric'] in ('fallback_rate', 'synth_rate'):
+            # ⚠️ 只统计**真正扫描过**的样本（对应 rounds 字段非 null）——保活/盘前/午休轮次
+            #    没有扫描语义，计入分母会稀释比率、把恢复后的告警拖延一个窗口。
+            _key = 'fallback_rounds' if rule['metric'] == 'fallback_rate' else 'synth_rounds'
             _w = [s for s in buffer
-                  if now - s.get('ts', 0) <= win and s.get('fallback_rounds') is not None]
+                  if now - s.get('ts', 0) <= win and s.get(_key) is not None]
             _den = sum((s.get('symbols') or 0) for s in _w)
-            _num = sum((s.get('fallback_rounds') or 0) for s in _w)
-            derived['fallback_rate'] = (_num / _den) if _den > 0 else None
+            _num = sum((s.get(_key) or 0) for s in _w)
+            derived[rule['metric']] = (_num / _den) if _den > 0 else None
 
     alerts = []
     for rule in cfg.get('alerts', []):

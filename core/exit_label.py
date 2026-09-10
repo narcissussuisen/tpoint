@@ -64,11 +64,10 @@ EXIT_LABEL_MAP_SHORT: Dict[str, Tuple[str, str, str]] = {
 #: 展示顺序（用于报告/文档的稳定排序；与出场检查优先级一致）
 EXIT_LABEL_ORDER: Tuple[str, ...] = ('FIXSTOP', 'STOP', 'S', 'TRAIL', 'TIME', 'EOD')
 
-#: 方向 → 平仓动作（EXIT 一律是「平掉当前这条腿」；多头平仓=卖出，空头平仓=买回）
-ACTION_BY_SIDE: Dict[str, str] = {'long': '卖出', 'short': '买入回补'}
-
-#: 方向 → signal.txt 用的紧凑动作（单行文本，避免过长）
-ACTION_SHORT_BY_SIDE: Dict[str, str] = {'long': '卖出', 'short': '买回'}
+#: 方向 → 平仓动作。EXIT 一律是「平掉当前这条腿」；多头平仓=卖出，空头平仓=买入。
+#: [2026-09-10] 统一为**买入/卖出**两个词（用户决策：不要「回补」这类术语，
+#: 指令必须一眼看懂是买还是卖）；方向语义（正T/反T）移入卡片底部灰显备注。
+ACTION_BY_SIDE: Dict[str, str] = {'long': '卖出', 'short': '买入'}
 
 #: 方向 → 腿名（卡片里标注"本腿浮盈"，与底仓浮盈区分开——
 #: 2026-09-10 误读事故的第二来源：卡片只写「持仓 -0.4%」，用户以为是底仓亏）
@@ -79,6 +78,22 @@ DIRECTION_BY_SIDE: Dict[str, str] = {'long': '正T', 'short': '反T'}
 
 #: EXIT → 卡片副标题用的「平仓腿」短描述
 CLOSE_LEG_BY_SIDE: Dict[str, str] = {'long': '平多', 'short': '平空'}
+
+#: ─────────────────────────────────────────────────────────────────────────────
+#: 卡片配色**单一真源**（用户 2026-09-10 决策）：
+#:   「所有买入一种颜色、所有卖出一种颜色」，不按 exit_reason 分散配色。
+#: 采用 **A 股惯例：买入=红 / 卖出=绿**（与行情涨跌色一致；用户明确拍板）。
+#: ⚠️ 这 ≠ 国际惯例的「买绿卖红」，也不是本模块旧行为（旧行为买卖=绿/红 + 出场 5 色）。
+#: ⇒ 下列 EXIT_LABEL_MAP / EXIT_LABEL_MAP_SHORT 的**第 2 列（配色）已停用**：
+#:   仅为向后兼容保留字段（`label_for()` 的调用方仍在解包三元组），
+#:   卡片配色一律走 `color_for_action()`。
+#: ─────────────────────────────────────────────────────────────────────────────
+ACTION_COLOR: Dict[str, str] = {'买入': 'red', '卖出': 'green'}
+
+
+def color_for_action(action: str) -> str:
+    """实际下单动作 → 飞书卡片 header 配色（买红/卖绿，A 股惯例）。单一真源。"""
+    return ACTION_COLOR.get(action, 'grey')
 
 
 def _norm_side(side: Optional[str]) -> str:
@@ -99,13 +114,8 @@ def label_for(reason: str, side: Optional[str] = None) -> Tuple[str, str, str]:
 
 
 def action_for(side: Optional[str]) -> str:
-    """平仓腿对应的**实际下单动作**：多头平仓=卖出，空头平仓=买入回补。"""
+    """平仓腿对应的**实际下单动作**：多头平仓=卖出，空头平仓=买入。"""
     return ACTION_BY_SIDE[_norm_side(side)]
-
-
-def action_short_for(side: Optional[str]) -> str:
-    """signal.txt 单行用的紧凑动作：卖出 / 买回。"""
-    return ACTION_SHORT_BY_SIDE[_norm_side(side)]
 
 
 def leg_for(side: Optional[str]) -> str:

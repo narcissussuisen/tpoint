@@ -185,8 +185,45 @@ def main():
     check("intraday() 末尾写 df.attrs['data_source']", "df.attrs['data_source'] = src" in src)
     for v in ('mootdx', 'sina', 'tencent_synth', 'mootdx_partial'):
         check(f'取值 {v} 存在', f"'{v}'" in src)
-    check('_fetch_pool 由 TP_INTRADAY_PREFER 控制顺序',
-          "TP_INTRADAY_PREFER" in src and "_sina_first" in src)
+    check('_fetch_pool 顺序由 _intraday_order() 决定（env > 策略文件 > 默认）',
+          "_intraday_order()" in src and "TP_INTRADAY_PREFER" in src)
+    check('存在数据源策略固化入口 config/datasource_policy.json 的读取',
+          "_read_datasource_policy" in src and "DATASOURCE_POLICY_FILE" in src)
+
+    print('\n=== 5. 策略文件优先级：env > 策略文件 > 硬编码默认 ===')
+    import json as _j
+    pol_fp = DS.DATASOURCE_POLICY_FILE
+    _old_pol = None
+    if os.path.exists(pol_fp):
+        _old_pol = io.open(pol_fp, encoding='utf-8').read()
+    _old_env = os.environ.pop('TP_INTRADAY_PREFER', None)
+    try:
+        check('默认顺序 = 真实OHLC优先（sina → tencent）',
+              DS._intraday_order() == ['sina', 'tencent'], str(DS._intraday_order()))
+        os.environ['TP_INTRADAY_PREFER'] = 'tencent'
+        check('env 覆盖：tencent 优先（回滚开关）',
+              DS._intraday_order() == ['tencent', 'sina'], str(DS._intraday_order()))
+        os.environ.pop('TP_INTRADAY_PREFER', None)
+        _j.dump({'version': 1, 'fallback_order': ['tencent']}, io.open(pol_fp, 'w', encoding='utf-8'))
+        check('策略文件覆盖默认（fallback_order）',
+              DS._intraday_order() == ['tencent'], str(DS._intraday_order()))
+        _j.dump({'version': 1, 'fallback_order': ['bogus', 123]}, io.open(pol_fp, 'w', encoding='utf-8'))
+        check('策略文件字段非法 → 回退默认（安全兜底）',
+              DS._intraday_order() == ['sina', 'tencent'], str(DS._intraday_order()))
+        with io.open(pol_fp, 'w', encoding='utf-8') as f:
+            f.write('{ 坏 JSON')
+        check('策略文件损坏 → 回退默认（安全兜底）',
+              DS._intraday_order() == ['sina', 'tencent'], str(DS._intraday_order()))
+    finally:
+        if _old_pol is not None:
+            io.open(pol_fp, 'w', encoding='utf-8').write(_old_pol)
+        else:
+            try:
+                os.remove(pol_fp)
+            except OSError:
+                pass
+        if _old_env is not None:
+            os.environ['TP_INTRADAY_PREFER'] = _old_env
     check('兜底命中源写入 df.attrs[fallback_source]', "df.attrs['fallback_source']" in src)
 
     print(f'\n结果: {len(PASS)}/{len(PASS) + len(FAIL)} 通过')
