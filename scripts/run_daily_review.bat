@@ -2,9 +2,15 @@
 REM tpoint 每日收盘后信号复盘 —— 定时任务入口（完整流水线：复算 + 行情图标注 + HTML + 推飞书）
 REM 由 Windows 计划任务 tpoint_daily_review 于每个交易日 15:30 调用
 REM 2026-07-30 修正：原仅 daily_signal_review.py --push（无行情图、推文本摘要），不满足"复盘必须画图标注信号"。
-REM   现改为 3 步流水线：复算JSON -> review_charts 画信号标注图 -> build_review_html 汇编含图HTML -> push_feishu_html 推飞书云链接。
+REM   现改为 3 步流水线：复算JSON → review_charts 画信号标注图 → build_review_html 汇编含图HTML → push_feishu_html 推飞书云链接。
 REM 编码修复：PYTHONUTF8=1 + chcp 65001 避免 monitor.py emoji 打印在 gbk 代码页下 UnicodeEncodeError。
-REM --- 2026-09-03 T0/T1 失败语义透传（自迭代闭环硬化方案 v2，docs/self_iteration_loop_hardening_plan.md）---
+REM --- 2026-09-03 T0/T1 failure-semantics passthrough (hardening plan v2) ---
+REM   T0: runtime_identity --begin anchors run_id (git commit / config hash / exec model ver).
+REM   T1: pipeline_status running STEP before each step, record STEP RC after it
+REM       (set RC=ERRORLEVEL first, because the record call resets errorlevel);
+REM       record checks --expected outputs (rc=0 + missing outputs = DEGRADED, rc=77 = SKIPPED);
+REM       final summarize --push-fail: critical step FAILED/INTERRUPTED/NOT_RUN →
+REM       feishu alert + exit /b 2 so schtasks LastResult shows the failure.
 REM   T0: 流水线头部 runtime_identity --begin 锚定 run_id（git commit/配置hash/成交口径版本 落盘 data/runtime_identity/）。
 REM   T1: 每步前 pipeline_status running [step] 预写 RUNNING；每步后 record [step] [rc]（先 set RC=%ERRORLEVEL% 捕获真实 rc）；
 REM   !! 警告：本文件所有 REM 注释禁止出现尖括号（小于号/大于号）—— cmd 在解析阶段会把 [x] 形式的尖括号当输入重定向，
@@ -14,6 +20,9 @@ REM       尾部 summarize --push-fail：关键步(live_review/reconcile/daily_r
 REM       任一 FAILED/INTERRUPTED/NOT_RUN → 推 b4eba7a9 全局群 + exit /b 2（计划任务显示失败）。
 chcp 65001 >nul
 set "ROOT=C:\Users\YZP\WorkBuddy\Claw\tpoint"
+REM [2026-09-04 rc255-postmortem] startup marker: if this line is missing from the log,
+REM the bat never started under Task Scheduler (environment-level failure, not content).
+echo [%DATE% %TIME%] BAT_STARTED >> "%ROOT%\logs\daily_review.log"
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
 set PYTHONUNBUFFERED=1
@@ -23,7 +32,7 @@ set PUSH_PY=C:\Users\YZP\WorkBuddy\Claw\方法论与研究文档\研究报告\pu
 set WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/849577f5-6c79-498e-92bd-0721af6f9622
 for /f "usebackq" %%i in (`%PY_EXE% %ROOT%\scripts\_today.py`) do set D=%%i
 echo [%DATE% %TIME%] === tpoint daily review %D% === >> "%ROOT%\logs\daily_review.log"
-REM --- T0 运行身份锚定（2026-09-03）：失败不阻断流水线（T1 record 会自动兜底重建 run） ---
+REM --- T0 runtime identity anchor (2026-09-03): non-blocking, T1 auto-rebegins on failure ---
 "%PY_EXE%" "%ROOT%\scripts\runtime_identity.py" --begin >> "%ROOT%\logs\daily_review.log" 2>&1
 set RC=%ERRORLEVEL%
 "%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" record runtime_identity %RC% >> "%ROOT%\logs\daily_review.log" 2>&1
@@ -105,7 +114,7 @@ set RC=%ERRORLEVEL%
 "%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" record auto_tune %RC% --expected "%ROOT%\data\auto_tune_state.json" >> "%ROOT%\logs\daily_review.log" 2>&1
 if %RC% GEQ 1 echo [%DATE% %TIME%] [WARN] auto_tune non-zero rc=%RC% >> "%ROOT%\logs\daily_review.log"
 echo [%DATE% %TIME%] === done (auto tune) === >> "%ROOT%\logs\daily_review.log"
-REM --- T1 尾部汇总（2026-09-03）：只读当前 run_id 防旧状态污染；关键步失败 → 飞书告警 + exit /b 2 ---
+REM --- T1 tail summary (2026-09-03): current run_id only; critical fail → feishu + exit /b 2 ---
 "%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" summarize --push-fail >> "%ROOT%\logs\daily_review.log" 2>&1
 set RC=%ERRORLEVEL%
 if %RC% GEQ 2 (
