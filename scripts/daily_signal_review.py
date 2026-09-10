@@ -196,7 +196,9 @@ def replay_symbol(sym, name, data, pc, gates='prod', atr_min_pct='auto', mpr='au
         op = s[0]; price = float(s[1]); bar_tt = s[12] if len(s) > 12 else ''
         tag = s[9] if len(s) > 9 else ''
         exit_reason = s[10] if len(s) > 10 else ''
-        pos_pct = s[13] if len(s) > 13 else POS_PCT
+        # [2026-09-10] 元组口径变更（配合 exit_label 方向感知）：s[13]=side，s[14]=仓位成数。
+        # 旧写法 s[13] 会把 'long'/'short' 当成仓位成数写进复盘 HTML。
+        pos_pct = s[14] if len(s) > 14 else POS_PCT
         day_chg = s[11] if len(s) > 11 else None
         chg = s[2] if len(s) > 2 else None
         idx = -1

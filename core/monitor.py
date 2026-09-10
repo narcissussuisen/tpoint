@@ -26,8 +26,11 @@ from exit_manager import make_config, limit_thr
 # flag 门控（USE_GENERAL_ENGINE）+ miji 兜底，热重载、实时安全。
 from general_signal import (check_general_b_trigger, check_general_s_trigger,
                              detect_signals_general, GeneralConfig, GENERAL_DEFAULT)
-# 出场信号标签映射（P6 单一真源）：exit_reason -> (中文标签, 配色)
-from exit_label import EXIT_LABEL_MAP, label_for
+# 出场信号标签映射（P6 单一真源）：exit_reason + side -> (中文标签, 配色)
+# [2026-09-10 方向感知] 新增 action_for/leg_for/direction_for/close_leg_for/entry_direction_for，
+# 修复「空头被向上突破止损」被标成「破位止损」+ 卡片不显方向导致的误读事故。
+from exit_label import (EXIT_LABEL_MAP, label_for, action_for, action_short_for,
+                        leg_for, direction_for, close_leg_for, entry_direction_for)
 # ML 信号打分：39 特征单一实现（core/ml_features，模块2.2）
 # fail-open：ml_features.py 缺失（v10.0.0 灾难恢复后未找回，从未入 git）时
 # FEAT_ALL/ml_build_feature_row=None；ml_enable=false 时该路径不执行零影响，
@@ -921,9 +924,16 @@ def compute(sym):
         data['is_morning'] = None
     return data
 
-def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name, tag='', exit_reason='', day_chg=None, bar_trade_time='', pos_pct=None):
-    """构造推送文本并写 signal.txt。v9.1.2: 加 [K:HH:MM] 信号K时刻 + EXIT 双口径(当日涨跌/持仓盈亏)。"""
+def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name, tag='', exit_reason='', day_chg=None, bar_trade_time='', side='long', pos_pct=None):
+    """构造推送文本并写 signal.txt（CARD_MODE=False 的 fallback 路径）。
+    v9.1.2: 加 [K:HH:MM] 信号K时刻 + EXIT 双口径(当日涨跌/本腿盈亏)。
+    [2026-09-10] 元组顺序对齐 emit_card：side 在 pos_pct 之前（s[13]=side, s[14]=仓位成数），
+    避免 emit_signal 的 `emit(*s)` 在 15 元组上抛 TypeError（半修复陷阱）。
+    标签/动作/腿名经 exit_label 方向感知取表，与卡片口径完全一致。
+    """
     k_tag = f' [K:{bar_trade_time[11:16]}]' if bar_trade_time and len(bar_trade_time) >= 16 else ''
+    dirn = direction_for(side)
+    _pct = pos_pct if pos_pct is not None else POS_PCT
     # 出场管理推送（接 exit_manager）：B开仓后跟踪，TRAIL/S触发平仓提醒
     if sig_type == 'X':
         reason = f" [{exit_reason}]" if exit_reason else ''
@@ -931,8 +941,9 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
         day_sign = '+' if (day_chg or 0) >= 0 else ''
         day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
         lines = [
-            f"🔵 {name} EXIT{reason} {pos_pct if pos_pct is not None else POS_PCT}成{(' ' + tag) if tag else ''}{k_tag}",
-            f"现价 {price:.2f}（当日 {day_str} / 持仓 {chg_sign}{chg_pct:.1f}%）",
+            f"🔵 {name} EXIT{reason} {_pct}成 {dirn}{close_leg_for(side)}·{action_short_for(side)}"
+            f"{(' ' + tag) if tag else ''}{k_tag}",
+            f"现价 {price:.2f}（当日 {day_str} / {leg_for(side)} {chg_sign}{chg_pct:.1f}%）",
             f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}"
         ]
         msg = '\n'.join(lines)
@@ -945,7 +956,8 @@ def emit(sig_type, price, chg_pct, level_val, level_type, rsi, temp, vol_r, name
     chg_sign = '+' if chg_pct >= 0 else ''
     star = stars(sig_type, temp, vol_r)
     lines = [
-        f"{emoji} {name} {op_type} {pos_pct if pos_pct is not None else POS_PCT}成 {star}{(' ' + tag) if tag else ''}{k_tag}",
+        f"{emoji} {name} {op_type} {_pct}成 {entry_direction_for(sig_type)} {star}"
+        f"{(' ' + tag) if tag else ''}{k_tag}",
         f"现价 {price:.2f}（{chg_sign}{chg_pct:.1f}%）",
         f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}"
     ]
@@ -971,43 +983,62 @@ def _map_sample(sig_type, tag):
     return t if t else '—'
 
 def emit_card(s, sym=None, sim=False):
-    """构造飞书 interactive 卡片（v9.1.3 精简版）。
+    """构造飞书 interactive 卡片（v9.1.3 精简版 + 2026-09-10 方向感知修复）。
     正文仅留 4 项：①标的·操作·仓位 ②操作点位 ③操作依据 ④信号时间戳；
     其余调试参数（RSI/温度/量比/距触发%/原tag）折叠到卡片底部「备注」灰显。
-    s = 13元组。配色：买入=绿 / 卖出=红 / 出场=蓝（与用户约定一致）。
+    s = 14/15元组：索引 13 = side('long'|'short')，索引 14 = 仓位成数。
+    配色：买入=绿 / 卖出=红 / 出场=按 exit_reason（见 exit_label）。
+
+    [2026-09-10 方向感知] 改动三处，对症「创新高却提示破位止损」误读：
+      a) 出场标签按 side 取表：short 的 STOP →「突破止损」（原方向盲的「破位止损」是
+         向下跌破支撑的多头语义，用在被向上打爆的空头身上字面相反）；
+      b) 标题补上**实际下单动作**（卖出/买入回补），不再用 reason 顶替动作；
+      c) 行2 的浮盈口径从「持仓」改为「多头腿/空头腿」，明确这是**当前这条腿**的浮盈，
+         不是底仓浮盈（用户看到 -0.4% + 创新高会以为底仓亏了）。
     """
     sig_type, price, chg, level_val, level_type, rsi, temp, vol_r, name, tag, exit_reason, day_chg, bar_tt = s[:13]
-    pos_pct = s[13] if len(s) >= 14 else POS_PCT
+    side = s[13] if len(s) >= 14 else 'long'
+    pos_pct = s[14] if len(s) >= 15 else POS_PCT
     is_b, is_s, is_x = sig_type == 'B', sig_type == 'S', sig_type == 'X'
-    # 标题 + 配色（用户约定：买绿 / 卖红 / 出场蓝）
+    # 标题 + 配色（用户约定：买绿 / 卖红 / 出场按 exit_reason 配色）
     code = (sym.split('.')[0] if sym else (name or ''))
+    dirn = direction_for(side)          # 正T / 反T
+    act = action_for(side)              # 卖出 / 买入回补
     if is_b:
         op, color = '买入', 'green'
     elif is_s:
         op, color = '卖出', 'red'
     else:
-        if exit_reason == 'B':   # 空仓回补 = 买回
-            op, color = '买入', 'green'
-        elif exit_reason in EXIT_LABEL_MAP:   # P6/P12: 差异化标签（FIXSTOP/STOP/S/TRAIL/TIME/EOD）
-            op, color, _lvl = label_for(exit_reason)   # level 供推送分级（当前全部推送，未来按级过滤）
-        else:                     # exit_reason == 'S' 平多 = 卖平；未知 reason 保守兜底
-            if '空平' in (level_type or ''):
-                op, color = '买入', 'green'
-            else:
-                op, color = '卖出', 'red'
-    title = f'{code} {op} {pos_pct}成'
+        if exit_reason == 'B':            # 空头遇 B 信号回补 = 买入
+            op, color = '信号回补', 'green'
+        elif exit_reason in EXIT_LABEL_MAP:   # P6/P12 + 方向感知：FIXSTOP/STOP/S/TRAIL/TIME/EOD
+            op, color, _lvl = label_for(exit_reason, side)  # level 供推送分级（当前全部推送）
+        elif exit_reason == 'S':          # 多头遇 S 信号平多 = 卖出
+            op, color = '信号平仓', 'blue'
+        else:                             # 未知 reason 保守兜底：按 side 判买卖动作
+            op, color = ('买入', 'green') if side == 'short' else ('卖出', 'red')
+    # 标题：出场卡带「实际动作 + 仓位 + 原因」，买卖卡保持「动作 + 仓位」
+    if is_x:
+        title = f'{code} {act} {pos_pct}成 · {op}'
+    else:
+        title = f'{code} {op} {pos_pct}成'
     star = stars(sig_type, temp, vol_r)
     chg_sign = '+' if chg >= 0 else ''
     sample = _map_sample(sig_type, tag)
     bt = bar_tt[11:16] if bar_tt and len(bar_tt) >= 16 else ''
-    # 行1：标的·操作｜做T仓位 ★（op 已在上方按 sig_type+exit_reason 智能判定，勿覆盖）
-    line1 = f"{name}·{op}｜做T·{pos_pct}成 {star}"
-    # 行2：操作点位（买卖用动态 level_type；出场双口径）
+    # 行1：标的·方向动作｜做T仓位 ★
+    #   出场：ST豆神·反T平空｜突破止损 ★☆☆☆   （先看方向与动作，再看原因）
+    #   买卖：ST豆神·正T买入｜做T·2成 ★☆☆☆   （反T=卖底仓做T，必须显式标出）
+    if is_x:
+        line1 = f"{name}·{dirn}{close_leg_for(side)}｜{op} {star}"
+    else:
+        line1 = f"{name}·{entry_direction_for(sig_type)}{op}｜做T·{pos_pct}成 {star}"
+    # 行2：操作点位（买卖用动态 level_type；出场用「当日 / 本腿」双口径）
     if is_x:
         day_sign = '+' if (day_chg or 0) >= 0 else ''
         day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
         reason = f" [{exit_reason}]" if exit_reason else ''
-        line2 = f"现价 {price:.2f}（当日 {day_str} / 持仓 {chg_sign}{chg:.1f}%）{reason}"
+        line2 = f"现价 {price:.2f}（当日 {day_str} / {leg_for(side)} {chg_sign}{chg:.1f}%）{reason}"
     else:
         line2 = f"现价 {price:.2f}（{chg_sign}{chg:.1f}%）｜{level_type} {level_val:.2f}"
     # 行3：操作依据
@@ -1043,10 +1074,18 @@ def _append_signal_txt(s):
     """写 signal.txt（与 emit() 同文本格式，不 print 不推送）。
     2026-08-03 修复：CARD_MODE=True 后 emit() 不再被调用，signal.txt 自 07-24 永久断流，
     致复盘/对账缺失实盘明细源。此 helper 在 emit_signal 中统一补写，三源(state/audit/signal.txt)对齐。
-    s = 13/14 元组（同 emit_card 入参）。"""
+    s = 14/15 元组（同 emit_card 入参）：索引 13 = side，索引 14 = 仓位成数。
+
+    ⚠️ 格式兼容：scripts/prod_vs_bt_reconcile.py:95 的 RE_SIG 解析
+       `^(🟢|🔴|🔵)\\s+(.+?)\\s+(BUY|SELL|EXIT)\\b` 要求「emoji + 名称 + BUY/SELL/EXIT」，
+       且 RE_PX 要求下一行以「现价 」开头。2026-09-10 方向感知改动**只在 EXIT/BUY/SELL
+       之后追加字段**（方向/动作）并把「持仓」改为「多头腿/空头腿」，两处正则均不受影响。
+    """
     try:
         sig_type, price, chg, level_val, level_type, rsi, temp, vol_r, name, tag, exit_reason, day_chg, bar_tt = s[:13]
-        pos_pct = s[13] if len(s) >= 14 else POS_PCT
+        side = s[13] if len(s) >= 14 else 'long'
+        pos_pct = s[14] if len(s) >= 15 else POS_PCT
+        dirn = direction_for(side)
         k_tag = f' [K:{bar_tt[11:16]}]' if bar_tt and len(str(bar_tt)) >= 16 else ''
         chg_sign = '+' if (chg or 0) >= 0 else ''
         if sig_type == 'X':
@@ -1054,8 +1093,9 @@ def _append_signal_txt(s):
             day_sign = '+' if (day_chg or 0) >= 0 else ''
             day_str = f'{day_sign}{day_chg:.1f}%' if day_chg is not None else 'N/A'
             lines = [
-                f"🔵 {name} EXIT{reason} {pos_pct}成{(' ' + tag) if tag else ''}{k_tag}",
-                f"现价 {price:.2f}（当日 {day_str} / 持仓 {chg_sign}{chg:.1f}%）",
+                f"🔵 {name} EXIT{reason} {pos_pct}成 {dirn}{close_leg_for(side)}·{action_short_for(side)}"
+                f"{(' ' + tag) if tag else ''}{k_tag}",
+                f"现价 {price:.2f}（当日 {day_str} / {leg_for(side)} {chg_sign}{chg:.1f}%）",
                 f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}",
             ]
         else:
@@ -1063,7 +1103,8 @@ def _append_signal_txt(s):
             op_type = 'BUY' if sig_type == 'B' else 'SELL'
             star = stars(sig_type, temp, vol_r)
             lines = [
-                f"{emoji} {name} {op_type} {pos_pct}成 {star}{(' ' + tag) if tag else ''}{k_tag}",
+                f"{emoji} {name} {op_type} {pos_pct}成 {entry_direction_for(sig_type)} "
+                f"{star}{(' ' + tag) if tag else ''}{k_tag}",
                 f"现价 {price:.2f}（{chg_sign}{chg:.1f}%）",
                 f"{level_type}{level_val:.2f} RSI={rsi:.1f} 温度={temp:.0f}",
             ]
@@ -1175,8 +1216,10 @@ def _compute_stop_price(entry_price, atr, entry_idx, cfg):
 
 
 def _mk_exit(reason, name, price, pos, vwap, atr, rsi14, temp, vol_ratio, i, pc, trade_times):
-    """构造一条 EXIT 信号元组（13元组）。v9.1.2: 加 day_chg(当日涨跌) + bar_trade_time。
-    v9.1.2-trend: 支持 side 对称（多仓/空仓）+ 'B'回补 reason。"""
+    """构造一条 EXIT 信号元组（14元组，索引 13=side；调用方再 append 仓位成数 → 15元组）。
+    v9.1.2: 加 day_chg(当日涨跌) + bar_trade_time。
+    v9.1.2-trend: 支持 side 对称（多仓/空仓）+ 'B'回补 reason。
+    [2026-09-10] 尾部追加 side，供 emit_card/_append_signal_txt/emit 做方向感知标签。"""
     side = pos.get('side', 'long')
     entry = pos['entry_price']
     if side == 'long':
@@ -1213,8 +1256,10 @@ def _mk_exit(reason, name, price, pos, vwap, atr, rsi14, temp, vol_ratio, i, pc,
         level_type = '超时强平'
     tag = f"[{pos.get('entry_reason','')}]" if pos.get('entry_reason') else ''
     bt = str(trade_times[i]) if trade_times is not None and i < len(trade_times) else ''
+    # [2026-09-10 方向感知] 元组在 bar_tt 之后追加 side（索引 13），调用方再 append 仓位成数 →
+    # 统一口径：s[13]=side，s[14]=pos_pct（emit_card/_append_signal_txt/emit 均按此解包）。
     return ('X', price, chg, level_val, level_type,
-            rsi14[i], temp[i], vol_ratio[i], name, tag, reason, day_chg, bt)
+            rsi14[i], temp[i], vol_ratio[i], name, tag, reason, day_chg, bt, side)
 
 
 def _load_risk_override():
@@ -1481,8 +1526,9 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                 tag = f'[{rb}]' if rb and rb != '回踩下轨' else ''
                 lower_std = vwap[i] - K1 * atr[i]
                 if pos is None:
+                    # [2026-09-10] 元组统一口径：s[13]=side，s[14]=仓位成数（与 _mk_exit 一致）
                     signals.append(('B', c[i], chg, lower_std, '触及下轨',
-                                    rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', s_pct))
+                                    rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', 'long', s_pct))
                     pos = {'side': 'long', 'entry_price': float(c[i]), 'entry_idx': i,
                             'max_fav': float(c[i]), 'entry_reason': rb or '',
                             'stop_price': _compute_stop_price(float(c[i]), atr, i, EXIT_CFG), 'size_pct': s_pct,
@@ -1495,7 +1541,7 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                         pos['max_fav'] = max(pos['max_fav'], float(c[i]))
                         pos['size_pct'] = ns
                         signals.append(('B', c[i], chg, lower_std, '触及下轨',
-                                        rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', add))
+                                        rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', 'long', add))
                 else:   # 空仓中遇B → 平空回补（买入），按 min(信号强度, 空仓规模)
                     sz = min(s_pct, pos['size_pct'])
                     if sz > 0:
@@ -1535,7 +1581,7 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                 upper_std = vwap[i] + K1 * atr[i]
                 if pos is None and _bidir:
                     signals.append(('S', c[i], chg, upper_std, '触及上轨',
-                                    rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', s_pct))
+                                    rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', 'short', s_pct))
                     pos = {'side': 'short', 'entry_price': float(c[i]), 'entry_idx': i,
                             'max_fav': float(c[i]), 'entry_reason': rs or '',
                             'stop_price': float(c[i]) + EXIT_CFG_SHORT.get('stop_atr_mult', 1.5) * atr[i], 'size_pct': s_pct,
@@ -1548,7 +1594,7 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
                         pos['max_fav'] = min(pos['max_fav'], float(c[i]))
                         pos['size_pct'] = ns
                         signals.append(('S', c[i], chg, upper_std, '触及上轨',
-                                        rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', add))
+                                        rsi14[i], temp[i], vol_ratio[i], name, tag, '', chg, str(trade_times[i]) if trade_times is not None else '', 'short', add))
                 elif pos is not None and pos['side'] == 'long':   # 多仓中遇S → 平多（卖出），按 min(信号强度, 多仓规模）
                     sz = min(s_pct, pos['size_pct'])
                     if sz > 0:

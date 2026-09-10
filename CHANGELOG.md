@@ -7,6 +7,39 @@
 > 方法论版本号与算法版本号**解耦**：方法论 bump 由方法论文档驱动，算法 bump 由 `VERSION` 驱动；
 > 两者对齐索引见 `docs/methodology_framework.md` §11。
 
+## v10.9.2（2026-09-10）出场标签方向感知修复（展示/口径层，零信号语义改动）
+> 事故驱动：2026-09-10 ST豆神(300010.SZ) 当日 +5.7%、日内最高 5.28 创新高，飞书卡片却提示
+> 「ST豆神 破位止损 2成」，用户判定逻辑矛盾。
+> 根因（**非算法错误**）：`core/exit_label.py` 的 STOP 标签**方向盲**——「破位止损」是「向下跌破
+> 支撑」的多头语义，但生产 STOP 的唯一来源是**反T空头**（`monitor.py` short 腿 `c[i] >= stop_price`；
+> 实测 10:19 反T开空 @5.25 → 10:25 触及 5.2671 买回平空，空头腿 -0.4%，`_b_count=0/_s_count=4`）。
+> 空头被打爆是**向上突破**，字面完全相反；叠加卡片无方向、且「持仓 -0.4%」实为空头腿浮亏
+> （多头口径应为 +0.4%），三处叠加 → 误读。
+> ⚠️ VERSION 文件欠账同 v10.9.1（文件仍 10.6.0），本条目按生产主线 v10.9.x + PATCH 记。
+
+### 核心变更（全部为展示/口径层）
+- **方向感知标签**（`core/exit_label.py`）：新增 `EXIT_LABEL_MAP_SHORT` 与 `label_for(reason, side)`；
+  空头 STOP →「**突破止损**」，多头 STOP 保持「破位止损」；`side` 缺省 `'long'`，旧调用完全兼容。
+  新增 `action_for/action_short_for/leg_for/direction_for/close_leg_for/entry_direction_for` 单一真源。
+- **卡片补动作与方向**（`core/monitor.py: emit_card`）：标题 = `{代码} {实际动作}{仓位}成 · {原因}`
+  （如「300010 **买入回补** 2成 · 突破止损」，不再用 reason 顶替买卖动作）；行1 = `标的·{正T/反T}{平多/平空}｜原因`；
+  行2 浮盈口径「持仓」→「**多头腿/空头腿**」。`_append_signal_txt` / `emit` fallback 同步。
+- **元组口径统一**：信号元组在 `bar_tt` 后新增 `side`（**s[13]=side，s[14]=pos_pct**）；
+  `_mk_exit` 与 4 处内联 B/S 元组同口径；`emit()` 签名加 `side`（防 `emit(*s)` 15 元组 TypeError 半修复）。
+- **下游同步**：`scripts/daily_signal_review.py` 的 `pos_pct = s[13]` → `s[14]`（否则复盘 HTML 会输出 long/short）。
+  signal.txt **仅追加字段**，`prod_vs_bt_reconcile.RE_SIG/RE_PX` 正则不受影响（已加回归锁定）。
+
+### 验收
+- 新增 `scripts/test_exit_label_side.py`：**30/30 通过**（含 09-10 事故点位逐字复现、signal.txt 解析兼容、
+  15 元组 `emit(*s)` 不抛错、`_mk_exit` 14 元组口径、daily_signal_review 同步自检）。
+- 既有回归：`test_bar_key_crossday` 6/6、`test_first_scan_cutoff` 6/6、`test_last_pushed_cutoff` 15/15。
+- **顺带去腐化两个既有用例**（均经 A/B 还原验证：改动前既已 FAIL，与本次修复无关）：
+  ① `test_bar_key_crossday` 硬编码基线 4（08-12「miji+单向」口径快照）→ 08-20 切 GT v1.0+双向后实为 17（B0/S9/X8）；
+  改为以 A 组为动态基线，并显式固化核心性质「A==B==C 且 D==0 且 A>0」；
+  ② `test_last_pushed_cutoff` F2 把「今日」硬编码 2026-08-12，08-13 起必 FAIL → 改动态取真实今日/昨日。
+- **生效方式**：monitor 代码需重启；已于 11:46:52 午休窗口（11:30–13:00 不扫描）杀进程由 watchdog 重拉，
+  新 PID 19816 / `LOCK_ACQUIRED`，重启后无异常、按午休静默。
+
 ## v10.9.1（2026-09-03）自迭代闭环硬化 T0/T1：运行身份 + 失败语义透传（方案 v2 首批交付）
 > 依据 `docs/self_iteration_loop_hardening_plan.md` v2（09-02 外部审计 + 评审 7 修正整合 + 用户四项拍板）。
 > PATCH 级基建：不改任何信号语义。⚠️ VERSION 文件存在历史欠账（当前 10.6.0，loop_engine v10.6.0→v10.9.0 阶段未同步 bump），本条目按生产主线 v10.9.0 + PATCH 记；runtime_identity 落盘的 version 字段以 VERSION 文件实际值为准（身份记录忠实原则）。版本锚点对齐列入待办。

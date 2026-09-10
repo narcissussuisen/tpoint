@@ -55,14 +55,20 @@ check('E1 缺口09:56放行', decide('2026-08-12 09:56:00', c))
 check('E2 缺口10:00放行', decide('2026-08-12 10:00:00', c))
 
 # F: 加载跨日裁剪 —— 昨日条目应被丢弃，今日保留
+# [2026-09-10 修] 原用例把「今日」硬编码成 2026-08-12，2026-08-13 起必然 FAIL
+# （裁剪逻辑按真实墙钟日比对，硬编码日期反而被正确裁掉）。改为动态取真实今日/昨日，
+# 用例意图（今日保留、昨日裁剪）不变，且不再随日期腐化。
 td = tempfile.mkdtemp()
 fp = os.path.join(td, 'lp.json')
-json.dump({'161129.SZ': '2026-08-11 15:00:00',
-           '300757.SZ': '2026-08-12 09:30:00'}, open(fp, 'w'))
+_TODAY = datetime.now().strftime('%Y-%m-%d')
+_YDAY = (datetime.now() - __import__('datetime').timedelta(days=1)).strftime('%Y-%m-%d')
+_TODAY_TS = f'{_TODAY} 09:30:00'
+json.dump({'161129.SZ': f'{_YDAY} 15:00:00',
+           '300757.SZ': _TODAY_TS}, open(fp, 'w'))
 M._LAST_PUSHED_FILE = fp
 M._load_last_pushed()
-check('F1 昨日条目被裁剪', '161129.SZ' not in M.LAST_PUSHED_TS)
-check('F2 今日条目保留', M.LAST_PUSHED_TS.get('300757.SZ') == '2026-08-12 09:30:00')
+check(f'F1 昨日({_YDAY})条目被裁剪', '161129.SZ' not in M.LAST_PUSHED_TS)
+check(f'F2 今日({_TODAY})条目保留', M.LAST_PUSHED_TS.get('300757.SZ') == _TODAY_TS)
 
 # G: _upd_last_pushed 取最大值且持久化、不回退
 M.LAST_PUSHED_TS = {}

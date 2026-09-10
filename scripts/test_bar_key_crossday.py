@@ -14,10 +14,10 @@
   ② 跨日清理搬到 run() 运行态锚点（_daily_refreshed_date 变化即清 bar_/pos_/
      _cooldown_/_miss_/alerted_miss_），与重启路径同键集。
 
-四组对照（数据=F盘 tickflow 300757.SZ 08-11，已知基线 B=1 S=1 X=2）：
-  A 空 st                          → 期望 4（基线）
-  B 旧格式残留 bar_{sym}_{i}        → 期望 4（新码对旧键免疫，不再被吞）
-  C 新格式·昨日 bar_{sym}_昨_{i}    → 期望 4（结构免疫：日期不同不碰撞）
+四组对照（数据=F盘 tickflow 300757.SZ 08-11）。**基线改为动态**（见 main() 注释）：
+  A 空 st                          → 基线（当前引擎口径 B0/S9/X8=17）
+  B 旧格式残留 bar_{sym}_{i}        → 期望 == A（新码对旧键免疫，不再被吞）
+  C 新格式·昨日 bar_{sym}_昨_{i}    → 期望 == A（结构免疫：日期不同不碰撞）
   D 新格式·当日 bar_{sym}_今_{i}    → 期望 0（当日去重必须仍然生效，防重复推送）
 外加 E：run() 跨日清理键集过滤逻辑（保留 _b_count_/_s_count_ 复盘权威源）。
 
@@ -50,7 +50,10 @@ SYM = '300757.SZ'
 NAME = '罗博特科'
 DATE = '2026-08-11'
 FCSV = r'F:\keyfactor_data\1m\300757.SZ_1m.csv'
-EXPECT_BASE = 4          # 该日已知信号数（B1/S1/X2）
+# ⚠️ 已废弃硬编码基线（2026-09-10）：原 EXPECT_BASE=4 是 08-12「miji 引擎 + 单向」口径的
+# 快照；08-20 切 GT v1.0 + bidirectional 后该日信号数=17。绝对数会随引擎演进而漂移，
+# 故基线改由 A 组动态给出（本用例守的是 A==B==C 与 D==0，不是某个固定数字）。
+EXPECT_BASE = None       # 仅留占位，勿再写死数字
 
 # detect_for 内的 bar_key 日期取「墙钟今日」（生产中与 bar 日期恒等：compute() 会校验
 # bar_date == today_str，非今日数据直接 return None）。离线重放时墙钟日≠数据日，
@@ -87,6 +90,7 @@ def load_data():
 
 
 def run_case(tag, st, data, expect):
+    """expect=None → 只报告不判定（用作基线组）。返回 (ok, 信号数)。"""
     cfg = CFG.get(SYM, {})
     sigs = monitor.detect_for(SYM, NAME, data, st,
                              mpr_enable=cfg.get('mpr_enable'),
@@ -95,15 +99,16 @@ def run_case(tag, st, data, expect):
     nb = sum(1 for s in sigs if s[0] == 'B')
     ns = sum(1 for s in sigs if s[0] == 'S')
     nx = sum(1 for s in sigs if s[0] == 'X')
-    ok = (len(sigs) == expect)
-    print('  [%s] %-42s → B=%d S=%d X=%d 合计=%d (期望%d) %s'
-          % ('PASS' if ok else 'FAIL', tag, nb, ns, nx, len(sigs), expect,
+    ok = True if expect is None else (len(sigs) == expect)
+    print('  [%s] %-42s → B=%d S=%d X=%d 合计=%d (期望%s) %s'
+          % ('PASS' if ok else 'FAIL', tag, nb, ns, nx, len(sigs),
+             '基线' if expect is None else str(expect),
              '' if ok else '  <<< 不符'))
     if ok and sigs:
         for s in sigs:
             print('            %s @ %s px=%.3f reason=%s'
                   % (s[0], s[12] if len(s) > 12 else '?', s[1], s[4]))
-    return ok
+    return ok, len(sigs)
 
 
 def main():
@@ -116,20 +121,35 @@ def main():
                                                   df['trade_time'].iloc[-1]))
     results = []
 
-    # A 基线
-    results.append(run_case('A 空 st（基线）', {}, data, EXPECT_BASE))
+    # A 基线：**不再硬编码绝对信号数**。
+    # [2026-09-10 修] 原用例硬编码 EXPECT_BASE=4（08-12 在 miji 引擎口径下的 B1/S1/X2）。
+    # 2026-08-20 生产引擎切到 GT v1.0 且 bidirectional_enable=true（读 data/monitor_config.json
+    # 实际值），该日信号数变为 17（B0/S9/X8）→ 用例自 08-20 起持续 FAIL。
+    # 本用例真正要守的性质是 **A == B == C**（跨日残留标记不得吞掉任何一根 bar 的信号）
+    # 与 **D == 0**（当日去重仍生效），绝对数随引擎漂移属噪声 → 改为以 A 为动态基线。
+    ok_a, base = run_case('A 空 st（基线）', {}, data, None)
+    results.append(ok_a)
 
     # B 旧格式残留（修复前 monitor 写入的历史键，仍留在 state.json 里）
     st_b = {f'bar_{SYM}_{i}': 1 for i in range(n)}
-    results.append(run_case('B 旧格式残留 bar_{sym}_{i} 全量', st_b, data, EXPECT_BASE))
+    ok_b, n_b = run_case('B 旧格式残留 bar_{sym}_{i} 全量', st_b, data, base)
+    results.append(ok_b)
 
     # C 新格式·昨日日期（跨日结构免疫的核心断言）
     st_c = {f'bar_{SYM}_{YESTERDAY_LIKE}_{i}': 1 for i in range(n)}
-    results.append(run_case('C 新格式·昨日 %s 全量' % YESTERDAY_LIKE, st_c, data, EXPECT_BASE))
+    ok_c, n_c = run_case('C 新格式·昨日 %s 全量' % YESTERDAY_LIKE, st_c, data, base)
+    results.append(ok_c)
 
     # D 新格式·当日日期（当日去重必须仍生效，否则会重复推送刷屏）
     st_d = {f'bar_{SYM}_{TODAY}_{i}': 1 for i in range(n)}
-    results.append(run_case('D 新格式·当日 %s 全量（去重回归）' % TODAY, st_d, data, 0))
+    ok_d, n_d = run_case('D 新格式·当日 %s 全量（去重回归）' % TODAY, st_d, data, 0)
+    results.append(ok_d)
+
+    # 显式固化核心性质（比逐组比对更直白，杜绝"改期望值让用例通过"）
+    prop = (base == n_b == n_c) and (n_d == 0) and base > 0
+    results.append(prop)
+    print('  [%s] %-42s → A=%d B=%d C=%d D=%d（性质：A==B==C 且 D==0 且 A>0）'
+          % ('PASS' if prop else 'FAIL', '★核心性质 跨日免疫', base, n_b, n_c, n_d))
 
     # E run() 跨日清理键集：清盘中态、保留复盘权威源
     print('\n  --- E run() 跨日清理键集过滤 ---')
