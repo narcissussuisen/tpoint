@@ -33,6 +33,8 @@ from general_signal import (check_general_b_trigger, check_general_s_trigger,
 # 不再使用 EXIT_LABEL_MAP 的配色列；方向（正T/反T）从正文移到卡片底部灰显备注。
 from exit_label import (EXIT_LABEL_MAP, label_for, action_for, direction_for,
                         color_for_action)
+# [2026-09-10] 交易日历单一真源（原内联节假日表已抽到 core/trading_calendar.py）
+from trading_calendar import is_trading_today as _is_trading_today
 # ML 信号打分：39 特征单一实现（core/ml_features，模块2.2）
 # fail-open：ml_features.py 缺失（v10.0.0 灾难恢复后未找回，从未入 git）时
 # FEAT_ALL/ml_build_feature_row=None；ml_enable=false 时该路径不执行零影响，
@@ -1630,23 +1632,10 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
 
 
 def is_trading_today():
-    now = datetime.now(CST)
-    if now.weekday() >= 5:
-        return False
-    today_str = now.strftime('%Y-%m-%d')
-    holidays_2026 = {
-        '2026-01-01', '2026-01-02',
-        '2026-01-26', '2026-01-27', '2026-01-28', '2026-01-29', '2026-01-30',
-        '2026-02-02', '2026-02-03',
-        '2026-04-06',
-        '2026-05-01', '2026-05-04', '2026-05-05',
-        '2026-06-19',
-        '2026-09-25', '2026-09-28', '2026-09-29', '2026-09-30',
-        '2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07',
-    }
-    if today_str in holidays_2026:
-        return False
-    return True
+    """[2026-09-10] 改为委托 core/trading_calendar.py（单一真源）。
+    此前本函数内联了一份节假日表，与 alert_engine / selfcheck_daily 各存一份拷贝，
+    每年更新时漏改一处即出错；现统一走交易日历，勿再复制表格。"""
+    return _is_trading_today()
 
 def _log_event(msg):
     """诊断日志：写到文件（不依赖 stdout，避免 SYSTEM 会话 stdout 失效导致崩溃）。"""

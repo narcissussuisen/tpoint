@@ -95,21 +95,12 @@ def _c(code, text):
 
 
 def is_trading_today():
-    """是否 A 股交易日（与 monitor.is_trading_today 一致）。"""
-    now = datetime.now(CST)
-    if now.weekday() >= 5:
-        return False
-    holidays_2026 = {
-        '2026-01-01', '2026-01-02',
-        '2026-01-26', '2026-01-27', '2026-01-28', '2026-01-29', '2026-01-30',
-        '2026-02-02', '2026-02-03',
-        '2026-04-06',
-        '2026-05-01', '2026-05-04', '2026-05-05',
-        '2026-06-19',
-        '2026-09-25', '2026-09-28', '2026-09-29', '2026-09-30',
-        '2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07',
-    }
-    return now.strftime('%Y-%m-%d') not in holidays_2026
+    """[2026-09-10] 改为委托 core/trading_calendar.py（单一真源）。勿再内联节假日表。"""
+    _core = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'core')
+    if _core not in sys.path:
+        sys.path.insert(0, _core)
+    from trading_calendar import is_trading_today as _f
+    return _f()
 
 
 def in_trading_session():

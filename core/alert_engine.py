@@ -26,6 +26,8 @@ from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from feishu_alert import send as feishu_send
+# [2026-09-10] 交易日历单一真源（原内联节假日表已抽到 core/trading_calendar.py）
+from trading_calendar import is_trading_today as _is_trading_today
 
 # ========== 单实例锁（2026-07-20 加固：防止 engine 静默重复运行 → 飞书告警重发） ==========
 # 与 monitor 同款机制：data/.alert_engine.lock + data/.alert_engine.pid
@@ -235,24 +237,8 @@ def _fmt(v, unit=''):
 
 
 def is_trading_today():
-    """是否A股交易日 (与 monitor.is_trading_today 一致)。
-    alert_engine 在休市日跳过评估, 避免 monitor 按设计退出(not trading today)、
-    心跳不维护时误报 service_down。"""
-    now = datetime.now()
-    if now.weekday() >= 5:
-        return False
-    today_str = now.strftime('%Y-%m-%d')
-    holidays_2026 = {
-        '2026-01-01', '2026-01-02',
-        '2026-01-26', '2026-01-27', '2026-01-28', '2026-01-29', '2026-01-30',
-        '2026-02-02', '2026-02-03',
-        '2026-04-06',
-        '2026-05-01', '2026-05-04', '2026-05-05',
-        '2026-06-19',
-        '2026-09-25', '2026-09-28', '2026-09-29', '2026-09-30',
-        '2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07',
-    }
-    return today_str not in holidays_2026
+    """[2026-09-10] 改为委托 core/trading_calendar.py（单一真源）。勿再内联节假日表。"""
+    return _is_trading_today()
 
 
 def _session_window(cfg):
