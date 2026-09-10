@@ -9,7 +9,15 @@ import os, sys, json, subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
-PUSH_PY = r'C:\Users\YZP\WorkBuddy\Claw\方法论与研究文档\研究报告\push_feishu_html.py'
+# 2026-09-01 修复：原硬编码路径 C:\...\方法论与研究文档\研究报告\ 已不存在（自 08-2x 起 step5 一直
+# 静默失败 → 复盘 HTML 从未真正推送）。改为多候选探测，任一存在即用，避免再次因路径漂移静默丢推。
+_PUSH_CANDIDATES = [
+    r'F:\Users\YZP\WorkBuddy\Claw\research\push_feishu_html.py',
+    r'C:\Users\YZP\WorkBuddy\Claw\research\push_feishu_html.py',
+    os.path.join(ROOT, 'scripts', 'push_feishu_html.py'),
+    r'C:\Users\YZP\WorkBuddy\Claw\方法论与研究文档\研究报告\push_feishu_html.py',
+]
+PUSH_PY = next((p for p in _PUSH_CANDIDATES if os.path.exists(p)), _PUSH_CANDIDATES[0])
 HOOK = 'https://open.feishu.cn/open-apis/bot/v2/hook/a35d7f52-9ed2-47df-a929-f11aaf89025d'
 
 

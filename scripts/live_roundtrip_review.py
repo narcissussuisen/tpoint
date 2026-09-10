@@ -110,8 +110,13 @@ def pair_trips(sym, pushes, closes, times, use_push_price=False):
         if pos['dir'] == '正T' and typ in ('S', 'X'):
             trips.append(_close_trip(sym, pos, idx, px, closes[idx], p, typ))
             pos = None
-        elif pos['dir'] == '反T' and typ == 'B':
-            trips.append(_close_trip(sym, pos, idx, px, closes[idx], p, 'B回补'))
+        elif pos['dir'] == '反T' and typ in ('B', 'X'):
+            # [Bug4 修复 2026-09-04] X（TRAIL/EOD 等出场推送）同样平反T仓——monitor 状态机
+            # 持仓遇出场条件即推 X，不分方向。旧逻辑只认 B回补，把 S→X→B 序列误配成
+            # S→B（跳过实际出场）：09-03 实证 S@10:05→X@10:28→B@10:35→X@15:00 被配成
+            # "反T S→B回补 +2.067%"，真实为 反T TRAIL +0.82% + 正T EOD -2.348% = -1.528%。
+            reason = 'B回补' if typ == 'B' else 'X'
+            trips.append(_close_trip(sym, pos, idx, px, closes[idx], p, reason))
             pos = None
         # 同向重复/杂散信号：单仓位模型忽略（〇节已标注重复）
     if pos is not None:
