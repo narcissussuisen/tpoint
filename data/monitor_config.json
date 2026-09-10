@@ -5,7 +5,6 @@
     "vol_ratio_b_max": null,
     "_note_20260821_p13": "2026-08-21 P1.3 复核：DET + 全池 round-trip A/B(含ATR/实盘无ATR双口径)三重证据一致——量比门控不提升信号质量、不改善单笔出场(实盘口径净WR反略降0.9pp)，仅削 19-32% B 覆盖。原 _note_20260818_vol 的 +14.5pp 基于被证伪 WR 口径+per-symbol 简易回测，失效。门控已移除(置 null)。",
     "_note_20260818_vol": "（已失效，见 _note_20260821_p13）池级量能确认门控(vol_ratio_b_low)：B 需缩量回调(量比<=1.2x)。门控内建 detect_for 后简易回测：纯池级 total_ret -15.51% → -0.98%（Δ+14.5pp）。",
-
     "_note_20260820_engine": "2026-08-20 完善方案：watchlist 改由通用算法(core/general_signal.GeneralConfig)统一驱动全标的(symbol-agnostic)；v4(composite_scorer_v4full)纳入灰度影子测试。全部 flag 默认关，热重载。",
     "use_general_engine": true,
     "v4_gray_enable": true,
@@ -27,10 +26,7 @@
       "regime_downtrend_thresh": 0.5
     }
   },
-  "603039.SH": {
-    "comment": "泛微网络；沪市主板T+1；[2026-08-18] 用户改持仓，watchlist 切换至此；实盘用纯池级默认(trail 0.4/0.6 + 无ATR + 无MPR)。"
-  },
-  "688111.SH": {
-    "comment": "金山办公；科创板T+1(20%涨跌停)；[2026-08-18] 用户改持仓移入(移除四方股份)；实盘用纯池级默认(trail 0.4/0.6 + 无ATR + 无MPR)。"
+  "300010.SZ": {
+    "comment": "ST豆神；深交所创业板T+1；⚠️ 虽为ST但日涨跌幅限制仍为20%(创业板注册制口径，非主板ST的5%)——2026-05-06因2025年度内控审计否定意见被实施其他风险警示，代码不变仍300010；[2026-09-09] 用户改持仓移入(移除水发燃气)；实盘用纯池级默认(trail 0.4/0.6 + 无ATR + 无MPR)。注：涨跌停阈值无需在此配置，monitor._limit_up_threshold/exit_manager.limit_thr 按代码前缀自动判 300→20%。⚠️ 高波动：8/24起11个交易日股价翻倍、日振幅常>10%，默认 trail 0.4/0.6 是否适配待观察。"
   }
 }
