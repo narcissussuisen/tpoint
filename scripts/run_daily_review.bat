@@ -114,6 +114,16 @@ set RC=%ERRORLEVEL%
 "%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" record auto_tune %RC% --expected "%ROOT%\data\auto_tune_state.json" >> "%ROOT%\logs\daily_review.log" 2>&1
 if %RC% GEQ 1 echo [%DATE% %TIME%] [WARN] auto_tune non-zero rc=%RC% >> "%ROOT%\logs\daily_review.log"
 echo [%DATE% %TIME%] === done (auto tune) === >> "%ROOT%\logs\daily_review.log"
+REM --- 2026-09-10 D add: step12 datasource benchmark summary ---
+REM 盘中采样由计划任务 tpoint_datasource_benchmark 每5分钟写入 data/datasource_benchmark.jsonl；
+REM 本步只做当日汇总，产物 output/datasource_benchmark_YYYY-MM-DD.json。
+REM rc=77 为既有 SKIPPED 约定（当天无采样样本，不算失败）。
+"%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" running ds_benchmark >> "%ROOT%\logs\daily_review.log" 2>&1
+"%PY_EXE%" "%ROOT%\scripts\datasource_benchmark.py" --summarize --date %D% >> "%ROOT%\logs\daily_review.log" 2>&1
+set RC=%ERRORLEVEL%
+"%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" record ds_benchmark %RC% --expected "%ROOT%\output\datasource_benchmark_%D%.json" >> "%ROOT%\logs\daily_review.log" 2>&1
+if %RC% GEQ 1 if not "%RC%"=="77" echo [%DATE% %TIME%] [WARN] ds_benchmark non-zero rc=%RC% >> "%ROOT%\logs\daily_review.log"
+echo [%DATE% %TIME%] === done (datasource benchmark) === >> "%ROOT%\logs\daily_review.log"
 REM --- T1 tail summary (2026-09-03): current run_id only; critical fail → feishu + exit /b 2 ---
 "%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" summarize --push-fail >> "%ROOT%\logs\daily_review.log" 2>&1
 set RC=%ERRORLEVEL%

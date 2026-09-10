@@ -45,10 +45,32 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'core'))
 
 import datasource as DS          # noqa: E402
+import trading_calendar as TC    # noqa: E402  （交易日单一真源；勿再内联节假日表）
 
 OUT_JSONL = os.path.join(ROOT, 'data', 'datasource_benchmark.jsonl')
+BENCH_LOG = os.path.join(ROOT, 'logs', 'datasource_benchmark.log')
 OUT_DIR = os.path.join(ROOT, 'output')
 SOURCES = ('mootdx', 'sina', 'tencent_synth', 'tencent_mkline')
+
+
+def say(msg):
+    """同时写日志文件与 stdout。
+
+    ⚠️ 定时任务用 **pythonw.exe**（GUI 子系统，无控制台窗口——用户明确禁止任何可见 cmd 窗口），
+    此时 `sys.stdout` 可能为 None，`print()` 会异常；且没有控制台就看不到输出。
+    故所有定时路径的输出必须走 say() 落 `logs/datasource_benchmark.log`。
+    """
+    try:
+        if sys.stdout is not None:
+            print(msg, flush=True)
+    except Exception:
+        pass
+    try:
+        os.makedirs(os.path.dirname(BENCH_LOG), exist_ok=True)
+        with io.open(BENCH_LOG, 'a', encoding='utf-8') as f:
+            f.write('[%s] %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), msg))
+    except Exception:
+        pass
 
 
 def _watchlist_syms():
@@ -256,7 +278,7 @@ def once(syms, quiet=False):
                 ev = ('OK bars=%d %.0fms synth_sig=%s' % (r['bars'], r['latency_ms'] or 0, r['synth_sig'])
                       if r['ok'] else ('FAIL(env?) ' if r.get('err_env') else 'FAIL ')
                       + str(r.get('err'))[:56])
-                print(f'  {sym:<12} {src:<16} {ev}')
+                say(f'  {sym:<12} {src:<16} {ev}')
         # 跨源共识（当日保真度基准）：两两收盘一致率（相对差 < 0.1% 视为一致）
         if len(closes) >= 2:
             for i, a in enumerate(list(closes)):
@@ -272,7 +294,13 @@ def once(syms, quiet=False):
     with io.open(OUT_JSONL, 'a', encoding='utf-8') as f:
         for r in recs:
             f.write(json.dumps(r, ensure_ascii=False) + '\n')
-    print(f'\n已追加 {len(recs)} 条采样 → {os.path.relpath(OUT_JSONL, ROOT)}')
+    _ok = {}
+    for r in recs:
+        _ok.setdefault(r['source'], [0, 0])
+        _ok[r['source']][1] += 1
+        _ok[r['source']][0] += 1 if r.get('ok') else 0
+    _brief = ' '.join('%s=%d/%d' % (k, v[0], v[1]) for k, v in _ok.items())
+    say(f'已追加 {len(recs)} 条采样 → {os.path.relpath(OUT_JSONL, ROOT)} | {_brief}')
     return recs
 
 
@@ -292,7 +320,9 @@ def summarize(date=None):
         if str(r.get('ts', '')).startswith(date):
             rows.append(r)
     if not rows:
-        print(f'{date} 无采样数据'); return 1
+        # 77 = 既有 SKIPPED 约定（见 run_daily_review.bat 注释）：当天没有样本不算失败
+        print(f'{date} 无采样数据 → 跳过（rc=77 SKIPPED）')
+        return 77
 
     print(f'\n=== 多源基准汇总 {date}（{len(rows)} 条采样）===')
     print('%-16s %6s %8s %10s %10s %11s %9s %9s' % (
@@ -363,13 +393,18 @@ def main():
     ap.add_argument('--date')
     ap.add_argument('--sym', action='append')
     ap.add_argument('--quiet', action='store_true')
+    ap.add_argument('--force', action='store_true', help='非交易日也采样（默认跳过）')
     a = ap.parse_args()
     if a.summarize:
         return summarize(a.date)
     if a.once:
+        # 交易日守门：休市日采集只会拿到"昨天收盘的静态数据"，把可用率/延迟统计搅浑。
+        if not a.force and not TC.is_trading_today():
+            say('非交易日 → 跳过采样（--force 可强制）')
+            return 0
         syms = a.sym or _watchlist_syms()
         if not syms:
-            print('无标的可测（watchlist 为空）'); return 1
+            say('无标的可测（watchlist 为空）'); return 1
         once(syms, quiet=a.quiet)
         return 0
     ap.print_help()
