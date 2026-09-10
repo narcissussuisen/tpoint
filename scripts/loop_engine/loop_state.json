@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "current": "p10_oos_verify",
+  "current": null,
   "stages": {
     "p6_exit_label": {
       "status": "done",
@@ -30,10 +30,22 @@
       }
     },
     "p10_oos_verify": {
-      "status": "pending",
+      "status": "done",
       "retry": 0,
       "last_run": null,
-      "report": null
+      "report": {
+        "result": "PASS",
+        "msg": "v10.9.0 交付，双向净 -129.14→-39.80 (ML)"
+      }
+    },
+    "p11_gt_tb_v11": {
+      "status": "done",
+      "retry": 0,
+      "last_run": null,
+      "report": {
+        "result": "PASS",
+        "msg": "GT-TB v1.1 研究验证：三标的净 -0.82%→+0.22%（+1.04pp），ATR 止损减半"
+      }
     }
   },
   "history": [
