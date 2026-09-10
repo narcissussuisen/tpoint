@@ -1,0 +1,7 @@
+{
+  "_note": "[2026-09-11] tpoint 模块级常量覆盖（core/monitor.py 的 _cfg 读本文件）。\n优先级：env > 本文件 > 代码默认。\n⚠️ 本项目有三个「配置文件」，用途不同，别改错地方：\n  · 仓库根 config.json（本文件）= monitor **模块常量**覆盖（如 scan_interval）\n  · config/monitor_config.json = **alert_engine** 的 alerts/webhook 配置（不是 monitor 的）\n  · data/monitor_config.json = monitor 的 **per-symbol** 参数（PER_SYMBOL_CFG 真源）\n2026-09-11 曾把 scan_interval 误写进 config/monitor_config.json → 静默无效（兜了一圈才发现）。",
+  "scan_interval": 3,
+  "_note_scan_interval": "15s→3s。依据实测：① 数据源逐笔成交粒度中位 16 笔/分 ≈ 3.8s/笔 ⇒ 3s 轮询与源粒度匹配，不空转也不重复；② 全链路单轮仅 0.32s（取数 0.31 + 指标 0.006 + 判定 ~0），CPU/网络完全可承受；③ 兜底已惰性化（mootdx 正常时零 HTTP），提速率不放大免费源压力。\n⚠️ 入场信号**不会**因此变多或变早 —— 引擎 trim_frontier=True 只用已收盘 bar（2026-08-18 反前视修复）。真实收益只在：① 出场/风控触发时效（出场路径用当前价 data['h'][-1]）；② bar 收盘→推送延迟由 ≤15s 降到 ≤3s。\n回滚：删本键或改为 15（需重启 monitor，非热重载）。",
+  "alert_miss_rounds": 30,
+  "_note_alert_miss_rounds": "6→30。⚠️ ALERT_MISS_ROUNDS 是**轮数**不是时间，必须与 scan_interval 同步：原 6×15s≈90s；若只改 scan_interval 而不同步本值，6×3s=18s → 瞬时数据抖动即误报「数据源中断」。30×3s≈90s 保持原时间语义。以后改 scan_interval 时本值取 ≈90/scan_interval。"
+}

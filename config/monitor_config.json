@@ -7,7 +7,12 @@
     "metrics_file": "metrics.json",
     "poll_interval_s": 15,
     "service_stale_s": 120,
-    "session": { "open_h": 9, "open_m": 25, "close_h": 15, "close_m": 5 },
+    "session": {
+      "open_h": 9,
+      "open_m": 25,
+      "close_h": 15,
+      "close_m": 5
+    },
     "max_buffer": 40,
     "enabled": true
   },
@@ -114,7 +119,7 @@
       "require_up": true,
       "enabled": true,
       "cooldown_s": 600,
-      "description": "[2026-09-10 B] 滚动 5 分钟（约 20 轮 @15s）内超过 30% 的标的落到 **合成 OHLC**（腾讯分时兜底 tencent_synth）。这是**真降级**：合成 OHLC 丢弃真实分钟影线，实测 ATR 中位低估 41.8%（448 标的-日）、1.5×ATR 反T止损窄 42% ⇒ 会显著放大止损被打概率。落到新浪 1m（真实 OHLC）**不告警**（口径无损）。处置：先查 mootdx 服务器可用性（见 docs/datasource_incident_runbook.md），降级期间禁止调参。"
+      "description": "[2026-09-10 B] 滚动 5 分钟（滚动 5 分钟窗口）内超过 30% 的标的落到 **合成 OHLC**（腾讯分时兜底 tencent_synth）。这是**真降级**：合成 OHLC 丢弃真实分钟影线，实测 ATR 中位低估 41.8%（448 标的-日）、1.5×ATR 反T止损窄 42% ⇒ 会显著放大止损被打概率。落到新浪 1m（真实 OHLC）**不告警**（口径无损）。处置：先查 mootdx 服务器可用性（见 docs/datasource_incident_runbook.md），降级期间禁止调参。"
     }
   ]
 }

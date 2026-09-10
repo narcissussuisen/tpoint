@@ -312,7 +312,11 @@ SCAN_INTERVAL = int(_cfg('scan_interval', 'TP_SCAN_INTERVAL', 15))   # 每轮扫
 
 # ========== 静默零信号告警（2026-07-21 复盘新增：堵"数据中断静默吞信号"漏洞） ==========
 # 某标的连续 N 轮（交易时段、过开盘宽限期后）无分钟K bar → 推信号群告警，避免像今日这样静默吞掉整日。
-ALERT_MISS_ROUNDS = int(_cfg('alert_miss_rounds', 'TP_ALERT_MISS_ROUNDS', 6))   # 6×15s≈90s
+# ⚠️ 本值是**轮数**，不是时间：必须与 scan_interval 同步（≈90s/scan_interval）。
+# 默认 6 与默认 scan_interval=15 配套（6×15s≈90s）；若在仓库根 config.json 把 scan_interval
+# 改成 3，**必须同时**把 alert_miss_rounds 改成 30，否则告警时间窗从 90s 缩到 18s、
+# 瞬时数据抖动即误报「数据源中断」。2026-09-11 提速到 3s 时已按此同步（见 config.json）。
+ALERT_MISS_ROUNDS = int(_cfg('alert_miss_rounds', 'TP_ALERT_MISS_ROUNDS', 6))
 ALERT_GRACE_MIN = int(_cfg('alert_grace_min', 'TP_ALERT_GRACE_MIN', 5))          # 开盘前后宽限分钟数
 ALERT_WEBHOOK = _cfg('alert_webhook', 'TP_ALERT_WEBHOOK', WEBHOOK_URL)           # 默认信号群(已确认)
 def strength_size(g_dev_pct, m_present):
