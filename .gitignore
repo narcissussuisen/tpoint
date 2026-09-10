@@ -21,6 +21,10 @@ logs/
 # loop_engine 运行日志（累计增长、纯运行时产物；曾误入库 → 2026-09-10 停止跟踪）
 scripts/loop_engine/loop_engine.log
 
+# 备份产物（非版本控制对象；例：scripts/run_daily_review.bat.bak_t1_20260903。
+# 被备份的版本本身已在 git 历史中，故 .bak 无需入库）
+scripts/*.bak*
+
 # 杂项
 nul
 err.txt
