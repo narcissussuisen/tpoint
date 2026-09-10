@@ -222,7 +222,7 @@ T8 未通过：vol-regime 只能 shadow-only
 | backlog id | 落到 | v2 补充 |
 |---|---|---|
 | P0-20260903-reverseT-not-modeled | **T1.5** | v2.1 核心新增（backlog 驱动施工第一单）；**09-03 夜施工进展：核心已交付**——simulate_position_sm 状态机（11/11 语义测试）+ reconcile 双侧接线 + 底仓 ledger（方案 A）；09-03 实证与 push_audit 逐条对齐 |
-| **P0-20260903-live-review-pairing（新）** | **T1.5 追加项** | **Bug 4（09-03 夜实证）**：live_roundtrip_review 配对忽略 X(TRAIL/EOD) 出场推送——把"反T TRAIL 平仓(10:28) + 正T建仓(10:35) + EOD(15:00)"误配成"反T B回补"，09-03 日报"净 +2.067% 有效"实为 **-1.528%**。影响日报当日数字与有效判定；roll20 wr_prod 经 reconcile 模拟口径（另一失真）。修复：配对状态机化（X 出场为配对边界），修复后重算近端日报 |
+| **P0-20260903-live-review-pairing（新）** | **T1.5 追加项** | **Bug 4（09-03 夜实证，09-04 凌晨已修复）**：live_roundtrip_review 配对忽略 X(TRAIL/EOD) 出场推送——把"反T TRAIL 平仓(10:28) + 正T建仓(10:35) + EOD(15:00)"误配成"反T B回补"，09-03 日报"净 +2.067% 有效"实为 **-1.528%**。**修复**：pair_trips 反T 仓 X 同样平仓（reason='X'）；重跑 09-03 = 2 trips（反T +0.819% / 正T -2.348%），净 -1.529%，与 reconcile -1.53% 完全一致，口径冲突消除。遗留：历史日 live_review 数字需重算（随 08-04 至今重跑一并做） |
 | P1-20260903-capture-rate-59 | T8 前置研究 | 触发灵敏度（atr_min_pct/MHD 阈值进网格）与 vol-regime 同属"低波动日治理"主题，随 T8 一并研究 |
 | P0-20260811-cfg-state-leak | T2 | **修完标 fixed + 用修复后优化器重新生成候选**（不能只修 oos_validate.py）；⚠️ v2.1：T2 复核表必须在 T1.5 之后跑（否则用污染口径复核 = 白跑） |
 | P0-20260811-reverify-0805 | T2 复核步 | 标的= backlog 原文四标的（161129/300308/688111/513310）；⚠️ v2.1：同上，T1.5 后执行 |
