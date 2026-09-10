@@ -89,6 +89,19 @@
       "enabled": true,
       "cooldown_s": 600,
       "description": "近 5 分钟出现扫描异常，检查标的 / 网络 / 数据源"
+    },
+    {
+      "name": "数据源兜底率过高",
+      "rule": "fallback_rate",
+      "metric": "fallback_rate",
+      "op": ">",
+      "threshold": 0.5,
+      "window_s": 300,
+      "severity": "warning",
+      "require_up": true,
+      "enabled": true,
+      "cooldown_s": 600,
+      "description": "[2026-09-10 P0] 滚动 5 分钟（约 20 轮 @15s）内超过一半的标的走了非 mootdx 兜底源（腾讯分时合成OHLC / 新浪1m），疑似 mootdx 接口级失效。实测兜底数据 ATR 中位低估 41.8%（448 标的-日），会放大止损被打概率 —— 请检查数据源，勿在降级期间调参。"
     }
   ]
 }

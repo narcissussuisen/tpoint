@@ -1174,7 +1174,7 @@ def save_state(s):
         except Exception as e2:
             print(f"  ⚠️ state.json 写入失败 open_errno={getattr(e,'errno','?')} ctypes降级也失败={e2} (内存态保持,下轮重试)")
 
-def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
+def write_metrics(duration_s, signals, errors, last_bar_ts, symbols, fallback_rounds=None):
     """每轮扫描末写入 metrics.json，供告警引擎(watchdog)采集。
     包含：扫描耗时 / 本轮信号数 / 本轮错误数 / 最新行情棒时间 / 标的数。
     2026-07-20 fix: 改用原子写入（先写 .tmp 再 os.replace），消除 Windows 文件锁竞争导致
@@ -1196,6 +1196,11 @@ def write_metrics(duration_s, signals, errors, last_bar_ts, symbols):
                     # data_lag_s 规则，避免午休"行情延迟/数据源中断"误报。切勿改为保留旧值！
                     'last_bar_ts': last_bar_ts if last_bar_ts else None,
                     'status': 'running',
+                    # [2026-09-10 P0] 兜底率哨兵分子：本轮走非 mootdx 源的标的数。
+                    # 口径 = 滚动窗口 Σfallback_rounds / max(Σsymbols,1)（alert_engine）。
+                    # ⚠️ None = 本轮**未扫描**（保活/盘前/午休），alert_engine 会跳过该样本，
+                    #    避免非扫描轮次稀释兜底率（否则午休积攒的 0 会把恢复后的告警延迟 5 分钟）。
+                    'fallback_rounds': (None if fallback_rounds is None else int(fallback_rounds)),
                 }
                 # [模块2.3] ML 推理指标（infer_cnt/err/过滤/放大/均耗）
                 _m['ml'] = _ml_metrics()
@@ -2031,6 +2036,9 @@ def run():
         batch = []
         audit_meta = []  # 与 batch 一一对应，用于推送审计日志
         loop_start = time.time(); err_count = 0; max_bar_ts = 0.0; outer_err = False; sym_max_ts = {}
+        # [2026-09-10 P0 兜底率哨兵] 本轮走非 mootdx 源（兜底）的标的数；分子。
+        # 分母 = len(TARGETS)。口径：滚动窗口内 Σfallback_rounds / Σsymbols（见 alert_engine）。
+        fb_rounds = 0
         # 先补发上一轮失败的推送（频限11232等），再扫描新信号——根治"失败即丢推"
         try:
             _drain_pending()
@@ -2101,6 +2109,15 @@ def run():
                     if not data:
                         continue
                     try:
+                        # [2026-09-10 P0] 兜底率统计：本轮该标的是否走非 mootdx 源。
+                        # data_source 由 datasource.intraday() 写在 df.attrs 上
+                        # （mootdx / sina / tencent_synth / mootdx_partial）；缺字段按主源计（保守）。
+                        try:
+                            _src = (getattr(data.get('df'), 'attrs', None) or {}).get('data_source', 'mootdx')
+                            if _src != 'mootdx':
+                                fb_rounds += 1
+                        except Exception:
+                            pass
                         try:
                             # 仅取本地墙钟字符串，规避 pandas Timestamp.timestamp() 对 naive 按 UTC 解释
                             # 的 8h 偏移（否则游标写 22:xx、max_bar_ts 写未来值 → 静默零信号 + 行情新鲜度失明）。
@@ -2314,7 +2331,8 @@ def run():
             except Exception:
                 pass
             write_metrics(time.time() - loop_start, len(batch),
-                          err_count + (1 if outer_err else 0), max_bar_ts, len(TARGETS))
+                          err_count + (1 if outer_err else 0), max_bar_ts, len(TARGETS),
+                          fallback_rounds=fb_rounds)
             if not batch:
                 print(f"  🔄 [{now.strftime('%H:%M:%S')}] 本轮无信号 ({len(TARGETS)}标的扫描完成)")
         except Exception as e:
@@ -2330,7 +2348,8 @@ def run():
             # 自检/看门狗只能靠心跳停滞间接推断崩溃，无法感知"活着但每轮崩"。
             try:
                 write_metrics(time.time() - loop_start, 0,
-                              err_count + 1, max_bar_ts, len(TARGETS))
+                              err_count + 1, max_bar_ts, len(TARGETS),
+                              fallback_rounds=fb_rounds)
             except Exception:
                 pass
             print(f"  🔄 {SCAN_INTERVAL}秒后恢复扫描...")

@@ -297,8 +297,11 @@ def evaluate(sample, buffer, now, cfg):
         'data_lag_s': data_lag_s,
         'signals_window': None,
         'errors_window': None,
+        # [2026-09-10 P0 兜底率哨兵] 滚动窗口内「走非 mootdx 源(兜底)的标的数 / 扫描标的总数」。
+        # 只在 rule 带 window_s 时计算（与 signals_window/errors_window 同机制）；默认 None。
+        'fallback_rate': None,
     }
-    # 窗口聚合（信号突增 / 扫描异常）
+    # 窗口聚合（信号突增 / 扫描异常 / 数据源兜底率）
     for rule in cfg.get('alerts', []):
         win = rule.get('window_s')
         if not win:
@@ -309,6 +312,14 @@ def evaluate(sample, buffer, now, cfg):
             derived['signals_window'] = sig_sum
         elif rule['metric'] == 'errors_window':
             derived['errors_window'] = err_sum
+        elif rule['metric'] == 'fallback_rate':
+            # ⚠️ 只统计**真正扫描过**的样本（fallback_rounds 非 null）——保活/盘前/午休轮次
+            #    没有扫描语义，计入分母会稀释兜底率、把恢复后的告警拖延一个窗口。
+            _w = [s for s in buffer
+                  if now - s.get('ts', 0) <= win and s.get('fallback_rounds') is not None]
+            _den = sum((s.get('symbols') or 0) for s in _w)
+            _num = sum((s.get('fallback_rounds') or 0) for s in _w)
+            derived['fallback_rate'] = (_num / _den) if _den > 0 else None
 
     alerts = []
     for rule in cfg.get('alerts', []):

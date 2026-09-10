@@ -7,6 +7,63 @@
 > 方法论版本号与算法版本号**解耦**：方法论 bump 由方法论文档驱动，算法 bump 由 `VERSION` 驱动；
 > 两者对齐索引见 `docs/methodology_framework.md` §11。
 
+## v10.9.4（2026-09-10）数据源兜底率哨兵 + 兜底链口径修正（真实 OHLC 优先）
+> 事故驱动：2026-09-10 mootdx **接口级失效**（`get_security_bars`/`get_security_quotes` 全返回空，
+> 而 `count/list/finance/minute_time` 正常；TCP 5/10 服务器可达 ⇒ 非本机网络）。monitor 全天
+> **380/380 轮走兜底**，且**降级 2.5 小时全程静默**；兜底数据（腾讯分时合成 OHLC）使 ATR 系统性低估。
+> ⚠️ VERSION 文件欠账同 v10.9.1（文件仍 10.6.0），本条目按生产主线 v10.9.x + PATCH 记。
+
+### 核心变更
+- **P0 兜底率哨兵**（`datasource.py` + `monitor.py` + `alert_engine.py` + `config/monitor_config.json`）：
+  - `intraday()` 写 `df.attrs['data_source']` ∈ `mootdx`/`sina`/`tencent_synth`/`mootdx_partial`；
+    兜底命中源由 `_fetch_pool` 写 `fallback_source`。
+  - `write_metrics()` 增 `fallback_rounds`（**None = 未扫描**，保活/午休轮次不计入分母）；
+    扫描循环统计本轮走非 mootdx 源的标的数。
+  - `alert_engine` 的 `derived` 增 `fallback_rate` = 滚动窗口 Σfallback_rounds / Σsymbols
+    （**必须改代码**：`derived` 是硬编码字典，只加 config 规则会被 `value is None` 静默跳过）。
+  - config 新规则：`>0.5 / window_s=300 / warning / require_up / cooldown 600s` → 告警群 `1d241455`。
+  - ⚠️ `alert_engine` 启动时一次性加载 config（alert_engine.py:381）⇒ **改规则后须重启 alert_engine**
+    （杀 `data/.alert_engine.pid`，watchdog 30s 内重拉）。
+- **P1b 兜底链口径修正**：`_fetch_pool()` 顺序由「腾讯分时(合成 OHLC) → 新浪1m」改为
+  **「新浪1m(真实 OHLC) → 腾讯分时(合成, 末位)」**——本文件 51-53 行注释早已写明新浪质量优于此，
+  执行顺序与既定口径相反。回滚开关 **`TP_INTRADAY_PREFER=tencent`**（纯 env，无需改码）。
+- **P3 离线校验工具**：`scripts/verify_source_fidelity.py` —— 用 tdx-connector 的 `tdx_kline(period=7)`
+  真实 1m 交叉核对 monitor 口径 + 并列当日实盘信号清单。
+  ⚠️ 硬边界：连接器是**远端 HTTP MCP + OAuth**，凭据为宿主 AES-256-GCM 加密库 ⇒
+  **monitor 进程永远拿不到 token，禁止接入生产路径**（已实测 `initialize` 返 401）。
+- **P4 运行手册**：`docs/datasource_incident_runbook.md`（5 分钟判定 mootdx 接口级失效 / 热点复测判别
+  服务端全局 vs 本机 IP 降级 / 降级期禁止调参 / 已知运维成本）。
+
+### 量化依据（口径切换 A/B，改动前完成）
+| 证据 | 合成/真实 ATR 比值 |
+|---|---|
+| 今日 09:31–13:07（129 根） | 0.584 |
+| 今日 09:31–11:30（120 根） | 0.660 |
+| **全历史 448 标的-日（4 只，79–147 天）** | **中位 0.582**（p10–p90 0.451–0.697） |
+| F 盘 300010 09-09 | 0.733 |
+| tdx 连接器 300010 11:19–13:00 | 0.734 |
+
+⇒ 合成口径 **ATR 低估 41.8%**、1.5×ATR 反T止损窄约 42%。
+信号影响：总量比 **1.077（+7.7%，低于数量级门槛 → 闸门通过）**，但**逐日 48.4% 的信号组合发生变化**
+（总量守恒、位置漂移）——复盘/对账必须标注数据源。
+
+### 验收
+- 新增 `scripts/test_fallback_sentinel.py`（**25/25**）：含「保活样本必须排除在分母外」不变量、
+  严格 `>` 边界（0.50 不触发）、`require_up`、按 symbols 加权、`write_metrics` 落盘 null 语义。
+- 新增 `scripts/test_source_fidelity.py`（**16/16**）：兜底顺序 + env 回滚 + 三态 `data_source` +
+  合成低估 ATR（确定性构造 + F 盘实测）。
+- 既有回归全绿：`test_exit_label_side` 30/30、`test_warmup_heartbeat` 12/12、
+  `test_bar_key_crossday` 6/6、`test_first_scan_cutoff` 6/6、`test_last_pushed_cutoff` 15/15。
+- **生产实证**（13:19 重启 → 13:28:15 进主循环，PID 27952）：
+  `✅ 兜底成功(sina) 300010.SZ: 250 根 (真实OHLC)`；`metrics.fallback_rounds=1`；
+  `h>l 的 bar 占比 100%`；ATR 从合成口径 0.382% 回到真实 0.615%；
+  哨兵端到端触发 `🔔 [warning] 数据源兜底率过高 | 值=1.00 阈值=0.50 | code=0 success`。
+
+### 已知运维成本（实测）
+- mootdx 挂着时 `_warmup_tf()` 3 次重试 × ~172s ≈ **9 分钟**才进主循环；期间心跳由 v10.9.3 的 30s
+  兜底维持（不误报），但**预热期形成的 bar 会迟到推送**（实测 K:13:24 → 13:28:24 推送）。
+  ⇒ mootdx 已挂时非必要不重启。
+
 ## v10.9.3（2026-09-10）TF 预热窗口心跳中断修复（消除「服务中断」误报，零信号语义改动）
 > 事故驱动：2026-09-10 11:53:39 收到「v9 监控告警 · tpoint 服务中断」（严重 / 心跳停滞 424s）。
 > 排查结论：**不是假报，是真 BUG**。告警时刻回推 424s = 11:46:35（手工重启杀旧进程瞬间），

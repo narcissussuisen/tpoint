@@ -9,6 +9,7 @@ datasource.py — mootdx 数据源，替代 tickflow
   4. mootdx 有 volume 字段（tickflow intraday 不确定），利好 v9 的 VWAP
 """
 import socket
+import os
 import time
 import urllib.request
 import re
@@ -247,20 +248,27 @@ class MootdxDataSource:
         # mootdx<5 行时降级腾讯分时；两源均<5 行则 mootdx 3-4 行凑合（compute 会拒收<5）。
         mootdx_ok = df is not None and len(df) >= 5
         fb = self._tencent_intraday_fallback(sym)
+        # [2026-09-10 P0] 兜底实际命中哪个源（_fetch_pool 写在 attrs 里）；缺省按腾讯合成口径
+        fb_src = (getattr(fb, 'attrs', None) or {}).get('fallback_source', 'tencent_synth') \
+            if fb is not None else None
         tencent_ok = fb is not None and len(fb) >= 5
         if mootdx_ok:
             chosen = df  # 真实 OHLC 优先
+            src = 'mootdx'
         elif tencent_ok:
             chosen = fb
-            print(f"  ✅ 腾讯分时兜底成功 {sym}: {len(fb)} 根分钟线")
+            src = fb_src
+            print(f"  ✅ 兜底成功({src}) {sym}: {len(fb)} 根分钟线")
         elif df is not None and len(df) >= 3:
             chosen = df  # 两源均不足5行，mootdx 3-4 行凑合（compute 将因<5行拒收）
-            print(f"  ⚠️ mootdx 仅 {len(df)} 行且腾讯兜底失败，compute 将因<5行拒收")
+            src = 'mootdx_partial'
+            print(f"  ⚠️ mootdx 仅 {len(df)} 行且兜底失败，compute 将因<5行拒收")
         elif fb is not None and len(fb) >= 3:
             chosen = fb
-            print(f"  ⚠️ 腾讯仅 {len(fb)} 行且 mootdx 失败，compute 将因<5行拒收")
+            src = fb_src
+            print(f"  ⚠️ 兜底仅 {len(fb)} 行({src}) 且 mootdx 失败，compute 将因<5行拒收")
         else:
-            print(f"  ⚠️ 所有数据源均无分钟K数据 {sym}（mootdx+腾讯均失败/不足3行）")
+            print(f"  ⚠️ 所有数据源均无分钟K数据 {sym}（mootdx+兜底均失败/不足3行）")
             return None
         df = chosen
         df = df.copy()
@@ -283,6 +291,10 @@ class MootdxDataSource:
         today = pd.Timestamp.now().strftime('%Y-%m-%d')
         if 'trade_date' in df.columns:
             df = df[df['trade_date'] == today].reset_index(drop=True)
+        # [2026-09-10 P0 兜底率哨兵] 标记本轮实际命中的数据源，供 monitor 统计兜底率
+        # 与复盘标注口径。取值：mootdx（真实OHLC，主源）/ sina（真实OHLC，兜底）/
+        # tencent_synth（合成OHLC，兜底）/ mootdx_partial（<5行凑合）。
+        df.attrs['data_source'] = src
         return df
 
     def quotes(self, sym):
@@ -427,28 +439,56 @@ class MootdxDataSource:
             return df.sort_values('trade_time').reset_index(drop=True)
 
         def _fetch_pool():
-            """三级兜底链：腾讯域名池(3) → 新浪 1m(独立厂商) → 全部失败抛异常给退避。
-            单源失败打印切换日志；返回 None（无数据）也切下一源（可能别源有数据）。"""
+            """兜底链（**真实 OHLC 优先**）：新浪 1m(真实 OHLC) → 腾讯域名池(分时,合成 OHLC) →
+            全部失败抛异常给退避。单源失败打印切换日志；返回 None（无数据）也切下一源。
+
+            [2026-09-10 P1b 顺序修正] 原顺序为「腾讯分时 → 新浪」，但本文件 51-53 行的注释
+            早已写明新浪 1m 是**真实 OHLC、质量优于腾讯分时合成**，即执行顺序与既定口径相反。
+            全历史 448 标的-日 A/B（把腾讯合成变换施加到 F 盘真实 1m）实测：合成/真实 ATR 比值
+            中位 **0.582**（低估 41.8%，p10-p90 = 0.451~0.697），信号总量比 1.077（+7.7%，
+            低于数量级门槛），但**逐日 48.4% 的信号组合发生变化**（总量守恒、位置漂移）。
+            ⇒ 真实 OHLC 优先可消除 ATR 系统性低估（反T 1.5×ATR 止损在合成口径下窄 42%）。
+            DNS 多样性不受损：mootdx 的 TCP 10 台服务器冗余不变，HTTP 层仍是跨厂商双源。
+
+            回滚开关：env `TP_INTRADAY_PREFER=tencent` → 立刻恢复原顺序（无需改码）。
+            """
+            prefer = (os.environ.get('TP_INTRADAY_PREFER', '') or 'sina').strip().lower()
+            _sina_first = prefer != 'tencent'
+
+            def _try_sina():
+                df = _fetch_sina()
+                if df is not None:
+                    df.attrs['fallback_source'] = 'sina'
+                    print(f"  ✅ 新浪1m兜底成功 {sym}: {len(df)} 根 (真实OHLC)")
+                return df
+
+            def _try_tencent():
+                last = None
+                for host in _TENCENT_HOSTS:
+                    try:
+                        df = _fetch_host(host)
+                        if df is not None:
+                            df.attrs['fallback_source'] = 'tencent_synth'
+                            return df
+                    except Exception as e:
+                        last = e
+                        print(f"  ⚠️ 腾讯分时 {sym} 域名 {host} 失败，切换备用: {e}")
+                if last is not None:
+                    raise last
+                return None
+
+            order = [_try_sina, _try_tencent] if _sina_first else [_try_tencent, _try_sina]
             last_exc = None
-            # ① 腾讯域名池
-            for host in _TENCENT_HOSTS:
+            for fetch in order:
                 try:
-                    df = _fetch_host(host)
+                    df = fetch()
                     if df is not None:
                         return df
                 except Exception as e:
                     last_exc = e
-                    print(f"  ⚠️ 腾讯分时 {sym} 域名 {host} 失败，切换备用: {e}")
-            # ② 独立厂商新浪（真实 OHLC，跨厂商冗余）
-            try:
-                df = _fetch_sina()
-                if df is not None:
-                    print(f"  ✅ 新浪1m兜底成功 {sym}: {len(df)} 根 (跨厂商冗余)")
-                    return df
-            except Exception as e:
-                last_exc = e
-                print(f"  ⚠️ 新浪1m {sym} 失败: {e}")
-            # ③ 全池失败：抛最后一个异常触发退避重试（仅网络级失败会走到这）
+                    _nm = '新浪1m' if fetch is _try_sina else '腾讯分时'
+                    print(f"  ⚠️ {_nm} {sym} 失败，切换备用: {e}")
+            # 全池失败：抛最后一个异常触发退避重试（仅网络级失败会走到这）
             if last_exc is not None:
                 raise last_exc
             return None  # 所有源都返回无数据（非网络异常），直接 None
