@@ -212,10 +212,44 @@ def metrics_of(trips):
     return out
 
 
+# [任务0.3/R1b 2026-09-28] 推荐候选必须附随机对照证据（daily_iterate 闸门 fail-closed 消费：
+# rec.random_z is None 或 <1.0 → 仅建议不热更）。仅对每标的第一候选跑快档（M=200），防网格爆炸。
+SIGNAL_SIDE_PARAMS = {'buy_threshold', 'sell_threshold', 'signal_gap',
+                      'min_hist_diff', 'vol_ratio_b_max'}
+
+
+def _random_z_for(sym, kind, val):
+    """快档随机对照：信号侧参数带候选覆盖跑；出场侧参数（trail/atr）信号集合不变，
+    附基线 z 并标注 scope='baseline_signals'（语义显式，防止误读为候选专属证据）。"""
+    try:
+        from random_control_validator import validate_symbol
+        overrides, scope = None, 'baseline_signals'
+        if kind in SIGNAL_SIDE_PARAMS:
+            v = val
+            try:
+                v = float(val)
+                if kind == 'signal_gap':
+                    v = int(v)
+            except (TypeError, ValueError):
+                pass
+            overrides, scope = {kind: v}, 'candidate_signals'
+        r = validate_symbol(sym, days_req=60, m=200, m_rt=50, seed=42, verbose=False,
+                            cfg_overrides=overrides)
+        return {'random_z': (r.get('z') or {}).get('net_wr'),
+                'random_p': (r.get('p') or {}).get('net_wr'),
+                'random_verdict': r.get('verdict'),
+                'random_z_scope': scope,
+                'random_z_error': r.get('error')}
+    except Exception as e:
+        return {'random_z': None, 'random_z_error': f'{type(e).__name__}: {e}'}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--syms', default=None)
     ap.add_argument('--out', default=None)
+    ap.add_argument('--no-random-z', action='store_true',
+                    help='[任务0.3] 跳过候选的随机对照证据（默认对每个达标候选跑快档 M=200）')
     a = ap.parse_args()
     wl = json.load(open(WATCHLIST, encoding='utf-8'))
     syms = a.syms.split(',') if a.syms else list(wl.keys())
@@ -290,6 +324,9 @@ def main():
                    'win_rate': m['win_rate'], 'delta_pp': round(m['win_rate'] - base_wr, 1),
                    'n_trips': m['n'], 'baseline_wr': base_wr, 'thin': thin,
                    'status': '待两段式tune_pool_40验证后自动灰度(M4)'}
+            # [任务0.3/R1b] 随机对照一票否决证据（daily_iterate fail-closed 闸门消费）
+            if not a.no_random_z:
+                rec.update(_random_z_for(sym, kind, val))
             report['recommendations'].append(rec)
         report['symbols'][sym] = {
             'name': name, 'n_days': n_days, 'thin_sample': thin,

@@ -253,6 +253,8 @@ def main():
     # 注意：W_PREC 无 --w-prec 入口，硬锁定为常量 30（业务硬约束，严禁优化）
     ap.add_argument('--vol-gate', action='store_true')
     ap.add_argument('--signal-gap', type=int, default=SIGNAL_GAP)
+    ap.add_argument('--random-control', nargs='*', default=None, metavar='SYM',
+                    help='[任务0.3] 对指定标的附加快档随机对照判决（空=watchlist 全部；M=200/m_rt=50/seed=42）；不带本 flag 时行为不变')
     a = ap.parse_args()
     K, C1, C2 = a.k, a.c1, a.c2
     VOL_GATE, SIGNAL_GAP = a.vol_gate, a.signal_gap
@@ -386,6 +388,29 @@ def main():
         baseline=BASELINE,        # P2 基线（R4 分类别增益判据）
     )
 
+    # —— [任务0.3/R1a 2026-09-28] 可选随机对照节：零假设一票否决（快档 M=200）——
+    # 仅当显式带 --random-control 时运行；默认路径零改动（性能与产物结构不变）。
+    random_control = None
+    if a.random_control is not None:
+        from random_control_validator import validate_symbol
+        rc_syms = list(a.random_control)
+        if not rc_syms:  # 空列表 = watchlist 全部
+            try:
+                with open(os.path.join(ROOT, 'data', 'watchlist.json'), encoding='utf-8') as f:
+                    rc_syms = list(json.load(f).keys())
+            except Exception:
+                rc_syms = []
+        random_control = {}
+        for sym in rc_syms:
+            try:
+                r = validate_symbol(sym, days_req=60, m=200, m_rt=50, seed=42, verbose=False)
+                random_control[sym] = {
+                    k: r.get(k) for k in ('verdict', 'n_signals', 'n_days', 'n_trips', 'real', 'p', 'z', 'error')
+                    if r.get(k) is not None
+                }
+            except Exception as e:
+                random_control[sym] = {'error': f'{type(e).__name__}: {e}'}
+
     out = dict(
         meta=dict(
             framework='DET v2.0 (Attainment·Precision·Capture·TEP)',
@@ -399,6 +424,8 @@ def main():
         pool=pool,
         symbols=sym_results,
     )
+    if random_control is not None:
+        out['random_control'] = random_control
 
     fn = f'signal_validity_v2_{a.out_suffix}.json'
     fp = os.path.join(OUT, fn)
@@ -419,12 +446,27 @@ def main():
     print(f'    基金({fund_pool["n_syms"]}只): Prec B={_fmt(fund_pool["prec_b"])} Cap B={_fmt(fund_pool["cap_b"])} Comp B={_fmt(fund_pool["comp_b"])}')
     print(f'    个股({stock_pool["n_syms"]}只): Prec B={_fmt(stock_pool["prec_b"])} Cap B={_fmt(stock_pool["cap_b"])} Comp B={_fmt(stock_pool["comp_b"])}')
     print(f'  P2基线: 基金 Prec79.3%/Cap69.6% | 个股 Prec53.1%/Cap73.5%')
+    if random_control:
+        print(f'\n=== 随机对照（零假设一票否决，快档 M=200）===')
+        for sym, r in random_control.items():
+            if 'error' in r:
+                print(f'  {sym}: ERROR {r["error"]}')
+                continue
+            _zw = (r.get('z') or {}).get('net_wr')
+            _pw = (r.get('p') or {}).get('net_wr')
+            _nw = (r.get('real') or {}).get('net_wr')
+            print(f'  {sym}: verdict={r.get("verdict")} n_sig={r.get("n_signals")} '
+                  f'net_wr={_fmt(_nw)} p_netwr={_pw} z_netwr={None if _zw is None else round(_zw, 2)}')
     print(f'JSON -> {fp}')
 
     feishu(f'✅ DET v2.0 三轴评估完成（{n_syms}标/{total_days}日，双轨制分池）：\n'
            f'基金({fund_pool["n_syms"]}只) Prec={_fmt(fund_pool["prec_b"])}/Cap={_fmt(fund_pool["cap_b"])}/Comp={_fmt(fund_pool["comp_b"])}；\n'
            f'个股({stock_pool["n_syms"]}只) Prec={_fmt(stock_pool["prec_b"])}/Cap={_fmt(stock_pool["cap_b"])}/Comp={_fmt(stock_pool["comp_b"])}\n'
            f'产物 output/{fn}')
+
+    if random_control:
+        _rc_txt = '；'.join(f"{s}:{r.get('verdict', 'ERR')}" for s, r in random_control.items())
+        feishu(f'🎲 随机对照（零假设，快档 M=200）: {_rc_txt}')
 
     try:
         with open(DONE_FLAG, 'w', encoding='utf-8') as f:
