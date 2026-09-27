@@ -40,6 +40,12 @@ LEDGER = os.path.join(DATA, 'effect_ledger.jsonl')
 BACKLOG = os.path.join(DATA, 'feedback_backlog.jsonl')
 MON_CFG = os.path.join(DATA, 'monitor_config.json')
 RECHECK = os.path.join(DATA, 'ai_recheck.json')
+VOL_SHADOW_HIST = os.path.join(DATA, 'vol_shadow_history.json')
+
+# backlog 状态机（任务9/阶段3：消除「只写不消费」病根）：
+# open → triaged（已审，给出去向判断）→ proposal（已转提案）/ closed（关闭，须写关闭理由）
+BACKLOG_STATES = ('open', 'triaged', 'proposal', 'closed')
+VOL_SHADOW_PROMOTE_DAYS = 10   # vol_regime_gate promote 判据：shadow 累积 ≥10 交易日
 
 SKIP = 77  # 与 ds_benchmark 的 SKIPPED 语义一致（静默跳过，非错误）
 
@@ -267,6 +273,23 @@ def cmd_collect(_a):
         'pending_proposals': [os.path.basename(p) for p in sorted(
             glob.glob(os.path.join(PROP_DIR, '*.json')))][-10:],
     }
+    # [任务9] vol_shadow 历史累积：每日落一份计数，promote 判据「≥10 交易日」的数据源
+    hist = _load_json(VOL_SHADOW_HIST, default={}) or {}
+    if isinstance(digest['vol_regime_shadow_5d'], dict) and 'error' not in digest['vol_regime_shadow_5d']:
+        hist[date] = digest['vol_regime_shadow_5d']
+        try:
+            with open(VOL_SHADOW_HIST, 'w', encoding='utf-8') as f:
+                json.dump(hist, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+    digest['vol_shadow_days_accumulated'] = len(hist)
+    digest['vol_shadow_promote_hint'] = (
+        f'shadow 已累积 {len(hist)} 日'
+        + (f'（≥{VOL_SHADOW_PROMOTE_DAYS} 日：满足样本量门槛，可评估 promote 提案——'
+           f'用 random_control_validator --set vol_regime_gate=true 做 ON/OFF 配对 A/B 判 suppressed 子集净贡献）'
+           if len(hist) >= VOL_SHADOW_PROMOTE_DAYS
+           else f'（未满 {VOL_SHADOW_PROMOTE_DAYS} 日门槛）'))
+
     fp = os.path.join(DEC_DIR, f'{date}.digest.json')
     with open(fp, 'w', encoding='utf-8') as f:
         json.dump(digest, f, ensure_ascii=False, indent=2)
@@ -290,6 +313,7 @@ def cmd_collect(_a):
     print(f'[vol_shadow 5d] {json.dumps(vs, ensure_ascii=False)[:300]}')
     print(f"[backlog] open={digest['backlog_open_count']} | [maintain_streak]={digest['maintain_streak']}"
           f" | [recent_changes 10d]={len(recent_changes)}")
+    print(f"[vol_shadow] {digest['vol_shadow_promote_hint']}")
     print(f"[gt_config._global] {json.dumps(gt_cfg['_global'], ensure_ascii=False)[:300]}")
     print(f'DIGEST_JSON -> {fp}')
 
@@ -475,6 +499,50 @@ def cmd_finalize(a):
 
 
 # --------------------------------------------------------------------------- #
+# backlog：状态机推进（消除「只写不消费」病根）
+# --------------------------------------------------------------------------- #
+def cmd_backlog(a):
+    entries = _jsonl(BACKLOG)
+    if a.list:
+        n = 0
+        for e in entries:
+            st = str(e.get('status', 'open')).lower()
+            if a.status and st != a.status:
+                continue
+            n += 1
+            print(f"  [{st:<8}] {e.get('id')}: {str(e.get('title'))[:80]}")
+        print(f'共 {n} 条（{a.status or "全部"}）/ 总 {len(entries)} 条')
+        return
+    if not a.id:
+        print('[backlog] 推进状态需要 --id（或用 --list 查看）')
+        sys.exit(2)
+    if a.status not in BACKLOG_STATES:
+        print(f'[backlog] 非法状态 {a.status}（合法：{BACKLOG_STATES}）')
+        sys.exit(2)
+    if a.status == 'closed' and not a.note:
+        print('[backlog] 关闭必须写 --note 关闭理由（判读纪律：关闭要有证据）')
+        sys.exit(2)
+    hit = next((e for e in entries if e.get('id') == a.id), None)
+    if hit is None:
+        print(f'[backlog] 未找到 id={a.id}')
+        sys.exit(2)
+    old_status = str(hit.get('status', 'open')).lower()
+    if old_status == 'closed':
+        print(f'[backlog] {a.id} 已 closed，不可再变更（关闭不可逆）')
+        sys.exit(2)
+    hit['status'] = a.status
+    hit['updated'] = _now()
+    hit.setdefault('history', []).append(
+        {'ts': _now(), 'from': old_status, 'to': a.status, 'actor': a.actor, 'note': a.note or ''})
+    tmp = BACKLOG + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        for e in entries:
+            f.write(json.dumps(e, ensure_ascii=False) + '\n')
+    os.replace(tmp, BACKLOG)
+    print(f'[backlog] {a.id}: {old_status} → {a.status}（{a.note or "无备注"}）')
+
+
+# --------------------------------------------------------------------------- #
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -492,9 +560,15 @@ def main():
     ap_apply.add_argument('--note', default='')
     ap_fin = sub.add_parser('finalize')
     ap_fin.add_argument('--decisions', required=True, help='AI 写好的决策 draft JSON 路径')
+    ap_bl = sub.add_parser('backlog')
+    ap_bl.add_argument('--list', action='store_true')
+    ap_bl.add_argument('--status', default=None, help=f'list 过滤 / 推进目标状态 {BACKLOG_STATES}')
+    ap_bl.add_argument('--id', default=None)
+    ap_bl.add_argument('--note', default='')
+    ap_bl.add_argument('--actor', default='ai_loop')
     a = ap.parse_args()
     {'guard': cmd_guard, 'collect': cmd_collect, 'review-merges': cmd_review_merges,
-     'apply': cmd_apply, 'finalize': cmd_finalize}[a.cmd](a)
+     'apply': cmd_apply, 'finalize': cmd_finalize, 'backlog': cmd_backlog}[a.cmd](a)
 
 
 if __name__ == '__main__':

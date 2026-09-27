@@ -36,8 +36,17 @@ venv/Scripts/python.exe scripts/ai_loop/daily_agent.py review-merges
 1. regime_gate 薄样本复检：n_trips 累积 ≥30 后重跑 ON/OFF A/B（当前证据 n_trips=8）。
 2. 权重候选短名单（buy_threshold=0.55 / w_vwap=1.4 / w_macd_div=0.7 / w_vol_div=0.4 / w_rsi=1.0）：
    样本增厚后大样本复检（当前 n=11 日，只观察）。
-3. vol_regime_gate promote：shadow 计数 ≥10 交易日且 suppressed 子集净贡献为负 → 出人审提案。
+3. vol_regime_gate promote：shadow 计数 ≥10 交易日（digest 的 vol_shadow_promote_hint 会提示）
+   且 suppressed 子集净贡献为负 → 出人审提案（方法=random_control_validator --set vol_regime_gate=true
+   与基线 ON/OFF 配对 A/B，同 regime_gate 判例）。
 4. signal_gap 网格 {4,6,8,12}：先对齐验证器 gap=6 vs 生产 8 口径再扫。
+
+**backlog 消费（每日必做，消除「只写不消费」）**：
+- digest 的 backlog_open 逐条过一遍，每条给出去向：
+  `venv/Scripts/python.exe scripts/ai_loop/daily_agent.py backlog --id <id> --status triaged --note "<判断>"`
+  已转提案 → `--status proposal`；有证据关闭 → `--status closed --note "<关闭理由>"`（无理由拒绝）；
+  仍需观察 → 维持 open 但在当日 diagnoses 里说明原因。
+- 查看：`backlog --list [--status open]`。目标：open 条目数持续下降，零「超 5 日 open 未 triaged」。
 
 ## 第3步 验证指挥（AI 判断 → L0 机械执行）
 

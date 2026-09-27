@@ -28,6 +28,8 @@ sys.path.insert(0, os.path.join(ROOT, 'scripts', 'ai_loop'))
 
 import daily_agent as da  # noqa: E402
 
+_JSONL_ORIG = da._jsonl  # 真·读文件版（_patch_env 会替换 da._jsonl，T10/T11 需恢复）
+
 PASS = FAIL = 0
 
 
@@ -218,17 +220,80 @@ def t9_guard_idempotent():
             check('T9 已 done 幂等退出', e.code == 77, f'exit={e.code}')
 
 
+def t10_backlog_transitions():
+    da._jsonl = _JSONL_ORIG  # 恢复真·读文件（前面用例的 _patch_env 替换过）
+    with tempfile.TemporaryDirectory() as tmp:
+        bl_fp = os.path.join(tmp, 'backlog.jsonl')
+        with open(bl_fp, 'w', encoding='utf-8') as f:
+            f.write(json.dumps({'id': 'X-1', 'status': 'open', 'title': 't10 甲'}, ensure_ascii=False) + '\n')
+            f.write(json.dumps({'id': 'X-2', 'status': 'open', 'title': 't10 乙'}, ensure_ascii=False) + '\n')
+        da.BACKLOG = bl_fp
+        da.cmd_backlog(Args(list=False, id='X-1', status='triaged', note='已审', actor='t10'))
+        e = [json.loads(ln) for ln in open(bl_fp, encoding='utf-8') if ln.strip()]
+        x1 = next(x for x in e if x['id'] == 'X-1')
+        check('T10 open→triaged 推进', x1['status'] == 'triaged' and x1['history'][-1]['from'] == 'open')
+        _expect_exit('T10 关闭无理由拒绝', lambda: da.cmd_backlog(Args(
+            list=False, id='X-1', status='closed', note='', actor='t10')), 2)
+        da.cmd_backlog(Args(list=False, id='X-1', status='closed', note='证据:X', actor='t10'))
+        e = [json.loads(ln) for ln in open(bl_fp, encoding='utf-8') if ln.strip()]
+        x1 = next(x for x in e if x['id'] == 'X-1')
+        check('T10 带理由关闭成功', x1['status'] == 'closed')
+        _expect_exit('T10 closed 不可逆', lambda: da.cmd_backlog(Args(
+            list=False, id='X-1', status='open', note='重开', actor='t10')), 2)
+        _expect_exit('T10 非法状态拒绝', lambda: da.cmd_backlog(Args(
+            list=False, id='X-2', status='bogus', note='', actor='t10')), 2)
+        _expect_exit('T10 未知 id 拒绝', lambda: da.cmd_backlog(Args(
+            list=False, id='X-999', status='closed', note='x', actor='t10')), 2)
+        e = [json.loads(ln) for ln in open(bl_fp, encoding='utf-8') if ln.strip()]
+        check('T10 未触碰条目不受影响', next(x for x in e if x['id'] == 'X-2')['status'] == 'open')
+
+
+def t11_vol_shadow_history():
+    da._jsonl = _JSONL_ORIG  # 恢复真·读文件
+    with tempfile.TemporaryDirectory() as tmp:
+        da.DEC_DIR = tmp
+        da.PROP_DIR = tmp
+        hist_fp = os.path.join(tmp, 'vol_shadow_history.json')
+        da.VOL_SHADOW_HIST = hist_fp
+        da._vol_shadow_orig = da._vol_shadow
+        da._vol_shadow = lambda n: {'300010.SZ': {'days': n, 'signals': 43,
+                                                  'would_suppress_lowvol': 2}}
+        da.cmd_collect(Args())
+        hist = json.load(open(hist_fp, encoding='utf-8'))
+        digest = json.load(open(os.path.join(tmp, f'{da._today()}.digest.json'), encoding='utf-8'))
+        check('T11 shadow 历史落盘', da._today() in hist
+              and hist[da._today()]['300010.SZ']['would_suppress_lowvol'] == 2)
+        check('T11 digest 含累积日数与提示', digest.get('vol_shadow_days_accumulated') == len(hist)
+              and 'shadow 已累积' in str(digest.get('vol_shadow_promote_hint')))
+        da._vol_shadow = da._vol_shadow_orig
+
+
+def _run(fn):
+    """单用例崩溃不拖垮全量（意外 SystemExit/异常 = FAIL）。"""
+    global FAIL
+    try:
+        fn()
+    except SystemExit as e:
+        FAIL += 1
+        print(f'  FAIL {fn.__name__} 意外 SystemExit({e.code})')
+    except Exception as e:
+        FAIL += 1
+        print(f'  FAIL {fn.__name__} 异常 {type(e).__name__}: {e}')
+
+
 def main():
     print('=== test_ai_loop：AI 闭环机械层回归 ===')
-    t1_rollback_triggers()
-    t2_small_drop_holds()
-    t3_observing_when_thin()
-    t4_apply_rejects_nonwhitelist()
-    t5_apply_rejects_low_z()
-    t6_apply_rate_limit()
-    t7_apply_success_path()
-    t8_finalize_escalation()
-    t9_guard_idempotent()
+    _run(t1_rollback_triggers)
+    _run(t2_small_drop_holds)
+    _run(t3_observing_when_thin)
+    _run(t4_apply_rejects_nonwhitelist)
+    _run(t5_apply_rejects_low_z)
+    _run(t6_apply_rate_limit)
+    _run(t7_apply_success_path)
+    _run(t8_finalize_escalation)
+    _run(t9_guard_idempotent)
+    _run(t10_backlog_transitions)
+    _run(t11_vol_shadow_history)
     print(f'\n=== 结果: {PASS} PASS / {FAIL} FAIL ===')
     sys.exit(1 if FAIL else 0)
 
