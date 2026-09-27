@@ -65,11 +65,15 @@ def has_base_of(sym):
 
 TRAIL_ACT = [0.3, 0.4, 0.5]
 TRAIL_PCT = [0.5, 0.6, 0.8]
-ATR_GRID = [0.15, 0.25, 0.35]
+# ATR_GRID 见 CUR_ATR 下方注释（[2026-09-27] GT 死参数，网格已退役为单档）
 CUR_TRAIL = (0.4, 0.6)  # ⚠️ DEPRECATED（2026-08-11）：仅作 EXIT_CFG 默认值的记录与报告展示。
                         # 各标的 trail 自 08-05 起 per-symbol 分化，**基线一律用 prod_trail(sym)**。
                         # 任何新代码引用本常量当基线即为 P0 缺陷（已致 factor_opt/oos_validate 双处失真）。
 CUR_ATR = 0.25
+# [2026-09-27 任务1.2] ATR 网格退役：atr_min_pct 在 GT 引擎下是死参数
+# （general_signal.check_general_b_trigger 入参直接忽略），网格三档重放结果恒等。
+# 保留单档（=CUR_ATR）仅为维持 day_signals 调用签名与报告结构兼容。
+ATR_GRID = [CUR_ATR]
 THIN_DAYS = 80          # 薄样本水印线
 MIN_TRIPS = 30          # 统计可靠性下限
 GATE_PP = 1.0           # 推荐门槛（厚样本）

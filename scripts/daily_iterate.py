@@ -5,9 +5,11 @@ r"""daily_iterate.py — tpoint 每日自迭代（2026-08-04 晚用户指令：�
 每日复盘报告产出后自动执行：
 1) 跑 factor_optimizer（F盘全历史网格寻优，回测检验）
 2) 达标参数按护栏自动写 monitor_config.json（热重载，次日开盘生效）：
-   - 仅自动应用「可热更 per-symbol 参数」：atr_min_pct / mpr_enable / mpr_periods
+   - 仅自动应用「GT 引擎真实消费的 per-symbol 参数」：buy_threshold / sell_threshold /
+     signal_gap / min_hist_diff / vol_ratio_b_max（写入 per_symbol[sym]['general_algorithm']，
+     经 effect_ledger 账本优先写入；[2026-09-27] atr_min_pct/mpr 已退役——GT 引擎下死参数）
    - trail（全局+用户锁定 0.4/0.6）与 tune_pool_40 未复核项 → 仅出建议，不自动改
-   - 门槛：净胜率 ≥+1pp 且 n≥30；薄样本标的（<80d）≥+2pp
+   - 门槛：净胜率 ≥+1pp 且 n≥30；薄样本标的（<80d）≥+2pp；随机对照 z<1.0 → 仅建议
 3) git 版本记录：有变更 → VERSION 小版本 bump（9.3.x）+ CHANGELOG + commit + tag；
    核心算法/大改动走周五评审大版本（minor）
 4) 迭代摘要推 a35d7f52（动态标题）
@@ -22,7 +24,12 @@ sys.path.insert(0, os.path.join(ROOT, 'core'))
 from trading_calendar import is_trading_day as _is_trading_day  # noqa: E402
 PY = sys.executable
 HOOK = 'https://open.feishu.cn/open-apis/bot/v2/hook/a35d7f52-9ed2-47df-a929-f11aaf89025d'
-HOT_PARAMS = {'atr_min_pct'}          # 可自动热更的 per-symbol 参数（白名单）
+# [2026-09-27 任务1.2] GT 引擎真实消费的 per-symbol 参数白名单（写入
+# per_symbol[sym]['general_algorithm'] 块，由 monitor._general_cfg_for 消费）。
+# 旧白名单 {'atr_min_pct'} 已退役：该参数在 GT 引擎下零消费（死参数，
+# general_signal.check_general_b_trigger 入参直接忽略）。
+HOT_PARAMS = {'buy_threshold', 'sell_threshold', 'signal_gap',
+              'min_hist_diff', 'vol_ratio_b_max'}
 LOCKED_PARAMS = {'trail'}             # 用户锁定/需两段式 → 仅建议
 
 CFG = os.path.join(ROOT, 'data', 'monitor_config.json')
@@ -72,21 +79,27 @@ def main():
         sys.exit(1)
     rep = json.load(open(opt_out, encoding='utf-8'))
 
-    # 2) 护栏自动应用
-    cfg = json.load(open(CFG, encoding='utf-8'))
+    # 2) 护栏自动应用（[任务1.2] 一律经 effect_ledger 账本优先写入：
+    #    先备份+记 hash_before 再写 config，AI 自动回滚依赖该账本）
+    sys.path.insert(0, os.path.join(ROOT, 'scripts'))
+    import effect_ledger
     applied, pending = [], []
     for rec in rep.get('recommendations', []):
         sym, param, val = rec['sym'], rec['param'], rec['value']
         if param in LOCKED_PARAMS or param not in HOT_PARAMS:
             pending.append(rec)
             continue
-        # 类型转换：atr_min_pct → float
-        v = float(val) if param == 'atr_min_pct' else val
-        old = cfg.get(sym, {}).get(param)
-        cfg.setdefault(sym, {})[param] = v
-        applied.append({'sym': sym, 'param': param, 'old': old, 'new': v, 'delta_pp': rec['delta_pp']})
+        # [任务1.2] 随机对照一票否决（fail-closed）：未附随机对照 z 或 z<1.0 → 仅建议不热更
+        if rec.get('random_z') is None or rec['random_z'] < 1.0:
+            pending.append(rec)
+            continue
+        v = float(val) if isinstance(val, (int, float)) or str(val).replace('.', '', 1).lstrip('-').isdigit() else val
+        e = effect_ledger.apply_config_change(
+            sym, f'general_algorithm.{param}', v,
+            source=f'daily_iterate:{date}', note=f"寻优增益 +{rec['delta_pp']}pp")
+        applied.append({'sym': sym, 'param': param, 'old': e['old'], 'new': v, 'delta_pp': rec['delta_pp']})
     if applied:
-        json.dump(cfg, open(CFG, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+        cfg = json.load(open(CFG, encoding='utf-8'))  # 供后续版本记录读取（账本已写入）
 
     # 3) git 版本记录（仅在有配置变更时 bump 小版本）
     ver_line = '无配置变更，不 bump 版本'

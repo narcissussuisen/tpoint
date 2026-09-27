@@ -26,7 +26,9 @@ HOOK = 'https://open.feishu.cn/open-apis/bot/v2/hook/a35d7f52-9ed2-47df-a929-f11
 OUT = os.path.join(ROOT, 'output')
 STATE = os.path.join(ROOT, 'data', 'closed_loop_state.json')
 CFG = os.path.join(ROOT, 'data', 'monitor_config.json')
-TRACK_PARAMS = ['atr_min_pct', 'mpr_enable', 'mpr_periods', 'vol_confirm', 'ml_enable']
+TRACK_PARAMS = ['buy_threshold', 'sell_threshold', 'signal_gap',
+                'min_hist_diff', 'vol_ratio_b_max',
+                'trail_activate_pct', 'trail_pct', 'ml_enable']
 HOLDOUT_DAYS = 20
 
 
@@ -50,8 +52,21 @@ def prev_live_review(date):
 
 
 def cfg_snapshot(cfg):
-    return {s: {p: v.get(p) for p in TRACK_PARAMS if p in v}
-            for s, v in cfg.items() if not s.startswith('_')}
+    """配置快照：[任务1.2] GT 覆盖参数从 per_symbol[sym]['general_algorithm'] 块读取，
+    trail/ml 等出场与模型参数从 per-symbol 顶层读取。"""
+    gt_params = {'buy_threshold', 'sell_threshold', 'signal_gap',
+                 'min_hist_diff', 'vol_ratio_b_max'}
+    top_params = set(TRACK_PARAMS) - gt_params
+    snap = {}
+    for s, v in cfg.items():
+        if s.startswith('_'):
+            continue
+        ga = (v or {}).get('general_algorithm') or {}
+        entry = {p: ga[p] for p in gt_params if p in ga}
+        entry.update({p: v[p] for p in top_params if p in v})
+        if entry:
+            snap[s] = entry
+    return snap
 
 
 def main():
@@ -182,16 +197,16 @@ def main():
         if tr_c:
             trail_best = max(tr_c, key=lambda x: x[1]['win_rate'])[0]
         proposed_changed = (atr_best != FO.CUR_ATR) or (trail_best != FO.CUR_TRAIL)
-        eff_atr = cfg.get(sym, {}).get('atr_min_pct', FO.CUR_ATR)
-        entry = {'atr_min_pct': eff_atr, 'trail': f'{FO.CUR_TRAIL[0]}/{FO.CUR_TRAIL[1]}',
-                 'vol_confirm': cfg.get(sym, {}).get('vol_confirm', False)}
+        # [任务1.2] atr_min_pct/vol_confirm 已退役（GT 死参数）；快照改记 GT 覆盖块
+        entry = {'trail': f'{FO.CUR_TRAIL[0]}/{FO.CUR_TRAIL[1]}',
+                 'gt_overrides': (cfg.get(sym, {}).get('general_algorithm') or {})}
         if sym in recs:
             r0 = recs[sym]
             next_algo['pending_review'].append(
                 {'sym': sym, 'param': r0['param'], 'value': r0['value'], 'delta_pp': r0['delta_pp']})
         next_algo['effective_tomorrow'][sym] = entry
         if not proposed_changed:
-            bt_lines.append(f'·{sym}：无达标组合，维持 atr={eff_atr} trail=0.4/0.6')
+            bt_lines.append(f'·{sym}：无达标组合，维持现行 trail=0.4/0.6（atr 网格已退役）')
             continue
         # 组合回测：当前 vs  proposed（全历史 + 近20日）
         try:

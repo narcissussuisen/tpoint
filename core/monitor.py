@@ -464,6 +464,31 @@ def _build_general_cfg(g):
     return cfg
 
 
+def _general_cfg_for(sym):
+    """per-symbol GT 参数覆盖（任务1.2，2026-09-27）：monitor_config.json 的
+    per_symbol[sym]['general_algorithm'] 块覆盖 _global.general_algorithm 同名键。
+    无覆盖 → 返回全局 GENERAL_ENGINE_CFG（行为不变）；有覆盖 → dataclasses.replace 副本。
+    这是 AI 闭环 per-symbol 白名单参数（buy_threshold/signal_gap/min_hist_diff 等）
+    的消费端——此前 GT 参数只有全局一档，per-symbol 写入即死参数。"""
+    base = GENERAL_ENGINE_CFG
+    if base is None:
+        return None
+    ov = (PER_SYMBOL_CFG.get(sym) or {}).get('general_algorithm')
+    if not isinstance(ov, dict) or not ov:
+        return base
+    import dataclasses
+    cfg = dataclasses.replace(base)
+    for k, v in ov.items():
+        if k.startswith('_'):
+            continue
+        if hasattr(cfg, k):
+            try:
+                setattr(cfg, k, v)
+            except Exception:
+                pass
+    return cfg
+
+
 def _load_per_symbol_cfg():
     """加载 data/monitor_config.json → 全局 PER_SYMBOL_CFG（每轮热重载调用）。"""
     global PER_SYMBOL_CFG, USE_GENERAL_ENGINE, GENERAL_ENGINE_CFG
@@ -1371,6 +1396,8 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
     trend = data['trend']; rsi14 = data['rsi']; temp = data['temp']; vol_ratio = data['vol_ratio']
     n = data['n']; df = data['df']
     trade_times = df['trade_time'].values if df is not None else None
+    # [任务1.2] per-symbol GT 覆盖解析一次（无覆盖=全局，行为不变）
+    _gt_cfg = _general_cfg_for(sym) if (USE_GENERAL_ENGINE and GENERAL_ENGINE_CFG is not None) else None
 
     # 当前持仓（跨扫描/重启持久化在 st 中）；新增 size_pct 累计仓位(成)
     pos = st.get(f'pos_{sym}')  # None 或 {'side','entry_price','entry_idx','max_fav','entry_reason','stop_price','size_pct'}
@@ -1446,10 +1473,10 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
             # 2) 反向信号自然平仓
             if not exited and ecfg['s_signal_exit']:
                 # [2026-08-20] 通用算法引擎：USE_GENERAL_ENGINE 时用 check_general_* 替代 miji（异常回退 miji）
-                if USE_GENERAL_ENGINE and GENERAL_ENGINE_CFG is not None:
+                if USE_GENERAL_ENGINE and _gt_cfg is not None:
                     try:
-                        _ts, _rs = check_general_s_trigger(data, i, GENERAL_ENGINE_CFG)
-                        _tb, _rb = check_general_b_trigger(data, i, GENERAL_ENGINE_CFG)
+                        _ts, _rs = check_general_s_trigger(data, i, _gt_cfg)
+                        _tb, _rb = check_general_b_trigger(data, i, _gt_cfg)
                     except Exception:
                         _ts, _rs = check_s_trigger(data, i); _tb, _rb = check_b_trigger(data, i)
                 else:
@@ -1492,10 +1519,10 @@ def detect_for(sym, name, data, st, mpr_enable=None, mpr_periods=None, atr_min_p
         _vrb = vol_ratio_b_max
         if _vrb is None:
             _vrb = (PER_SYMBOL_CFG.get('_global') or {}).get('vol_ratio_b_max')
-        if USE_GENERAL_ENGINE and GENERAL_ENGINE_CFG is not None:
+        if USE_GENERAL_ENGINE and _gt_cfg is not None:
             try:
-                tb, rb = check_general_b_trigger(data, i, GENERAL_ENGINE_CFG, vol_ratio_b_max=_vrb)
-                ts, rs = check_general_s_trigger(data, i, GENERAL_ENGINE_CFG)
+                tb, rb = check_general_b_trigger(data, i, _gt_cfg, vol_ratio_b_max=_vrb)
+                ts, rs = check_general_s_trigger(data, i, _gt_cfg)
             except Exception:
                 tb, rb = check_b_trigger(data, i, mpr_enable=mpr_enable, mpr_periods=mpr_periods,
                                          atr_min_pct=atr_min_pct)

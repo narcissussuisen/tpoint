@@ -152,7 +152,11 @@ def apply_config_change(sym, param, new_value, source, proposal_id=None, note=""
     """备份 → 记 hash_before → 写 monitor_config → 记 hash_after → 落账本。
 
     sym   : per-symbol 键（如 '300010.SZ'）；改 _global 块传 '_global'。
-    param : 参数名（per-symbol 一级键；_global 时用点路径 'general_algorithm.xxx'）。
+    param : 参数名。支持点路径嵌套：
+              sym='300010.SZ', param='general_algorithm.buy_threshold'
+                → cfg['300010.SZ']['general_algorithm']['buy_threshold']
+              sym='_global', param='general_algorithm.regime_gate'
+                → cfg['_global']['general_algorithm']['regime_gate']
     source: 变更来源（'daily_iterate' / 'ai_loop:<proposal_id>' / 'manual' ...）。
 
     返回 entry（含 old/new/hash_before/hash_after）；失败抛异常前账本已尽量留痕。
@@ -160,16 +164,12 @@ def apply_config_change(sym, param, new_value, source, proposal_id=None, note=""
     with open(MONITOR_CONFIG, encoding="utf-8") as f:
         cfg = json.load(f)
 
-    # 取 old 值
-    if sym == "_global":
-        node = cfg.setdefault("_global", {})
-        parts = param.split(".")
-        for p in parts[:-1]:
-            node = node.setdefault(p, {})
-        old = node.get(parts[-1])
-    else:
-        node = cfg.setdefault(sym, {})
-        old = node.get(param)
+    # 取 old 值（统一点路径解析）
+    node = cfg.setdefault(sym, {})
+    parts = param.split(".")
+    for p in parts[:-1]:
+        node = node.setdefault(p, {})
+    old = node.get(parts[-1])
 
     hash_before = _hashes()
 
@@ -180,10 +180,7 @@ def apply_config_change(sym, param, new_value, source, proposal_id=None, note=""
     shutil.copy2(MONITOR_CONFIG, backup)
 
     # 写新值
-    if sym == "_global":
-        node[parts[-1]] = new_value
-    else:
-        node[param] = new_value
+    node[parts[-1]] = new_value
     tmp = MONITOR_CONFIG + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
