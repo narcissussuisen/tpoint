@@ -79,7 +79,13 @@ class GeneralConfig(CompositeConfig):
     # 与 per-bar b_downtrend_reversal 区别：后者仅在 trend==-1 时要求局部底+超卖才放 B；
     # 本门控在「平滑趋势持续下行」(窗口内 -1 占比超阈) 时直接抑制 B（含超卖反弹），
     # 因持续下行 regime 中抄底反弹多失败（用户关注 2026H1 dip-buying 失效局部 regime）。
-    # 仅影响 B（正T 方向）；S 全 regime 放行（与 s_signal_exit 口径一致）。OOS 验证后默认关。
+    # 仅影响 B（正T 方向）；S 全 regime 放行（与 s_signal_exit 口径一致）。
+    # [2026-09-27 任务1.3 证据落盘] 随机对照 A/B（300010，11日，修复口径 simulate_position_sm，
+    # output/random_control_300010SZ_20260927{,_regime-on}.json）：ON vs OFF——
+    # 信号 114 vs 163（-30%），net_wr 75.0% vs 56.7%，mean_net +0.007pp vs -0.326pp/笔，
+    # 两臂均 PASS vs 随机入场 ⇒ 被抑制子集为净负贡献（marginal ≈ -0.45pp/笔），门控有效。
+    # 生产保持 true（monitor_config._global.general_algorithm）；⚠️ n_trips=8 薄样本，列 AI 闭环复检项。
+    # 代码默认 False 仅为「新建 config 不放行未验证行为」的安全位，生产以 config 为准。
     regime_gate: bool = False
     regime_lookback: int = 40          # 平滑窗口（分钟 bar 数）
     regime_downtrend_suppress: bool = True
