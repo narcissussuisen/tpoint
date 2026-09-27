@@ -24,6 +24,18 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import core  # noqa: E402
 
+# [2026-09-25] 交易日守卫用的日历按**显式路径**加载 core/trading_calendar.py。
+# 刻意不走 sys.path：本目录下已有 scripts/loop_engine/core.py，若把 tpoint/core 插进
+# sys.path[0]，上面那句 `import core` 会被顶成 tpoint/core 这个命名空间包 → 整脚本崩。
+# trading_calendar.py 只 import datetime，按文件加载零副作用、零依赖。
+import importlib.util as _ilu  # noqa: E402
+_TP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_spec = _ilu.spec_from_file_location(
+    'tp_trading_calendar', os.path.join(_TP_ROOT, 'core', 'trading_calendar.py'))
+_tc = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_tc)
+_is_trading_day = _tc.is_trading_day
+
 STAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stages')
 
 
@@ -97,6 +109,14 @@ def main():
 
     if a.status:
         show_status()
+        return 0
+
+    # [2026-09-25] 非交易日不推进阶段：本引擎的阶段会跑回归/OOS 回测并**自动 git commit + push**，
+    # 在休市日（当天无任何新信号数据）推进没有意义，且会污染迭代状态。
+    # 此前本脚本无交易日判断，2026-09-25 中秋当天 15:05 仍被 tpoint_loop_engine 拉起。
+    import datetime as _dt
+    if not _is_trading_day(_dt.date.today().isoformat()):
+        core.log('LOOP: 非交易日 → 跳过（见 core/trading_calendar.py）')
         return 0
 
     if not core.acquire_lock(timeout=60):

@@ -31,13 +31,10 @@ from datasource import MootdxDataSource
 F_DATA = r'F:\keyfactor_data\1m'
 WATCHLIST = os.path.join(ROOT, 'data', 'watchlist.json')
 
-# 与 daily_signal_review 一致的 2026 节假日表（非交易日 skip）
-HOLIDAYS_2026 = {
-    '2026-01-01','2026-01-02','2026-01-26','2026-01-27','2026-01-28','2026-01-29','2026-01-30',
-    '2026-02-02','2026-02-03','2026-04-06','2026-05-01','2026-05-04','2026-05-05',
-    '2026-06-19','2026-06-22','2026-10-01','2026-10-02','2026-10-05','2026-10-06','2026-10-07',
-    '2026-12-25',
-}
+# [2026-09-25] 节假日表统一到 core/trading_calendar.py（单一真源）。
+# 原注释自称"与 daily_signal_review 一致"——两份都不含 2026-09-25、春节段错位、
+# 并凭空多了 2026-12-25（中国法定节假日并无圣诞）。sys.path 已含 core（见上方 L24）。
+from trading_calendar import HOLIDAYS_2026  # noqa: E402
 
 TICKFLOW_COLS = ['symbol', 'name', 'timestamp', 'trade_date', 'trade_time',
                  'open', 'high', 'low', 'close', 'volume', 'amount']

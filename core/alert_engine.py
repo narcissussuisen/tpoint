@@ -411,6 +411,17 @@ def main():
         run_once()
         return
 
+    # [2026-09-25] 非交易日直接退出（与 core/monitor.py 的 EXIT not trading today 同口径）。
+    # 修复前：in_trading_session()/evaluate() 只挡「评估」，主循环仍每 poll(默认15s) 空转一行
+    # 「非盘中时段，跳过评估（收盘后 monitor 仅保活，不报 service_down）」——
+    # 2026-09-25 中秋休市实测 alert_engine_console.log 单日涨到 28.7 MB，进程全天常驻空转。
+    # 放在取单实例锁之前，避免留下 .alert_engine.pid 残留。
+    # ⚠️ 必须与 scripts/watchdog.py 的交易日判定修复**同批上线**：否则 watchdog 会从
+    #    「每 60s 重启 monitor」变成「每 60s 重启 alert_engine」，风暴更糟。
+    if not is_trading_today():
+        print('[%s] 非交易日 → 退出（与 monitor 同口径，不空转）' % time.strftime('%H:%M:%S'))
+        return 0
+
     # 常驻守护模式：获取单实例锁，防止重复运行导致飞书告警重发
     acquire_single_instance(LOCK_FILE, PID_FILE)
 

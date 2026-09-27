@@ -32,6 +32,16 @@ set PUSH_PY=C:\Users\YZP\WorkBuddy\Claw\方法论与研究文档\研究报告\pu
 set WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/849577f5-6c79-498e-92bd-0721af6f9622
 for /f "usebackq" %%i in (`%PY_EXE% %ROOT%\scripts\_today.py`) do set D=%%i
 echo [%DATE% %TIME%] === tpoint daily review %D% === >> "%ROOT%\logs\daily_review.log"
+REM --- [2026-09-25] trading-day gate. Non-trading day == silent skip, rc 77 (SKIPPED convention). ---
+REM   Reason: this 12-step pipeline had NO global trading-day gate. auto_tune.py and
+REM   push_tpoint_review.py have none at all, and step1 daily_signal_review.py used a
+REM   holiday table that did not contain 2026-09-25, so on Mid-Autumn holiday the whole
+REM   pipeline ran and auto_tune would rewrite monitor_config.json from empty samples.
+"%PY_EXE%" "%ROOT%\scripts\_is_trading_today.py"
+if errorlevel 1 (
+  echo [%DATE% %TIME%] SKIP non-trading-day rc77 - pipeline not started >> "%ROOT%\logs\daily_review.log"
+  exit /b 77
+)
 REM --- T0 runtime identity anchor (2026-09-03): non-blocking, T1 auto-rebegins on failure ---
 "%PY_EXE%" "%ROOT%\scripts\runtime_identity.py" --begin >> "%ROOT%\logs\daily_review.log" 2>&1
 set RC=%ERRORLEVEL%

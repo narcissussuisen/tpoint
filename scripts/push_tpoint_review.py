@@ -8,6 +8,10 @@ CLI：python push_tpoint_review.py <date>
 import os, sys, json, subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# [2026-09-25] 交易日历单一真源 + 非交易日守卫：本脚本此前无任何交易日判断，
+# 休市日会照推「0 信号复盘」到 a35d7f52 群。
+sys.path.insert(0, os.path.join(ROOT, 'core'))
+from trading_calendar import is_trading_day as _is_trading_day  # noqa: E402
 PY = sys.executable
 # 2026-09-01 修复：原硬编码路径 C:\...\方法论与研究文档\研究报告\ 已不存在（自 08-2x 起 step5 一直
 # 静默失败 → 复盘 HTML 从未真正推送）。改为多候选探测，任一存在即用，避免再次因路径漂移静默丢推。
@@ -23,6 +27,10 @@ HOOK = 'https://open.feishu.cn/open-apis/bot/v2/hook/a35d7f52-9ed2-47df-a929-f11
 
 def main():
     date = sys.argv[1]
+    # [2026-09-25] 非交易日不推送复盘（休市日只有 0 信号，推出去是噪声且会污染群里的复盘序列）
+    if not _is_trading_day(date):
+        print(f'[skip] {date} 非交易日，不推送复盘')
+        return
     live = json.load(open(os.path.join(ROOT, 'output', f'live_review_{date}.json'), encoding='utf-8'))
     sm = live['summary']
     vol = live['volatility']
