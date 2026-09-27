@@ -4,7 +4,7 @@ backtest_general_v5.py —— 通用算法(GT v1.0 / 做T策略 v5) tickflow 离
 - 数据: F:/keyfactor_data/1m/<sym>_1m.csv（tickflow 落地，真实 1m）
 - 引擎: core/general_signal.detect_signals_general（与 watchlist_engine 同源）
 - 出场: exit_manager.make_config 默认（硬止损atr1.5 + 时间止损90 + 移动止损0.4/0.6）
-- 配对: simulate_day（正T: B→S），成本 cost_for_symbol（个股含印花 / LOF·ETF 无）
+- 配对: simulate_position_sm 单一仓位状态机（T1.5；正T B→S / 双向含反T），成本 cost_for_symbol（个股含印花 / LOF·ETF 无）
 - 输出: output/backtest_general_v5_<date>.json + .html（逐标的 + 池级聚合 + WR 判定）
 
 用法: python backtest_general_v5.py [--last N] [--syms a,b,c]
@@ -22,9 +22,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from general_signal import detect_signals_general, GENERAL_DEFAULT, STRATEGY_VERSION, ENGINE_FULL
-from exit_manager import simulate_day, make_config, cost_for_symbol
+from exit_manager import make_config, cost_for_symbol
 from daily_signal_review import build_data
-from simulate_bidirectional import simulate_dual
+from simulate_position_sm import simulate_position_sm  # [T1.5] 单一仓位状态机
 
 DATA_DIR = r'F:/keyfactor_data/1m_clean'   # 2026-08-20 清洗后数据（剔除 ms 合成段/垃圾volume/时段外）
 OUT = os.path.join(ROOT, 'output')
@@ -52,6 +52,19 @@ def load_days(path):
     return days
 
 
+def _has_base_for(sym):
+    """[T1.5] has_base 口径：研究口径默认 True（假设有底仓）；
+    300010.SZ 从 data/monitor_config.json per_symbol 读 has_base（缺省 True）。"""
+    if sym != '300010.SZ':
+        return True
+    try:
+        with open(os.path.join(ROOT, 'data', 'monitor_config.json'), encoding='utf-8') as f:
+            cfg = json.load(f)
+        return bool(cfg.get(sym, {}).get('has_base', True))
+    except Exception:
+        return True
+
+
 def run_symbol(sym, last_n=None, min_days=5, dual=False):
     path = f'{DATA_DIR}/{sym}_1m.csv'
     if not os.path.exists(path):
@@ -62,7 +75,7 @@ def run_symbol(sym, last_n=None, min_days=5, dual=False):
         dates = dates[-last_n:]
     cfg = make_config()
     cost = cost_for_symbol(sym)
-    trips_all, short_all = [], []
+    sigs_by_day, prices_by_day = [], []
     prev_close = None
     n_days_ok = 0
     for d in dates:
@@ -78,18 +91,25 @@ def run_symbol(sym, last_n=None, min_days=5, dual=False):
         prices = {'o': o, 'h': h, 'lo': lo, 'c': c, 'atr': data['atr'], 'trend': data['trend'],
                   'n': len(c), 'date': d, 'pc': pc, 'sym': sym}
         sigs = detect_signals_general(data, pc, GENERAL_DEFAULT)
-        if dual:
-            lt, st = simulate_dual(sigs, prices, cfg, cost)
-            trips_all.extend(lt); short_all.extend(st)
-        else:
-            trips_all.extend(simulate_day(sigs, prices, cfg, cost))
+        sigs_by_day.append((d, sigs))
+        prices_by_day.append((d, prices))
         n_days_ok += 1
         prev_close = c[-1]
     if n_days_ok < min_days:
         return {'sym': sym, 'error': f'insufficient_days({n_days_ok})'}
+    # [T1.5] 单一仓位状态机：dual=False 保持纯正T 口径（has_base=False 禁反T）；
+    # dual=True 双向（has_base 默认 True，300010.SZ 读 monitor_config）。
+    # 替代 simulate_day / simulate_dual（双重计费已消除）。
+    hb = _has_base_for(sym) if dual else False
+    sm = simulate_position_sm(sigs_by_day, prices_by_day,
+                              config_long=cfg, config_short=cfg,
+                              cost=cost, has_base=hb)
+    trips_all = [t for t in sm['trips'] if t['side'] == 'B']
+    short_all = [t for t in sm['trips'] if t['side'] == 'S']
     return {'sym': sym, 'days': n_days_ok, 'first': dates[0] if dates else None,
             'last': dates[-1] if dates else None, 'trips': trips_all,
-            'short_trips': short_all if dual else None}
+            'short_trips': short_all if dual else None,
+            'n_long': sm['n_long'], 'n_short': sm['n_short'], 'has_base_used': hb}
 
 
 def compute_data(o, h, lo, c, v, pc):
@@ -139,7 +159,9 @@ def main():
             print(f'[{sym}] {NAME.get(sym,sym)} days={r["days"]} ({r["first"]}~{r["last"]}) '
                   f'trips={agg["n"]} WR={agg["wr"]}% net={agg["total_ret"]}% avg={agg["avg_trip"]}%')
         results[sym] = {'sym': sym, 'name': NAME.get(sym, sym), 'kind': KIND.get(sym, ''),
-                        'days': r['days'], 'first': r['first'], 'last': r['last'], **agg, **extra}
+                        'days': r['days'], 'first': r['first'], 'last': r['last'],
+                        'n_long': r['n_long'], 'n_short': r['n_short'],
+                        'has_base_used': r['has_base_used'], **agg, **extra}
 
     # 池级聚合（WR/净按 trip 汇总；剔除 error 行）
     pool_trips = [r for sym, r in results.items() if 'error' not in r]
@@ -161,7 +183,10 @@ def main():
 
     ver = {'strategy_version': STRATEGY_VERSION, 'engine_full': ENGINE_FULL}
     out = {'date': a.out_suffix, 'engine': 'general', **ver,
-           'cfg': {'exit': 'prod-default(atr1.5+time90+trail0.4/0.6)', 'pairing': 'simulate_day 正T' if not a.dual else 'simulate_dual 双向'},
+           'cfg': {'exit': 'prod-default(atr1.5+time90+trail0.4/0.6)',
+                   'pairing': 'simulate_position_sm-v1 正T' if not a.dual else 'simulate_position_sm-v1 双向'},
+           'position_model': 'simulate_position_sm-v1',
+           'caliber_note': 'T1.5 simulate_position_sm-v1：单一仓位状态机，替代 simulate_day/simulate_dual 口径（双重计费已消除）',
            'last_n': a.last, 'dual': a.dual, 'symbols': results, 'pool': pool,
            'pass_G1': pool['wr'] >= 55.0 if pool['n'] >= 20 else 'insufficient_samples'}
     fn = f'backtest_general_v5_{a.out_suffix}'
@@ -201,7 +226,7 @@ def build_html(out, path):
 <body style="font-family:'Microsoft YaHei',sans-serif;background:#f5f6f8;margin:0;padding:20px">
 <div style="max-width:1100px;margin:0 auto">
 <h2 style="color:#1f2a44">通用算法 v5/GT-1.0 离线长回测 · {out['date']}（{'双向' if dual else '正T'}）</h2>
-<p style="color:#666">数据源: F:/keyfactor_data/1m（tickflow 真实 1m）｜ 出场: 生产默认(atr1.5+time90+trail0.4/0.6) ｜ 配对: {'simulate_dual（正T B→S + 反T S→B）' if dual else 'simulate_day 正T(B→S)'}</p>
+<p style="color:#666">数据源: F:/keyfactor_data/1m（tickflow 真实 1m）｜ 出场: 生产默认(atr1.5+time90+trail0.4/0.6) ｜ 配对: {'simulate_position_sm-v1 双向（单一仓位状态机）' if dual else 'simulate_position_sm-v1 正T(B→S)'}</p>
 <div style="background:#fff;border-radius:10px;padding:16px;border-left:4px solid {'#2e7d32' if verdict is True else '#d32f2f'}">
 <b>池级判定: {vtext}</b><br>
 池级: trips={p['n']}  WR={p['wr']}%  net={p['total_ret']}%  (交易日合计 {p.get('days',0)}){pool_extra}</div>

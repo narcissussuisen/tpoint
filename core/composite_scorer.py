@@ -76,6 +76,11 @@ class CompositeConfig:
     macd_fast: int = 12
     macd_slow: int = 26
     macd_signal: int = 9
+    # [任务1.1] 背离强度门槛（2026-09-27 自 miji 路径迁入 GT）：
+    # 实证（259 万样本，miji 口径）：弱背离 B 胜率 35.2% vs 强柱 43.5%，MHD=0.15 最优。
+    # 语义：底背离强度 = hist[i] − min(hist[W])；顶背离强度 = max(hist[W]) − hist[i]；
+    # 强度 < min_hist_diff 时该组件分量衰减为 0（不反向计分）。默认 0.0 = 不改行为。
+    min_hist_diff: float = 0.0
 
     # —— 信号/强度阈值 ——
     # 默认 0.50 落在方法论 §8 健康信号密度带(0.5~2.0 信号/百bar)附近；
@@ -161,12 +166,16 @@ def score_components_at(data, i, cfg: CompositeConfig, rsi_arr, macd_hist_arr):
         local_top = h[i] >= h[w0:i].max() - 1e-9
         m_seg = macd_hist_arr[w0:i + 1]
         m_min = float(m_seg.min()); m_max = float(m_seg.max())
+        mhd = getattr(cfg, 'min_hist_diff', 0.0)
         if local_bot and macd_hist_arr[i] > m_min:
-            strength = float(np.clip((macd_hist_arr[i] - m_min) / (abs(m_min) + 1e-12), 0.0, 1.0))
-            c_macd_div = +strength
+            # 底背离强度 = 当前柱 − 窗口最低柱；强度不足（弱背离）分量置 0
+            if (macd_hist_arr[i] - m_min) >= mhd:
+                strength = float(np.clip((macd_hist_arr[i] - m_min) / (abs(m_min) + 1e-12), 0.0, 1.0))
+                c_macd_div = +strength
         elif local_top and macd_hist_arr[i] < m_max:
-            strength = float(np.clip((m_max - macd_hist_arr[i]) / (abs(m_max) + 1e-12), 0.0, 1.0))
-            c_macd_div = -strength
+            if (m_max - macd_hist_arr[i]) >= mhd:
+                strength = float(np.clip((m_max - macd_hist_arr[i]) / (abs(m_max) + 1e-12), 0.0, 1.0))
+                c_macd_div = -strength
 
     # ---- C_rsi：RSI 超买超卖（线性映射）----
     half = (cfg.rsi_overbought - cfg.rsi_oversold) / 2.0

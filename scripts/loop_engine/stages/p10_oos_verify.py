@@ -28,8 +28,8 @@ le_core = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(le_core)
 
 from general_signal import detect_signals_general, GENERAL_DEFAULT  # noqa: E402
-from exit_manager import make_config, simulate_day, aggregate_metrics  # noqa: E402
-from simulate_bidirectional import simulate_bidirectional  # noqa: E402
+from exit_manager import make_config, aggregate_metrics  # noqa: E402
+from simulate_position_sm import simulate_position_sm  # noqa: E402  # [T1.5] 单一仓位状态机
 from daily_signal_review import build_data  # noqa: E402
 
 TARGET_VERSION = '10.9.0'
@@ -62,10 +62,24 @@ def _load_ml():
         return None
 
 
-def _run_sym(df, days, ml=None, ml_thr=0.5):
-    """逐日 detect + ML 过滤（可选）+ 双向 simulate。返回聚合。"""
+def _has_base_for(sym):
+    """[T1.5] has_base 口径：研究口径默认 True（假设有底仓）；
+    300010.SZ 从 data/monitor_config.json per_symbol 读 has_base（缺省 True）。"""
+    if sym != '300010.SZ':
+        return True
+    try:
+        with open(os.path.join(ROOT, 'data', 'monitor_config.json'), encoding='utf-8') as f:
+            cfg = json.load(f)
+        return bool(cfg.get(sym, {}).get('has_base', True))
+    except Exception:
+        return True
+
+
+def _run_sym(sym, df, days, ml=None, ml_thr=0.5):
+    """逐日 detect + ML 过滤（可选），按 symbol 聚合多日后一次 simulate_position_sm。
+    [T1.5] 替代 simulate_day+simulate_bidirectional 相加（同信号双重计费已消除）。"""
     b_cnt = s_cnt = 0
-    long_trips, short_trips = [], []
+    sigs_by_day, prices_by_day = [], []
     for i, day in enumerate(days):
         d = df[df['trade_date'] == day].sort_values('trade_time')
         if len(d) < 10:
@@ -85,10 +99,20 @@ def _run_sym(df, days, ml=None, ml_thr=0.5):
                 b_cnt += 1
             else:
                 s_cnt += 1
-        long_trips += simulate_day(sigs, data, EXIT_CFG, cost=None)
-        short_trips += simulate_bidirectional(sigs, data, config=EXIT_CFG_SHORT, cost=None)
+        data['pc'] = pc
+        data['sym'] = sym
+        data['date'] = day
+        sigs_by_day.append((day, sigs))
+        prices_by_day.append((day, data))
+    hb = _has_base_for(sym)
+    sm = simulate_position_sm(sigs_by_day, prices_by_day,
+                              config_long=EXIT_CFG, config_short=EXIT_CFG_SHORT,
+                              cost=None, has_base=hb)
+    long_trips = [t for t in sm['trips'] if t['side'] == 'B']
+    short_trips = [t for t in sm['trips'] if t['side'] == 'S']
     return {'b_cnt': b_cnt, 's_cnt': s_cnt,
-            'long': aggregate_metrics(long_trips), 'short': aggregate_metrics(short_trips)}
+            'long': aggregate_metrics(long_trips), 'short': aggregate_metrics(short_trips),
+            'n_long': sm['n_long'], 'n_short': sm['n_short'], 'has_base_used': hb}
 
 
 def _ml_filter(sigs, data, ml, thr):
@@ -116,7 +140,9 @@ def run(ctx=None):
     le_core.log('P10: 开始执行（全栈 OOS 验证 + 交付）')
     ml = _load_ml()
     report = {'stage': 'p10_oos_verify', 'version': TARGET_VERSION,
-              'pool': POOL, 'ml_loaded': ml is not None}
+              'pool': POOL, 'ml_loaded': ml is not None,
+              'position_model': 'simulate_position_sm-v1',
+              'caliber_note': 'T1.5 simulate_position_sm-v1：单一仓位状态机，替代 simulate_day+bidirectional 相加口径（双重计费已消除）'}
 
     rows = []
     for sym in POOL:
@@ -126,17 +152,19 @@ def run(ctx=None):
         df = pd.read_csv(fp, encoding='utf-8-sig')
         df['trade_date'] = df['trade_date'].astype(str)
         days = sorted(df['trade_date'].unique())
-        base = _run_sym(df, days)
-        mlr = _run_sym(df, days, ml=ml) if ml is not None else None
+        base = _run_sym(sym, df, days)
+        mlr = _run_sym(sym, df, days, ml=ml) if ml is not None else None
         rows.append({
-            'sym': sym, 'days': len(days),
+            'sym': sym, 'days': len(days), 'has_base_used': base['has_base_used'],
             'base': {'b': base['b_cnt'], 's': base['s_cnt'],
                      'long_net': base['long']['total_ret'], 'long_wr': base['long']['win_rate'],
-                     'short_net': base['short']['total_ret']},
+                     'short_net': base['short']['total_ret'],
+                     'n_long': base['n_long'], 'n_short': base['n_short']},
             'ml': None if mlr is None else {'b': mlr['b_cnt'], 's': mlr['s_cnt'],
                                             'long_net': mlr['long']['total_ret'],
                                             'long_wr': mlr['long']['win_rate'],
-                                            'short_net': mlr['short']['total_ret']},
+                                            'short_net': mlr['short']['total_ret'],
+                                            'n_long': mlr['n_long'], 'n_short': mlr['n_short']},
         })
         le_core.log(f'P10: {sym} 完成（{len(days)} 日）base L{base["long"]["total_ret"]}/S{base["short"]["total_ret"]}')
 
@@ -212,6 +240,7 @@ def _write_report(report, total_base, total_ml):
         '# tpoint v10.9.0 全栈 OOS 验证报告（loop_engine P10）',
         '',
         f'- 日期：2026-08-26 ｜ 池：{", ".join(report["pool"])} ｜ ML 模型加载：{report["ml_loaded"]}',
+        '- 仓位模型：simulate_position_sm-v1（T1.5 单一仓位状态机，替代 simulate_day+bidirectional 相加，双重计费已消除）',
         '',
         '## 池级聚合（当前生产配置全样本）',
         '',

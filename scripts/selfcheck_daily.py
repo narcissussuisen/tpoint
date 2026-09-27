@@ -53,6 +53,31 @@ PID_FILE = os.path.join(DATA_DIR, '.monitor.svc.pid')
 PROMPT_FILE = os.path.join(BASE_DIR, '..', '数据', '股票池', 'prompt-common.md')
 CONFIG_FILE = os.path.join(BASE_DIR, 'config', 'monitor_config.json')
 WATCHLIST_FILE = os.path.join(DATA_DIR, 'watchlist.json')
+
+
+def _resolve_powershell():
+    """定位 Windows PowerShell 可执行文件 —— **多候选探测，不依赖 PATH**。
+
+    [2026-09-25] 原写法直接 `['powershell', ...]` 靠 PATH 解析。在受限会话下
+    （计划任务 / 自检子进程 / 工具链沙箱）PATH 常不含 WindowsPowerShell\\v1.0 ⇒
+    subprocess 抛 `[WinError 2] 系统找不到指定的文件`，于是「计划任务/任务查询」长期
+    误报 WARN、资源使用三项恒为 SKIP。同用户既定规则：**任何指向运行时/系统二进制的
+    路径都必须通配探测 + 多候选回退，禁止单点硬编码。**
+    """
+    sysroot = os.environ.get('SystemRoot') or r'C:\Windows'
+    cands = [
+        os.path.join(sysroot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+        os.path.join(sysroot, 'SysWOW64', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+        shutil.which('pwsh'),
+        shutil.which('powershell'),
+    ]
+    for c in cands:
+        if c and os.path.isfile(c):
+            return c
+    return 'powershell'   # 最后回退：交给 PATH（不改动前行为下限）
+
+
+PS_EXE = _resolve_powershell()
 ALERT_PID_FILE = os.path.join(DATA_DIR, '.alert_engine.pid')   # alert_engine 单实例 PID（与 monitor 同机制，写于 core/alert_engine.py）
 
 # 解释器（与 run_monitor.bat 一致：managed python 3.13.12）
@@ -64,6 +89,10 @@ GLOBAL_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/1d241455-447b-401
 
 # 阈值（与 monitor_config.json 对齐，独立硬编码避免读配置失败）
 SERVICE_STALE_S = 120      # 心跳过期阈值
+# [2026-09-25] watchdog 重启风暴阈值：近 1 小时 spawned 次数上限。
+# 正常情况交易日 watchdog 最多重启个位数次；>5 基本就是「交易日判定失效 → 拉起注定秒退的
+# monitor → 误判未运行 → 再拉起」的死循环（2026-09-25 中秋实测 705 次/天）。
+STORM_MAX_SPAWN_1H = 5
 SCAN_DUR_WARN_S = 45       # 扫描耗时警告
 DATA_LAG_WARN_S = 300      # 行情延迟警告
 DISK_WARN_PCT = 90         # 磁盘使用率警告
@@ -170,7 +199,7 @@ def _get_python_procs():
     # 方法2: PowerShell Get-CimInstance
     try:
         out = subprocess.check_output(
-            ['powershell', '-NoProfile', '-Command',
+            [PS_EXE, '-NoProfile', '-Command',
              "Get-CimInstance Win32_Process -Filter \"Name LIKE 'python%'\" | "
              "ForEach-Object { Write-Output ($_.ProcessId.ToString() + '||' + $_.CommandLine) }"],
             timeout=15, stderr=subprocess.DEVNULL, text=True, errors='replace')
@@ -222,6 +251,64 @@ def _tasklist_python_pids():
         return []
 
 
+def _cmd_is_tpoint_script(cmd, script):
+    """命令行是否属于 **tpoint 自己的** 该脚本（目录 + 脚本基名双限定）。
+
+    [2026-09-25 实测事故] 原写法 `'monitor.py' in cmd` 是**裸子串**判定，会被
+        F:\\WorkBuddyItem\\BilibiliMonitoring v1\\watchdog_bili_monitor.py
+    命中（子串 "monitor.py" 出现在 "watchdog_bili_monitor.py" 里）⇒ 自检在 tpoint 的
+    monitor **真的没在跑**时报 `✅ PASS monitor 进程 PID 19036`（实测 pid 19036 就是 B 站监控）。
+    后果比误报更严重：**假期/故障日会掩盖真故障**（假阳性掩盖假阴性）。
+    规则（与项目记忆「进程判据必须限定目录」同源）：
+      ① 整条 cmdline 必须出现 tpoint；② 某个 token 的 basename 必须**精确等于** script。
+    """
+    if not cmd:
+        return False
+    norm = cmd.replace('/', '\\')
+    if 'tpoint' not in norm.lower():
+        return False
+    want = script.lower()
+    for tok in norm.split():
+        # ⚠️ 必须取 basename 比较：token 是**完整路径**（如 ...\tpoint\core\monitor.py），
+        # 直接与 'monitor.py' 比会永远为假 ⇒ 真 monitor 被判"不存在"（反向误判）。
+        if os.path.basename(tok.strip().strip('"').strip("'")).lower() == want:
+            return True
+    return False
+
+
+def _selfcopy_twin_pids():
+    """返回「本进程因解释器自复制而产生的孪生进程」PID 集合（父或子）。
+
+    [2026-09-25 实测] 本机 Windows 上，**venv 的 python.exe** 启动时会自复制：保留一个
+    命令行完全相同的父进程，另起一个同命令行的子进程实际执行脚本。实测（探针 pid 11648→13736）：
+        python.exe(11648, ppid=shell) ──spawn──▶ python.exe(13736) = os.getpid()
+    ⇒ **执行体是子进程，孪生是父进程**（方向与直觉相反，故判据必须同时覆盖 ppid）。
+    托管 python（`C:\\Users\\YZP\\.workbuddy\\binaries\\...`）不会自复制 —— 生产自检走托管 python，
+    故本项在生产不触发；仅在用 venv python 手跑自检时出现，属工具侧假阳。
+    查询失败返回空集合（宁可保留原有 WARN，也不静默吞掉真异常）。
+    """
+    try:
+        ours, our_parent = os.getpid(), os.getppid()
+        ps = ("Get-CimInstance Win32_Process | "
+              "Where-Object { $_.Name -like 'python*.exe' -and $_.CommandLine -like '*selfcheck_daily*' } | "
+              "ForEach-Object { Write-Output ($_.ProcessId.ToString() + '||' + $_.ParentProcessId.ToString()) }")
+        out = subprocess.check_output([PS_EXE, '-NoProfile', '-Command', ps],
+                                      timeout=20, stderr=subprocess.DEVNULL,
+                                      text=True, errors='replace')
+        twins = set()
+        for line in out.splitlines():
+            parts = line.strip().split('||')
+            if len(parts) != 2 or not all(p.strip().isdigit() for p in parts):
+                continue
+            pid, ppid = int(parts[0].strip()), int(parts[1].strip())
+            # 子（ppid == 我们）或 父（pid == 我们的 ppid）都算自复制孪生
+            if (ppid == ours and pid != ours) or pid == our_parent:
+                twins.add(pid)
+        return twins
+    except Exception:
+        return set()
+
+
 def _proc_alive(pid):
     """进程是否存活（跨用户，Windows 用 ctypes 可靠判定）。"""
     if not pid or pid <= 0:
@@ -268,11 +355,17 @@ def _query_scheduled_tasks():
     用精确任务名查询，避免模糊匹配 'monitor' 误命中系统任务(FamilySafetyMonitor 等)
     导致 Get-ScheduledTaskInfo 报错。"""
     result = {}
-    names = ['tpoint_monitor', 'tpoint_alert_engine', 'tpoint_selfcheck']
+    # [2026-09-25] 任务名对齐当前真实架构：
+    #   tpoint_daily_review   —— 15:30 复盘流水线（含交易日闸门，非交易日 rc=77 SKIPPED）
+    #   tpoint_watchdog_ensure—— 看门狗自愈（AtLogOn + 每 5 分钟）
+    #   tpoint_selfcheck      —— 本自检
+    #   tpoint_monitor / tpoint_alert_engine —— 历史遗留名（现由 watchdog 守护，未注册也属正常）
+    names = ['tpoint_daily_review', 'tpoint_watchdog_ensure', 'tpoint_selfcheck',
+             'tpoint_monitor', 'tpoint_alert_engine']
     ps_names = ','.join([f'"{n}"' for n in names])
     try:
         out = subprocess.check_output(
-            ['powershell', '-NoProfile', '-Command',
+            [PS_EXE, '-NoProfile', '-Command',
              "foreach ($n in @(%s)) { "
              "$t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue; "
              "if ($t) { "
@@ -306,7 +399,7 @@ def _system_resources():
     res = {}
     try:
         out = subprocess.check_output(
-            ['powershell', '-NoProfile', '-Command',
+            [PS_EXE, '-NoProfile', '-Command',
              "$os = Get-CimInstance Win32_OperatingSystem; "
              "$cpu = (Get-CimInstance Win32_Processor | Measure-Object LoadPercentage -Average).Average; "
              "$mem_total = $os.TotalVisibleMemorySize; "
@@ -495,14 +588,19 @@ def check_services(trading_day):
     # 2.1 monitor 进程存活
     # 主判定：PID 文件 + 进程存活（与 watchdog/monitor 同机制，最可靠，不依赖 cmdline 抓取）
     procs = _get_python_procs()
+    _cmd_by_pid = dict(procs)
     pid_in_file = _read_pid_file(PID_FILE)
     monitor_pids = [pid_in_file] if (pid_in_file and _proc_alive(pid_in_file)) else []
     # 兜底1: cmdline 扫描（Get-CimInstance/tasklist 可能漏抓）
     if not monitor_pids:
-        monitor_pids = [pid for pid, cmd in procs if 'monitor.py' in cmd]
+        monitor_pids = [pid for pid, cmd in procs if _cmd_is_tpoint_script(cmd, 'monitor.py')]
     # 兜底2: PID 文件存在但上面未抓到（cmdline 缺失但进程在）
+    #   ⚠️ [2026-09-25] 仅"进程存活"不足以采信：PID 会被回卷复用。若该 PID 已属别的 python
+    #   （本机就有 B 站 watchdog 常年占用），会误报 PASS。故必须核对 cmdline 确为 tpoint monitor。
     if not monitor_pids and pid_in_file and _proc_alive(pid_in_file):
-        monitor_pids = [pid_in_file]
+        _c = _cmd_by_pid.get(pid_in_file, '')
+        if _cmd_is_tpoint_script(_c, 'monitor.py'):
+            monitor_pids = [pid_in_file]
 
     if monitor_pids:
         pid = monitor_pids[0]
@@ -510,32 +608,38 @@ def check_services(trading_day):
         mem_str = f'，内存 {mem:.0f}MB' if mem else ''
         results.append(CheckResult('服务运行', 'monitor 进程', 'PASS',
                                    f'PID {pid}{mem_str}', value=pid))
+    elif not trading_day:
+        # [2026-09-25] 非交易日 watchdog 按设计不拉起 monitor（v3.1/v3.2 的 skip spawn）
+        # ⇒ 未检测到属预期，SKIP。原判 WARN 会让假期每天多出一条"异常"。
+        results.append(CheckResult('服务运行', 'monitor 进程', 'SKIP',
+                                   '非交易日（watchdog 按设计不拉起该服务）→ 跳过存活校验'))
     else:
-        # 非交易日 monitor 按设计退出，降级为 WARN
-        status = 'WARN' if not trading_day else 'FAIL'
-        msg = 'monitor 进程未检测到'
-        if not trading_day:
-            msg += '（非交易日，monitor 按设计退出）'
-        results.append(CheckResult('服务运行', 'monitor 进程', status, msg))
+        results.append(CheckResult('服务运行', 'monitor 进程', 'FAIL',
+                                   'monitor 进程未检测到（已按 tpoint 目录+脚本名双限定判定，'
+                                   '不采信同名外部脚本）'))
 
     # 2.2 alert_engine 进程存活
     # 与 monitor 同机制：PID 文件 + 存活判定优先（此前无 PID 兜底 → cmdline 漏抓即误报 FAIL）
     ae_pid = _read_pid_file(ALERT_PID_FILE)
     engine_pids = [ae_pid] if (ae_pid and _proc_alive(ae_pid)) else []
     if not engine_pids:
-        engine_pids = [pid for pid, cmd in procs if 'alert_engine' in cmd]
+        engine_pids = [pid for pid, cmd in procs if _cmd_is_tpoint_script(cmd, 'alert_engine.py')]
     if not engine_pids and ae_pid and _proc_alive(ae_pid):
-        engine_pids = [ae_pid]
+        # 同 2.1 兜底2：PID 回卷复用风险 → 必须核对 cmdline 确为 tpoint alert_engine
+        if _cmd_is_tpoint_script(_cmd_by_pid.get(ae_pid, ''), 'alert_engine.py'):
+            engine_pids = [ae_pid]
 
     if engine_pids:
         results.append(CheckResult('服务运行', 'alert_engine 进程', 'PASS',
                                    f'PID {engine_pids[0]}', value=engine_pids[0]))
+    elif not trading_day:
+        # [2026-09-25] 非交易日 watchdog 按设计不拉起 alert_engine（且 alert_engine 自身
+        # 也会 `非交易日 → 退出`）⇒ 未检测到属预期，SKIP。原判 WARN 属假期误报。
+        results.append(CheckResult('服务运行', 'alert_engine 进程', 'SKIP',
+                                   '非交易日（watchdog 按设计不拉起该服务）→ 跳过存活校验'))
     else:
-        status = 'WARN' if not trading_day else 'FAIL'
-        msg = 'alert_engine 进程未检测到'
-        if not trading_day:
-            msg += '（非交易日按设计退出）'
-        results.append(CheckResult('服务运行', 'alert_engine 进程', status, msg))
+        results.append(CheckResult('服务运行', 'alert_engine 进程', 'FAIL',
+                                   'alert_engine 进程未检测到（已按 tpoint 目录+脚本名双限定判定）'))
 
     # 2.3 单实例锁一致性
     pid_in_file = None
@@ -565,12 +669,76 @@ def check_services(trading_day):
                                        '非交易日无 PID 文件（正常）'))
 
     # 2.4 自检脚本进程去重检查（避免多个自检实例）
-    self_pids = [pid for pid, cmd in procs if 'selfcheck_daily' in cmd and pid != os.getpid()]
+    # [2026-09-25] 加一道「解释器自复制孪生」过滤：用 venv 的 python.exe 直接跑本脚本时，
+    # 该解释器会自复制出一个**命令行完全相同**的进程（本机已知行为，托管 python 不会），
+    # 于是本项每天误报 WARN。判据见 _selfcopy_twin_pids()（**孪生可能是父进程**，别只查子进程）。
+    self_pids = [pid for pid, cmd in procs
+                 if _cmd_is_tpoint_script(cmd, 'selfcheck_daily.py') and pid != os.getpid()]
+    twins = _selfcopy_twin_pids()
+    self_pids = [p for p in self_pids if p not in twins]
     if self_pids:
         results.append(CheckResult('服务运行', '自检脚本实例', 'WARN',
-                                   f'检测到其他自检进程运行中: {self_pids}'))
+                                   f'检测到其他自检进程运行中: {self_pids}'
+                                   '（已排除本进程自复制出的孪生子进程）'))
     else:
-        results.append(CheckResult('服务运行', '自检脚本实例', 'PASS', '当前为唯一实例'))
+        _note = f'当前为唯一实例（已排除 {len(twins)} 个自复制孪生）' if twins else '当前为唯一实例'
+        results.append(CheckResult('服务运行', '自检脚本实例', 'PASS', _note))
+
+    # 2.5 [2026-09-25] watchdog respawn storm 检测 —— 专防本类"静默失效"再次发生。
+    # 为什么必须单独加这一项：2026-09-25（中秋休市）watchdog 的交易日判定静默降级为
+    # 「仅周末判断」，把中秋判成交易日，于是每 60s 拉起一个启动 7s 即退出的 monitor，
+    # 全天 spawned **705 次**。而上面的 2.1 / 2.2 只判「进程是否存在」——
+    # 风暴瞬间总有存活的进程，于是它们把风暴报成 **PASS（假阳性）**，缺陷潜伏了一整天。
+    # 判据直接来自 watchdog 自己的日志：近 1 小时 spawned 计数。
+    # ⚠️ 本项**不看 trading_day**：这类风暴恰恰只在休市日发生。
+    # [2026-09-25 同日追加] 计数窗口再收紧为「**当前这一任 watchdog 启动之后**」——
+    # 风暴是「正在运行的看门狗」的行为属性，上一任遗留的 spawn 不该让这一任背锅；
+    # 否则修好并重启后的一段过渡期内会持续假阳（本会话修完 1 小时内仍报 FAIL 44 次）。
+    # 若风暴仍在继续，重启后照旧计数 ⇒ 检测力不受影响。
+    try:
+        wlog = os.path.join(LOG_DIR, 'watchdog.log')
+        cutoff = time.time() - 3600
+        n_spawn, last_state, boot_ts = 0, '', 0.0
+        with open(wlog, 'rb') as _f:
+            _f.seek(0, os.SEEK_END)
+            _size = _f.tell()
+            _f.seek(max(0, _size - 400000))          # 只读尾部 400KB，避免日志膨胀后自检变慢
+            _tail = _f.read().decode('utf-8', 'replace')
+        for _ln in _tail.splitlines():
+            if 'trading day state:' in _ln:
+                last_state = _ln.strip()
+            # 任一新任期启动：重置计数（本任之前的 spawn 与本任无关）
+            if _ln.startswith('[') and ' started' in _ln and 'watchdog' in _ln:
+                try:
+                    _boot = time.mktime(time.strptime(_ln[1:20], '%Y-%m-%d %H:%M:%S'))
+                    if _boot > boot_ts:
+                        boot_ts, n_spawn = _boot, 0
+                except Exception:
+                    pass
+                continue
+            if 'spawned ' not in _ln:
+                continue
+            try:
+                _ts = time.mktime(time.strptime(_ln[1:20], '%Y-%m-%d %H:%M:%S'))
+            except Exception:
+                continue
+            if _ts >= cutoff:
+                n_spawn += 1
+        _since = (f'，本任 watchdog 自 {time.strftime("%m-%d %H:%M:%S", time.localtime(boot_ts))} 起'
+                  if boot_ts else '')
+        _msg = f'近 1 小时 spawned {n_spawn} 次（阈值 {STORM_MAX_SPAWN_1H}）{_since}'
+        if n_spawn > STORM_MAX_SPAWN_1H:
+            results.append(CheckResult('服务运行', 'watchdog 重启风暴', 'FAIL',
+                                       _msg + f'；最近一次交易日判定: {last_state or "n/a"}'
+                                              f' —— 疑似交易日判定失效导致空转，查 logs/watchdog.log',
+                                       value=n_spawn, threshold=STORM_MAX_SPAWN_1H))
+        else:
+            results.append(CheckResult('服务运行', 'watchdog 重启风暴', 'PASS', _msg,
+                                       value=n_spawn, threshold=STORM_MAX_SPAWN_1H))
+    except FileNotFoundError:
+        results.append(CheckResult('服务运行', 'watchdog 重启风暴', 'SKIP', 'logs/watchdog.log 不存在'))
+    except Exception as e:
+        results.append(CheckResult('服务运行', 'watchdog 重启风暴', 'WARN', f'无法解析 watchdog.log: {e}'))
 
     return results
 
@@ -602,10 +770,16 @@ def check_monitoring(trading_day):
                                        f'心跳年龄 {age}s（≤{SERVICE_STALE_S}s）',
                                        value=age, threshold=SERVICE_STALE_S))
         else:
-            # 非交易时段放宽（monitor keepalive 仍应每 15s 写，但容忍度提高）
-            status = 'FAIL' if (trading_day and in_trading_session()) else 'WARN'
-            results.append(CheckResult('监控状态', '心跳新鲜度', status,
-                                       f'心跳停滞 {age}s（>{SERVICE_STALE_S}s），monitor 可能卡死或退出',
+            # [2026-09-25] 非交易日 monitor **按设计不运行**（watchdog 不拉起）⇒ 心跳缺失属预期行为，
+            # 应 SKIP 而非 WARN。原写法在假期每天推一条 WARN 并附带飞书告警，属误报
+            #（本轮中秋即触发）。交易日：盘中 = FAIL（真卡死）；盘外 = WARN（keepalive 仍应每 15s 写）。
+            if not trading_day:
+                status = 'SKIP'
+                msg = f'非交易日（monitor 按设计未运行）→ 跳过校验（心跳已停滞 {age}s）'
+            else:
+                status = 'FAIL' if in_trading_session() else 'WARN'
+                msg = f'心跳停滞 {age}s（>{SERVICE_STALE_S}s），monitor 可能卡死或退出'
+            results.append(CheckResult('监控状态', '心跳新鲜度', status, msg,
                                        value=age, threshold=SERVICE_STALE_S))
 
     # 3.3 扫描耗时合理性（仅交易时段强校验，堵"空转/未扫描"虚假健康）
@@ -694,6 +868,50 @@ def check_monitoring(trading_day):
         results.append(CheckResult('监控状态', 'signal.txt', 'WARN',
                                    '不存在（monitor 启动后创建，盘前可能尚未创建）'))
 
+    return results
+
+
+def check_base_mismatch():
+    """3.9 has_base 哨兵（任务1.5，2026-09-27）：连续 ≥5 个 live_review 交易日出现
+    base_mismatch（声明 has_base=false 却仍有推送/反T S 推送不成交）→ WARN 告警。
+    含义：该标的按底仓模型无法做T，roll20/P1/P4 三路统计同步失真，
+    需要人工处置（建底仓或经 EvoAlpha 换股）——本检查只告警不门禁。"""
+    results = []
+    out_dir = os.path.join(BASE_DIR, 'output')
+    try:
+        files = sorted((f for f in os.listdir(out_dir)
+                        if re.match(r'live_review_\d{4}-\d{2}-\d{2}\.json$', f)), reverse=True)
+    except Exception as e:
+        results.append(CheckResult('底仓哨兵', 'base_mismatch 连续日', 'SKIP',
+                                   f'output 目录不可读: {e}'))
+        return results
+    streak = 0
+    last_sym = None
+    scanned = 0
+    for fn in files[:10]:  # 最近 10 个报告内找连续段
+        try:
+            with open(os.path.join(out_dir, fn), encoding='utf-8') as f:
+                rep = json.load(f)
+        except Exception:
+            break
+        syms = rep.get('summary', {}).get('base_mismatch_syms') or []
+        scanned += 1
+        if syms:
+            streak += 1
+            last_sym = syms[0]
+        else:
+            break
+    if scanned == 0:
+        results.append(CheckResult('底仓哨兵', 'base_mismatch 连续日', 'SKIP',
+                                   '无 live_review 报告可判'))
+    elif streak >= 5:
+        results.append(CheckResult('底仓哨兵', 'base_mismatch 连续日', 'WARN',
+                                   f'{last_sym} 连续 {streak} 个交易日底仓不匹配（has_base=false 仍有推送）：'
+                                   f'该标的按底仓模型无法做T，统计口径失真，需人工处置（建底仓/换股）',
+                                   value=streak, threshold=5))
+    else:
+        results.append(CheckResult('底仓哨兵', 'base_mismatch 连续日', 'PASS',
+                                   f'连续 mismatch {streak} 日（<5 阈值）', value=streak, threshold=5))
     return results
 
 
@@ -892,7 +1110,7 @@ def check_resources():
     return results
 
 
-def check_scheduled_tasks():
+def check_scheduled_tasks(trading_day):
     """6. 计划任务注册状态。"""
     results = []
     tasks = _query_scheduled_tasks()
@@ -915,9 +1133,9 @@ def check_scheduled_tasks():
     _ae_pid = _read_pid_file(ALERT_PID_FILE)
     running = {
         'tpoint_monitor': (_mon_pid is not None and _proc_alive(_mon_pid))
-                          or any('monitor.py' in c for _, c in procs),
+                          or any(_cmd_is_tpoint_script(c, 'monitor.py') for _, c in procs),
         'tpoint_alert_engine': (_ae_pid is not None and _proc_alive(_ae_pid))
-                               or any('alert_engine' in c for _, c in procs),
+                               or any(_cmd_is_tpoint_script(c, 'alert_engine.py') for _, c in procs),
     }
     found = set(tasks.keys())
     for name in expected:
@@ -935,6 +1153,12 @@ def check_scheduled_tasks():
             if running.get(name):
                 results.append(CheckResult('计划任务', name, 'PASS',
                                            '未注册为计划任务，但进程存活（由 watchdog 守护 scripts/watchdog.py 保活，属正常设计）'))
+            elif not trading_day:
+                # [2026-09-25] 非交易日 monitor/alert_engine **按设计不运行**（watchdog 不拉起，
+                # 见 scripts/watchdog.py v3.1/v3.2 的 skip spawn）⇒ 此处既无任务也无进程属预期，
+                # 应 SKIP。原写法判 FAIL 并在假期每天推飞书告警，属误报（本轮中秋即触发）。
+                results.append(CheckResult('计划任务', name, 'SKIP',
+                                           '非交易日（watchdog 按设计不拉起该服务）→ 跳过存活校验'))
             else:
                 results.append(CheckResult('计划任务', name, 'FAIL',
                                            '任务未注册且进程未检测到（检查 watchdog 是否在跑；或运行 scripts/launch_watchdog.py）'))
@@ -1215,9 +1439,10 @@ def main():
     all_results.extend(check_services(trading_day))
     all_results.extend(check_monitoring(trading_day))
     all_results.extend(check_signal_output(trading_day))
+    all_results.extend(check_base_mismatch())
     all_results.extend(check_ports(quick=args.quick))
     all_results.extend(check_resources())
-    all_results.extend(check_scheduled_tasks())
+    all_results.extend(check_scheduled_tasks(trading_day))
 
     # 生成报告
     report_md, overall, stats = build_report(all_results, trading_day, args.quick)

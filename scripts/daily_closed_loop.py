@@ -19,6 +19,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'core'))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, 'scripts'))
+# [2026-09-25] 交易日历单一真源 + 非交易日守卫（休市日无信号，闭环检验无输入）
+from trading_calendar import is_trading_day as _is_trading_day  # noqa: E402
 
 HOOK = 'https://open.feishu.cn/open-apis/bot/v2/hook/a35d7f52-9ed2-47df-a929-f11aaf89025d'
 OUT = os.path.join(ROOT, 'output')
@@ -57,6 +59,11 @@ def main():
     ap.add_argument('--date', required=True)
     a = ap.parse_args()
     date = a.date
+
+    # [2026-09-25] 非交易日不做闭环检验（休市日 live_review/reconcile 无输入）
+    if not _is_trading_day(date):
+        print(f'[daily_closed_loop] {date} 非交易日，跳过')
+        return
 
     live = load_json(os.path.join(OUT, f'live_review_{date}.json'))
     rec = load_json(os.path.join(OUT, f'reconcile_{date}.json'))
@@ -211,6 +218,20 @@ def main():
     # ---------- E 状态 + 推送 ----------
     json.dump({'last_run': date, 'applied_today': applied_today, 'config_snapshot': snap_now},
               open(STATE, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+
+    # [T4] effect ledger：每日效果条目（含当日热更记录，2026-09-27 补建）
+    try:
+        sys.path.insert(0, os.path.join(ROOT, 'scripts'))
+        import effect_ledger
+        effect_ledger.append_daily(date, {
+            'pushed': sm['n_pushes'], 'paired': sm['n_trips'],
+            'net_ret': sm['net_sum_pct'], 'net_wr': sm['valid_rate_pct'],
+            'regime': live['summary'].get('regime'),
+        }, source='daily_closed_loop',
+            extra={'applied_today': applied_today,
+                   'n_recommendations': len(opt.get('recommendations', [])) if opt else 0})
+    except Exception as _e:
+        print(f'[effect_ledger] WARN daily 条目失败: {_e!r}')
 
     lines = [f'🔄 tpoint 自迭代闭环 {date}｜检验={verdict}｜寻优{len(recs)}项｜次日算法已落盘', '',
              '一、自我检验（当日效果 vs 基线/前日算法）'] + chk + ['',

@@ -21,6 +21,10 @@ best_cell 写生产配置 —— 这是典型的**样本内寻优直接上生产
   python scripts/oos_validate.py --from-report 2026-08-11        # 复核报告里全部候选
   python scripts/oos_validate.py --audit-state                   # 复核 auto_tune 已落地的历史变更
 输出：output/oos_validate_<date>.json + stdout；--push 则推自迭代群。
+
+[T1.5 2026-09-27] 评估口径：is/oos 双侧模拟经 factor_optimizer.eval_config 走
+simulate_position_sm 单一仓位状态机（反T 被建模，trip 带 side；底仓假设见
+has_base_used），本文件不再有 simulate_day/simulate_bidirectional 调用点。
 """
 import os, sys, json, argparse, datetime
 
@@ -136,10 +140,12 @@ def validate_one(sym, param, value, split=SPLIT, cache={}, baseline=None):
 
         # ⚠️ 配置状态泄漏修复（2026-08-11 晚）：core/monitor.py:1188 的信号重放会读
         # exit_param(sym,'trail_activate_pct'/'trail_pct') 生成**出场提示信号**，
-        # 因此若只在 simulate_day 侧换 trail、而 PER_SYMBOL_CFG 仍是生产值，
+        # 因此若只在出场模拟侧换 trail、而 PER_SYMBOL_CFG 仍是生产值，
         # 得到的是「生产 trail 的信号 + 网格 trail 的出场」混合口径 —— 结果既不可复现
         # （随当时 monitor_config 而变，实测同参数两跑 n=33/31、Δwr -2.0/+3.2pp 相反），
         # 基线与候选的信号口径也不一致。故此处信号侧与出场侧必须使用同一组 trail。
+        # [T1.5 2026-09-27] 出场模拟已切 simulate_position_sm（factor_optimizer.eval_config），
+        # 该泄漏机理与修复对新口径同样成立。
         def seg_metrics(seg, atr_v, trail):
             # setdefault 而非 `if sym in`：不在 monitor_config 的标的原先会静默跳过写回，
             # 退化成泄漏口径（信号用默认 trail、出场用网格 trail）。
@@ -206,6 +212,10 @@ def validate_one(sym, param, value, split=SPLIT, cache={}, baseline=None):
             'oos_range': [str(oos_days[0][0]), str(oos_days[-1][0])],
             'data_fingerprint': fp,
             'signal_exit_same_param': True,
+            # [T1.5 2026-09-27] 评估口径与底仓假设落盘（is/oos 各段指标已含
+            # n_long/n_short/long_net/short_net 方向分解，来自 metrics_of）
+            'position_model': FO.POSITION_MODEL,
+            'has_base_used': FO.has_base_of(sym),
             'is_base': ib, 'is_cand': ic, 'oos_base': ob, 'oos_cand': oc,
             'd_ret_is': d_ret_is, 'd_ret_oos': d_ret_oos, 'd_wr_oos': d_wr_oos,
             'verdict': verdict, 'reason': reason}

@@ -26,12 +26,42 @@ os.environ['MACD_GATE_MODE'] = 'floor'
 
 import monitor as M
 import daily_signal_review as R
-from exit_manager import make_config, cost_for_symbol, simulate_day, aggregate_metrics
+from exit_manager import make_config, cost_for_symbol, aggregate_metrics
+# [T1.5 2026-09-27] 寻优评估口径切换到单一仓位状态机（P0-20260903-reverseT-not-modeled
+# 在寻优链的根治）：原 simulate_day 纯多头模型把反T 日的 S 忽略、B 回补误判正T 建仓
+# 持到 EOD → 系统性虚亏；300010 实盘反T 占 trip 61%，目标函数漏掉反T 业务导致网格
+# 最优解系统性偏向正T 友好参数。simulate_day 在本文件不再使用。
+from simulate_position_sm import simulate_position_sm
 from backtest_screener import load_1m_csv, group_by_day, day_prev_close
 from prod_vs_bt_reconcile import recalc_rows_to_sigs
 
 F_DATA = r'F:\keyfactor_data\1m'
 WATCHLIST = os.path.join(ROOT, 'data', 'watchlist.json')
+MON_CFG = os.path.join(ROOT, 'data', 'monitor_config.json')
+POSITION_MODEL = 'simulate_position_sm-v1'   # [T1.5] 报告落盘的评估口径标识
+
+_HAS_BASE_CACHE = {}
+
+
+def has_base_of(sym):
+    """[T1.5] 反T 物理前提（底仓）：monitor_config.json per_symbol[sym].has_base
+    （实际结构为顶层 sym 键，两种布局都兼容）；键不存在默认 True（研究口径假设有底仓）。
+    与 prod_vs_bt_reconcile 的 ledger 口径不同：寻优是研究场景，无跨日复算 ledger，
+    取静态配置假设并在报告中记录 has_base_used 以便审计。"""
+    if sym in _HAS_BASE_CACHE:
+        return _HAS_BASE_CACHE[sym]
+    hb = True
+    try:
+        cfg = json.load(open(MON_CFG, encoding='utf-8'))
+        ent = (cfg.get('per_symbol') or {}).get(sym)
+        if ent is None:
+            ent = cfg.get(sym)
+        if isinstance(ent, dict) and 'has_base' in ent:
+            hb = bool(ent['has_base'])
+    except Exception:
+        hb = True
+    _HAS_BASE_CACHE[sym] = hb
+    return hb
 
 TRAIL_ACT = [0.3, 0.4, 0.5]
 TRAIL_PCT = [0.5, 0.6, 0.8]
@@ -119,25 +149,57 @@ def day_signals_trail(sym, name, days, atr_min_pct, trail_act, trail_pct):
                 cfg[k] = v
 
 
-def eval_config(sig_days, trail_act, trail_pct):
-    """对 (trail_act, trail_pct) 跑 simulate_day 聚合全部 trip。"""
+def eval_config(sig_days, trail_act, trail_pct, has_base=None):
+    """对 (trail_act, trail_pct) 跑 [T1.5] simulate_position_sm 单一仓位状态机，返回 trips。
+
+    [2026-09-27 T1.5 接线] 原实现逐日 simulate_day（纯多头）累加 trips —— 反T 日的
+    S 信号被忽略、B 回补被误判正T 建仓持到 EOD（系统性虚亏）。现按 symbol 聚合多日
+    sigs_by_day/prices_by_day 后**单次**跨日连续调用 simulate_position_sm
+    （与 prod_vs_bt_reconcile 同口径），一笔信号一个动作，反T 被正确建模
+    （trip 带 side='B'/'S'，可直接喂 aggregate_metrics）。
+    签名与返回类型（trips list）保持不变，pool_eval/evolution/daily_closed_loop/
+    oos_validate 等存量调用方无需改动即自动切换到新口径。
+    config_long/config_short 传同一网格配置（本文件无反T 专用出场配置）。
+    """
     mcfg = make_config(use_stop=False, use_time=False, use_trailing=True,
                        trail_activate_pct=trail_act, trail_pct=trail_pct, s_signal_exit=True)
-    trips = []
+    sig_days = sorted(sig_days, key=lambda x: x[0])   # 跨日连续模拟要求日期升序
+    sym = next((data.get('sym') for _, data, _ in sig_days if data.get('sym')), '')
+    sigs_by_day, prices_by_day = [], []
     for d, data, sigs in sig_days:
         prices = {'o': data['o'], 'h': data['h'], 'lo': data['lo'], 'c': data['c'],
                   'atr': data['atr'], 'trend': data.get('trend'), 'n': data['n'],
                   'date': d,
-                  # [2026-08-18 P0 出场侧成交可行性] 透传 pc+sym 供 simulate_day 算锁跌停
+                  # [2026-08-18 P0 出场侧成交可行性] 透传 pc+sym 供状态机算涨跌停锁定
                   'pc': data.get('pc'), 'sym': data.get('sym')}
-        trips.extend(simulate_day(sigs, prices, mcfg, cost=cost_for_symbol(data.get('sym', '')) if data.get('sym') else None))
-    return trips
+        sigs_by_day.append((d, sigs))
+        prices_by_day.append((d, prices))
+    if has_base is None:
+        has_base = has_base_of(sym)
+    res = simulate_position_sm(sigs_by_day, prices_by_day,
+                               config_long=mcfg, config_short=mcfg,
+                               cost=cost_for_symbol(sym) if sym else None,
+                               has_base=has_base)
+    return res['trips']
+
+
+def side_split_of(trips):
+    """[T1.5] 正T/反T 方向分解（trips 带 side 字段；旧口径 trips 无 side 时全计正T）。
+    供判断寻优是否偏向某一侧（如反T 占比高的标的网格解是否仍只优化正T）。"""
+    n_long = sum(1 for t in trips if t.get('side', 'B') == 'B')
+    n_short = len(trips) - n_long
+    long_net = round(sum(t['ret_pct'] for t in trips if t.get('side', 'B') == 'B'), 3)
+    short_net = round(sum(t['ret_pct'] for t in trips if t.get('side', 'B') == 'S'), 3)
+    return {'n_long': n_long, 'n_short': n_short,
+            'long_net': long_net, 'short_net': short_net}
 
 
 def metrics_of(trips):
     m = aggregate_metrics(trips)
     out = {'n': m['total'], 'win_rate': m['win_rate'], 'pl_ratio': m['pl_ratio'],
            'total_ret': m.get('total_ret_pct', m.get('total_ret', 0))}
+    # [T1.5 2026-09-27] 方向分解：判断网格最优解是否偏向正T/反T 某一侧
+    out.update(side_split_of(trips))
     # [2026-08-17 AQuA 第三点] 透出逐年稳健性, 供 OOS 检验/选股报告统一展示
     if m.get('yearly') is not None:
         out['yearly'] = m['yearly']
@@ -154,9 +216,11 @@ def main():
     wl = json.load(open(WATCHLIST, encoding='utf-8'))
     syms = a.syms.split(',') if a.syms else list(wl.keys())
 
-    # simulate_day 需要 sym 决定成本：把 sym 塞进 data
+    # 状态机需要 sym 决定成本（cost_for_symbol）与涨跌停阈值：sym 已塞进 data
     report = {'date': datetime.date.today().strftime('%Y-%m-%d'),
               'generated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+              # [T1.5 2026-09-27] 评估口径标识： trips 由单一仓位状态机生成（含反T 建模）
+              'position_model': POSITION_MODEL,
               'grids': {'trail_activate_pct': TRAIL_ACT, 'trail_pct': TRAIL_PCT, 'atr_min_pct': ATR_GRID},
               'current': {'trail': CUR_TRAIL, 'atr_min_pct': CUR_ATR},
               'symbols': {}, 'recommendations': []}
@@ -177,9 +241,11 @@ def main():
         # 保证信号侧与出场侧同参（消除配置状态泄漏）；baseline 取该标的**真实生产 trail**。
         cur_trail = tuple(prod_trail(sym))
         base_label = f'current(atr{CUR_ATR}+trail{cur_trail[0]}/{cur_trail[1]})'
+        # [T1.5] 反T 物理前提：本标的底仓假设（monitor_config has_base，缺省 True）
+        hb = has_base_of(sym)
         cells = {}
         base_sigs = day_signals_trail(sym, name, days, CUR_ATR, *cur_trail)
-        base_trips = eval_config(base_sigs, *cur_trail)
+        base_trips = eval_config(base_sigs, *cur_trail, has_base=hb)
         cells[base_label] = metrics_of(base_trips)
         base_wr = cells[base_label]['win_rate']
         # trail 网格（逐单元同参重放）
@@ -190,7 +256,7 @@ def main():
                     trail_res[f'{ta}/{tp}'] = metrics_of(base_trips)
                     continue
                 sig_c = day_signals_trail(sym, name, days, CUR_ATR, ta, tp)
-                trail_res[f'{ta}/{tp}'] = metrics_of(eval_config(sig_c, ta, tp))
+                trail_res[f'{ta}/{tp}'] = metrics_of(eval_config(sig_c, ta, tp, has_base=hb))
         # atr 网格（出场固定为该标的生产 trail）
         atr_res = {}
         for av in ATR_GRID:
@@ -198,7 +264,7 @@ def main():
                 atr_res[str(av)] = metrics_of(base_trips)
                 continue
             sig_v = day_signals_trail(sym, name, days, av, *cur_trail)
-            atr_res[str(av)] = metrics_of(eval_config(sig_v, *cur_trail))
+            atr_res[str(av)] = metrics_of(eval_config(sig_v, *cur_trail, has_base=hb))
 
         gate = GATE_PP_THIN if thin else GATE_PP
         cands = []
@@ -223,6 +289,9 @@ def main():
             report['recommendations'].append(rec)
         report['symbols'][sym] = {
             'name': name, 'n_days': n_days, 'thin_sample': thin,
+            # [T1.5] 评估口径与底仓假设落盘（可审计）：反T 是否被建模取决于 has_base
+            'position_model': POSITION_MODEL,
+            'has_base_used': hb,
             # baseline 现为该标的真实生产 trail 下的表现（下游 auto_tune 据此算 d_ret）
             'baseline': cells[base_label],
             'baseline_label': base_label,
@@ -231,7 +300,9 @@ def main():
             'trail_grid': trail_res, 'atr_grid': atr_res,
             'recommendation': rec,
         }
+        bm = cells[base_label]
         print(f"[{sym}] days={n_days}{'(薄样本)' if thin else ''} baseWR={base_wr}% "
+              f"正T/反T={bm['n_long']}/{bm['n_short']}(has_base={hb}) "
               f"rec={rec['param'] + '=' + rec['value'] + ' +' + str(rec['delta_pp']) + 'pp' if rec else '无达标候选'}")
 
     out = a.out or os.path.join(ROOT, 'output', f"factor_opt_{report['date']}.json")

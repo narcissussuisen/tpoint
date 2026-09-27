@@ -32,8 +32,8 @@ le_core = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(le_core)
 
 from general_signal import detect_signals_general, GeneralConfig, GENERAL_DEFAULT  # noqa: E402
-from exit_manager import make_config, simulate_day, aggregate_metrics  # noqa: E402
-from simulate_bidirectional import simulate_bidirectional  # noqa: E402
+from exit_manager import make_config, aggregate_metrics  # noqa: E402
+from simulate_position_sm import simulate_position_sm  # noqa: E402  # [T1.5] 单一仓位状态机
 from daily_signal_review import build_data  # noqa: E402
 
 DATA_DIR = r'F:/keyfactor_data/1m'
@@ -71,13 +71,28 @@ def _pc_for(df, days, i):
     return float(dp['close'].iloc[-1]) if len(dp) else None
 
 
-def _run_sym(df, days, cfg, ecfg_short, n_days=None, ecfg_long=None):
-    """逐日 detect + 双向 simulate，返回聚合计数。ecfg_long 覆盖正T 出场（方案 F 用）。"""
+def _has_base_for(sym):
+    """[T1.5] has_base 口径：研究口径默认 True（假设有底仓）；
+    300010.SZ 从 data/monitor_config.json per_symbol 读 has_base（缺省 True）。"""
+    if sym != '300010.SZ':
+        return True
+    try:
+        with open(os.path.join(ROOT, 'data', 'monitor_config.json'), encoding='utf-8') as f:
+            cfg = json.load(f)
+        return bool(cfg.get(sym, {}).get('has_base', True))
+    except Exception:
+        return True
+
+
+def _run_sym(sym, df, days, cfg, ecfg_short, n_days=None, ecfg_long=None):
+    """逐日 detect，按 symbol 聚合多日后一次 simulate_position_sm（正T/反T 双配置分别
+    传 config_long/config_short）。ecfg_long 覆盖正T 出场（方案 F 用）。
+    [T1.5] 替代 simulate_day+simulate_bidirectional 相加（同信号双重计费已消除）。"""
     if n_days is not None:
         days = days[-n_days:]
     b_cnt = s_cnt = 0
-    long_trips, short_trips = [], []
     ecfg_l = ecfg_long if ecfg_long is not None else EXIT_CFG
+    sigs_by_day, prices_by_day = [], []
     for i, day in enumerate(days):
         d = df[df['trade_date'] == day].sort_values('trade_time')
         if len(d) < 10:
@@ -92,11 +107,22 @@ def _run_sym(df, days, cfg, ecfg_short, n_days=None, ecfg_long=None):
                 b_cnt += 1
             else:
                 s_cnt += 1
-        long_trips += simulate_day(sigs, data, ecfg_l, cost=None)
-        short_trips += simulate_bidirectional(sigs, data, config=ecfg_short, cost=None)
+        data['pc'] = pc
+        data['sym'] = sym
+        data['date'] = day
+        sigs_by_day.append((day, sigs))
+        prices_by_day.append((day, data))
+    hb = _has_base_for(sym)
+    sm = simulate_position_sm(sigs_by_day, prices_by_day,
+                              config_long=ecfg_l, config_short=ecfg_short,
+                              cost=None, has_base=hb)
+    long_trips = [t for t in sm['trips'] if t['side'] == 'B']
+    short_trips = [t for t in sm['trips'] if t['side'] == 'S']
     return {'b_cnt': b_cnt, 's_cnt': s_cnt,
             'long_agg': aggregate_metrics(long_trips),
             'short_agg': aggregate_metrics(short_trips),
+            'n_long': sm['n_long'], 'n_short': sm['n_short'],
+            'has_base_used': hb,
             'n_days': len(days)}
 
 
@@ -125,33 +151,37 @@ def verify(n_days=None):
             continue
         days = sorted(df['trade_date'].unique())
         le_core.log(f'P7: {sym} {len(days)} 交易日 开始验证…')
-        base = _run_sym(df, days, base_cfg, EXIT_CFG_SHORT_BASE, n_days)
-        r_a = _run_sym(df, days, cfg_a, EXIT_CFG_SHORT_BASE, n_days)
-        r_b = _run_sym(df, days, cfg_b, EXIT_CFG_SHORT_P7, n_days)
-        r_f = _run_sym(df, days, base_cfg, EXIT_CFG_SHORT_BASE, n_days,
+        base = _run_sym(sym, df, days, base_cfg, EXIT_CFG_SHORT_BASE, n_days)
+        r_a = _run_sym(sym, df, days, cfg_a, EXIT_CFG_SHORT_BASE, n_days)
+        r_b = _run_sym(sym, df, days, cfg_b, EXIT_CFG_SHORT_P7, n_days)
+        r_f = _run_sym(sym, df, days, base_cfg, EXIT_CFG_SHORT_BASE, n_days,
                        ecfg_long=EXIT_CFG_LONG_F)   # 方案 F：仅正T 出场改 trend 止损
         rows.append({
-            'sym': sym, 'days': base['n_days'],
+            'sym': sym, 'days': base['n_days'], 'has_base_used': base['has_base_used'],
             'base': {'b': base['b_cnt'], 's': base['s_cnt'],
                      'sb_ratio': round(base['s_cnt'] / max(base['b_cnt'], 1), 2),
                      'long_wr': base['long_agg']['win_rate'],
                      'long_net': base['long_agg']['total_ret'],
-                     'short_net': base['short_agg']['total_ret']},
+                     'short_net': base['short_agg']['total_ret'],
+                     'n_long': base['n_long'], 'n_short': base['n_short']},
             'A': {'b': r_a['b_cnt'], 's': r_a['s_cnt'],
                   'sb_ratio': round(r_a['s_cnt'] / max(r_a['b_cnt'], 1), 2),
                   'long_wr': r_a['long_agg']['win_rate'],
                   'long_net': r_a['long_agg']['total_ret'],
-                  'short_net': r_a['short_agg']['total_ret']},
+                  'short_net': r_a['short_agg']['total_ret'],
+                  'n_long': r_a['n_long'], 'n_short': r_a['n_short']},
             'B': {'b': r_b['b_cnt'], 's': r_b['s_cnt'],
                   'sb_ratio': round(r_b['s_cnt'] / max(r_b['b_cnt'], 1), 2),
                   'long_wr': r_b['long_agg']['win_rate'],
                   'long_net': r_b['long_agg']['total_ret'],
-                  'short_net': r_b['short_agg']['total_ret']},
+                  'short_net': r_b['short_agg']['total_ret'],
+                  'n_long': r_b['n_long'], 'n_short': r_b['n_short']},
             'F': {'b': r_f['b_cnt'], 's': r_f['s_cnt'],
                   'sb_ratio': round(r_f['s_cnt'] / max(r_f['b_cnt'], 1), 2),
                   'long_wr': r_f['long_agg']['win_rate'],
                   'long_net': r_f['long_agg']['total_ret'],
-                  'short_net': r_f['short_agg']['total_ret']},
+                  'short_net': r_f['short_agg']['total_ret'],
+                  'n_long': r_f['n_long'], 'n_short': r_f['n_short']},
         })
         le_core.log(f'P7: {sym} 完成 base L/S={base["b_cnt"]}/{base["s_cnt"]} '
                     f'→F 正T净={r_f["long_agg"]["total_ret"]}')
@@ -174,7 +204,9 @@ def verify(n_days=None):
     gate = {'sb_ratio_ok': g_sb, 'long_improved': g_long, 'short_not_worse': g_short,
             'pass': g_sb and g_long and g_short}
     report = {'pool': POOL, 'per_sym': rows, 'summary': summary, 'gate': gate,
-              'target_version': TARGET_VERSION}
+              'target_version': TARGET_VERSION,
+              'position_model': 'simulate_position_sm-v1',
+              'caliber_note': 'T1.5 simulate_position_sm-v1：单一仓位状态机，替代 simulate_day+bidirectional 相加口径（双重计费已消除）'}
     return report, gate['pass']
 
 

@@ -30,8 +30,8 @@ le_core = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(le_core)
 
 from general_signal import detect_signals_general, GENERAL_DEFAULT  # noqa: E402
-from exit_manager import make_config, simulate_day  # noqa: E402
-from simulate_bidirectional import simulate_bidirectional  # noqa: E402
+from exit_manager import make_config  # noqa: E402
+from simulate_position_sm import simulate_position_sm  # noqa: E402  # [T1.5] 单一仓位状态机
 from daily_signal_review import build_data  # noqa: E402
 
 DATE = '2026-08-26'
@@ -158,6 +158,19 @@ def _simulate_v11(sigs, data):
     return trips
 
 
+def _has_base_for(sym):
+    """[T1.5] has_base 口径：研究口径默认 True（假设有底仓）；
+    300010.SZ 从 data/monitor_config.json per_symbol 读 has_base（缺省 True）。"""
+    if sym != '300010.SZ':
+        return True
+    try:
+        with open(os.path.join(ROOT, 'data', 'monitor_config.json'), encoding='utf-8') as f:
+            cfg = json.load(f)
+        return bool(cfg.get(sym, {}).get('has_base', True))
+    except Exception:
+        return True
+
+
 def _run(sym, ml, use_v11):
     fp = os.path.join(F_DATA_DIR, f'{sym}_1m.csv')
     df = pd.read_csv(fp, encoding='utf-8-sig')
@@ -171,18 +184,29 @@ def _run(sym, ml, use_v11):
     sigs = [s for s, p in _score_ml(ml, sigs, data) if p >= 0.5]
     if use_v11:
         sigs = _p0_vwap_filter(sigs, data)
+    data['pc'] = pc
+    data['sym'] = sym
+    data['date'] = DATE
+    hb = _has_base_for(sym)
     if use_v11:
+        # v1.1 仍用自研 ATR 自适应止损模拟器（SM v1 不支持逐仓 max(1.2×ATR%,0.8%) 止损，见报告遗留风险）
         trips = _simulate_v11(sigs, data)
     else:
-        trips = simulate_day(sigs, data, EXIT_CFG_V10, cost=None) + \
-                simulate_bidirectional(sigs, data, config=EXIT_CFG_SHORT_V10, cost=None)
+        # [T1.5] v1.0 基线切换 simulate_position_sm（替代 simulate_day+bidirectional 相加，双重计费已消除）
+        sm = simulate_position_sm([(DATE, sigs)], [(DATE, data)],
+                                  config_long=EXIT_CFG_V10, config_short=EXIT_CFG_SHORT_V10,
+                                  cost=None, has_base=hb)
+        trips = sm['trips']
     total = sum(t['ret_pct'] for t in trips)
     n_stop = sum(1 for t in trips if t['exit_reason'] in ('FIXSTOP', 'ATRSTOP', 'STOP'))
     n_cut = sum(1 for t in trips if t['exit_reason'] in ('FIXSTOP', 'ATRSTOP', 'STOP') and t['ret_pct'] < 0)
     max_loss = min((t['ret_pct'] for t in trips), default=0.0)
     return {'sym': sym, 'n_sigs': len(sigs), 'n_trips': len(trips),
             'total_pnl_pct': round(total, 3), 'n_stop_cut': n_stop, 'n_neg_stop': n_cut,
-            'max_loss_pct': round(float(max_loss), 3), 'trips': trips}
+            'max_loss_pct': round(float(max_loss), 3), 'trips': trips,
+            'n_long': sum(1 for t in trips if t.get('side') == 'B'),
+            'n_short': sum(1 for t in trips if t.get('side') == 'S'),
+            'has_base_used': hb}
 
 
 def run(ctx=None):
@@ -209,7 +233,9 @@ def run(ctx=None):
               'summary': {'v10': {'total_pnl': t10, 'stop_cuts': stop10},
                           'v11': {'total_pnl': t11, 'stop_cuts': stop11},
                           'improvement_pp': round(t11 - t10, 3)},
-              'gate': gate, 'note': '研究态，不入 monitor 生产核心；VERSION 不 bump'}
+              'gate': gate, 'note': '研究态，不入 monitor 生产核心；VERSION 不 bump',
+              'position_model': 'simulate_position_sm-v1',
+              'caliber_note': 'T1.5 simulate_position_sm-v1：单一仓位状态机，替代 simulate_day+bidirectional 相加口径（双重计费已消除）'}
 
     # 落盘 JSON
     with open(os.path.join(OUT_DIR, 'summary.json'), 'w', encoding='utf-8') as f:

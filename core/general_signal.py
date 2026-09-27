@@ -85,6 +85,14 @@ class GeneralConfig(CompositeConfig):
     regime_downtrend_suppress: bool = True
     regime_downtrend_thresh: float = 0.5  # 窗口内 -1 占比阈值（≥则抑制 B）
 
+    # —— [任务1.4] vol-regime 低波动门（知识条款⑥「分时没波动的票不适合做T」+ 成本倒挂算术）——
+    # 硬约束：往返成本 ≈0.116%（佣金万1×2+印花+滑点），ATR_n/p 低于成本地板×vol_regime_mult 时，
+    # 做T 的期望差价盖不住成本 = 负期望交易。默认 False（shadow-only：只计数不抑制，
+    # 见 LAST_DETECTION_STATS；hardening 硬门槛 T8——promote 需 AI/人评审）。
+    vol_regime_gate: bool = False
+    vol_regime_cost_floor: float = 0.0012   # 成本地板（往返总成本比率，≈0.116% 含缓冲）
+    vol_regime_mult: float = 1.2            # ATR/p < cost_floor×mult → 低波动（默认 ≈0.144%）
+
 
 GENERAL_DEFAULT = GeneralConfig()
 
@@ -193,6 +201,23 @@ def check_general_s_trigger(data, i, cfg: GeneralConfig = GENERAL_DEFAULT,
 
 # ========== 批量信号检测（与 v2/v3/v4 接口兼容，供回测/灰度/引擎批量用） ==========
 
+# [任务1.4] vol-regime shadow 计数器：每次 detect_signals_general 调用后更新。
+# 生产 monitor 不读它（零行为影响）；复盘/回测脚本读取以输出「若开启则少推 N 条」。
+LAST_DETECTION_STATS: Dict[str, Any] = {}
+
+
+def _vol_regime_low(data, i, cfg: GeneralConfig) -> bool:
+    """低波动判定：ATR/p < 成本地板×mult → 做T 负期望区（知识条款⑥）。
+    data 缺 atr/c 时 fail-open（不判低波动）。"""
+    atr = data.get('atr'); c = data.get('c')
+    if atr is None or c is None:
+        return False
+    a = float(atr[i]); p = float(c[i])
+    if p <= 0 or a <= 0:
+        return False
+    return (a / p) < (cfg.vol_regime_cost_floor * cfg.vol_regime_mult)
+
+
 def detect_signals_general(data, pc, cfg: GeneralConfig = GENERAL_DEFAULT,
                            start_idx: int = 2, max_b: int = 12, max_s: int = 12):
     """通用算法批量信号检测（symbol-agnostic）。
@@ -213,6 +238,8 @@ def detect_signals_general(data, pc, cfg: GeneralConfig = GENERAL_DEFAULT,
     gap = cfg.signal_gap
     ws = cfg.weight_sum()
     Wb = cfg.b_rev_w
+    # [任务1.4] shadow 计数：低波动区「达标但被（或将被）抑制」的信号数
+    _lv_stats = {'suppressed_lowvol': 0, 'would_suppress_lowvol': 0, 'lowvol_bars': 0}
 
     for i in range(start, n):
         cv, cvd, cmd, cr = score_components_at(data, i, cfg, rsi_arr, macd_hist_arr)
@@ -220,6 +247,9 @@ def detect_signals_general(data, pc, cfg: GeneralConfig = GENERAL_DEFAULT,
         trend_i = int(data['trend'][i]) if 'trend' in data else 0
 
         emit = None
+        _lv = _vol_regime_low(data, i, cfg)
+        if _lv:
+            _lv_stats['lowvol_bars'] += 1
         if (composite >= cfg.buy_threshold and bc < max_b
                 and (i - b_last) >= gap and (i - s_last) >= gap):
             if trend_i == -1 and cfg.b_downtrend_reversal:
@@ -249,6 +279,12 @@ def detect_signals_general(data, pc, cfg: GeneralConfig = GENERAL_DEFAULT,
                 emit = 'S'
         if emit is None:
             continue
+        # [任务1.4] vol-regime 低波动门：gate 开=抑制并计数；gate 关(shadow)=只计数不抑制
+        if _lv:
+            if cfg.vol_regime_gate:
+                _lv_stats['suppressed_lowvol'] += 1
+                continue
+            _lv_stats['would_suppress_lowvol'] += 1
 
         strength = abs(composite)
         band = ('strong' if strength >= cfg.strong_band
@@ -282,4 +318,7 @@ def detect_signals_general(data, pc, cfg: GeneralConfig = GENERAL_DEFAULT,
             b_last = i; bc += 1
         else:
             s_last = i; sc += 1
+    # [任务1.4] 更新 shadow 计数器（生产不读，复盘/回测消费）
+    LAST_DETECTION_STATS.clear()
+    LAST_DETECTION_STATS.update(_lv_stats)
     return sigs

@@ -95,10 +95,23 @@ def day_prev_close(df, date):
     return float(sub['close'].iloc[-1])
 
 
+def _has_base_for(sym):
+    """[T1.5] has_base 口径：研究口径默认 True（假设有底仓）；
+    300010.SZ 从 data/monitor_config.json per_symbol 读 has_base（缺省 True）。"""
+    if sym != '300010.SZ':
+        return True
+    try:
+        with open(os.path.join(BASE, 'data', 'monitor_config.json'), encoding='utf-8') as f:
+            cfg = json.load(f)
+        return bool(cfg.get(sym, {}).get('has_base', True))
+    except Exception:
+        return True
+
+
 def backtest_symbol(csv_path, config=None, engine='miji', macd_min_hist_diff=0.0, atr_min_pct=None,
                     mpr_enable=False, mpr_periods=None,
                     vwap_dev_ceil=None, atr_min_pct_s=None):
-    """对单个 1m CSV 跑完整 v9 回测（逐日 detect → simulate_day 配对）。
+    """对单个 1m CSV 跑完整 v9 回测（逐日 detect → [T1.5] simulate_position_sm 配对）。
 
     engine:
       'miji'  : 生产同源信号引擎 miji_alpha.detect_miji_signals
@@ -117,9 +130,10 @@ def backtest_symbol(csv_path, config=None, engine='miji', macd_min_hist_diff=0.0
     else:
         from core.indicators import compute_indicators as compute_miji_indicators
         from core.indicators import detect_signals as detect_miji_signals
-    from core.exit_manager import (simulate_day, aggregate_metrics, make_config,
+    from core.exit_manager import (aggregate_metrics, make_config,
                                    DEFAULT_COST, DEFAULT_COST_NO_STAMP, DEFAULT_COST_BSE,
                                    cost_for_symbol)
+    from core.simulate_position_sm import simulate_position_sm  # [T1.5] 单一仓位状态机
     cfg = config or PROD_CONFIG
     mcfg = make_config(**cfg)
 
@@ -135,7 +149,7 @@ def backtest_symbol(csv_path, config=None, engine='miji', macd_min_hist_diff=0.0
     cost = cost_for_symbol(symbol)
     days = group_by_day(df)
 
-    all_trips = []
+    sigs_by_day, prices_by_day = [], []
     day_count = 0
     skipped_no_pc = 0
     for date, sub in days:
@@ -155,10 +169,18 @@ def backtest_symbol(csv_path, config=None, engine='miji', macd_min_hist_diff=0.0
                                    vwap_dev_ceil=vwap_dev_ceil, atr_min_pct_s=atr_min_pct_s)
         prices = {'o': o, 'h': h, 'lo': lo, 'c': c, 'atr': data['atr'],
                   'trend': data.get('trend'), 'n': data['n'],
-                  'date': date}
-        trips = simulate_day(sigs, prices, mcfg, cost=cost)
-        all_trips.extend(trips)
+                  'date': date, 'pc': pc, 'sym': symbol}
+        sigs_by_day.append((date, sigs))
+        prices_by_day.append((date, prices))
         day_count += 1
+
+    # [T1.5] 单一仓位状态机跨日一次调用（替代逐日 simulate_day；反T 被建模，
+    # 无双模拟器相加的双重计费）。has_base 研究口径默认 True。
+    hb = _has_base_for(symbol)
+    sm = simulate_position_sm(sigs_by_day, prices_by_day,
+                              config_long=mcfg, config_short=mcfg,
+                              cost=cost, has_base=hb)
+    all_trips = sm['trips']
 
     metrics = aggregate_metrics(all_trips)
     n = metrics['total']
@@ -188,6 +210,10 @@ def backtest_symbol(csv_path, config=None, engine='miji', macd_min_hist_diff=0.0
         'verdict': verdict,
         'config': cfg,
         'engine': engine,
+        'position_model': 'simulate_position_sm-v1',
+        'has_base_used': hb,
+        'n_long': sm['n_long'],
+        'n_short': sm['n_short'],
     }
 
 
@@ -228,6 +254,8 @@ def save_results(results, out_path=None):
         'min_pl_ratio': MIN_PL_RATIO,
         'min_sample': MIN_SAMPLE,
         'config': PROD_CONFIG,
+        'position_model': 'simulate_position_sm-v1',
+        'caliber_note': 'T1.5 simulate_position_sm-v1：单一仓位状态机，替代 simulate_day+bidirectional 相加口径（双重计费已消除）',
         'cost_model': {
             'commission_rate': '万一(0.0001)不免五（沪深/ETF/可转债/债券/港股通）；北交所千分之0.575',
             'stamp_duty': '卖出万5.641（仅沪深个股；ETF/LOF/可转债/债券现券/港股通/北交所无）',
@@ -245,6 +273,10 @@ def save_results(results, out_path=None):
                 'metrics': r.get('metrics'),
                 'verdict': r.get('verdict'),
                 'config': r.get('config'),
+                'position_model': r.get('position_model'),
+                'has_base_used': r.get('has_base_used'),
+                'n_long': r.get('n_long'),
+                'n_short': r.get('n_short'),
             } for sym, r in results.items()
         }
     }

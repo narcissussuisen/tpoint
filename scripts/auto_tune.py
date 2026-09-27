@@ -19,10 +19,20 @@ daily_closed_loop 只算不出手的缺口。使「每日报告 → 自动修改
 data/auto_tune_state.json（含 old/new + 基线指标），供 weekly_review.py 自修正回滚。
 
 CLI：python scripts/auto_tune.py --date 2026-08-11 [--dry-run]
+
+[T1.5 2026-09-27] 本脚本不做模拟：网格指标来自 factor_opt_*.json、OOS 复核来自
+oos_validate.validate_one，两者的评估口径均已切 simulate_position_sm 单一仓位状态机
+（反T 被建模）。position_model 随 state 落盘以便审计。
 """
 import os, sys, json, argparse, datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# [2026-09-25] 交易日历单一真源（core/trading_calendar.py）。
+# 本脚本此前**完全没有交易日判断**，而它会真实改写 data/monitor_config.json ——
+# 若在休市日被 run_daily_review.bat 调用，就会用「当天无信号」的空样本去调生产参数。
+# 用户口径：优化必须基于有效样本，误改参数不可逆 ⇒ 这里必须硬拦。
+sys.path.insert(0, os.path.join(ROOT, "core"))
+from trading_calendar import is_trading_day as _is_trading_day  # noqa: E402
 OUT = os.path.join(ROOT, "output")
 CFG = os.path.join(ROOT, "data", "monitor_config.json")
 STATE = os.path.join(ROOT, "data", "auto_tune_state.json")
@@ -143,10 +153,21 @@ def main():
     a = ap.parse_args()
     date = a.date
 
+    # [2026-09-25] 非交易日不调参：本步会真实改写 monitor_config.json，误跑不可逆。
+    if not _is_trading_day(date):
+        print(f"[auto_tune] {date} 非交易日，跳过（不读不写 monitor_config.json）")
+        return
+
     opt = load_json(os.path.join(OUT, f"factor_opt_{date}.json"))
     if opt is None:
         print(f"[auto_tune] factor_opt_{date}.json 缺失，跳过")
         return
+    # [T1.5] 寻优报告的评估口径标识（旧报告缺省视为 simulate_day 纯多头口径，
+    # 仅记录不拦截——是否基于旧口径报告出手由人工/weekly_review 判断）
+    position_model = opt.get("position_model", "legacy(simulate_day)")
+    if position_model != "simulate_position_sm-v1":
+        print(f"[auto_tune] ⚠️ factor_opt_{date}.json position_model={position_model}，"
+              f"非 simulate_position_sm-v1 口径（旧纯多头网格，反T 未建模），继续但落盘标记")
     cfg = load_json(CFG)
     if cfg is None:
         print("[auto_tune] monitor_config.json 缺失，中止")
@@ -241,6 +262,7 @@ def main():
                 "old": c["old"], "new": c["new"], "d_ret": c["d_ret"],
                 "d_wr": c["d_wr"], "n": c["n"],
                 "baseline_wr": c["baseline_wr"], "baseline_ret": c["baseline_ret"],
+                "position_model": position_model,
                 "action": "applied", "oos": c.get("oos"), "strict_wr": c.get("strict_wr"),
             })
         json.dump(state, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
@@ -266,6 +288,7 @@ def main():
             lines.append(f"· {r['sym']} {r['param']}={r['value']}：{r['verdict']} {r['reason']}")
     lines.append(f"口径：F盘全历史网格选 total_ret 最大且 wr 不降单元 → 再过 IS/OOS "
                  f"{OOS_SPLIT:.0%}/{1-OOS_SPLIT:.0%} 样本外复核；拒绝 wr 虚胖；历史回退过的参数施加严格 wr 不降。"
+                 f"评估口径 {position_model}（单一仓位状态机，反T 已建模）。"
                  f"明细 output/factor_opt_{date}.json + oos_validate_*.json")
     push("\n".join(lines))
     print("\n".join(lines[:6]))

@@ -17,6 +17,9 @@ CLI：python scripts/daily_iterate.py --date 2026-08-04
 import os, sys, json, argparse, subprocess, datetime, re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# [2026-09-25] 交易日历单一真源 + 非交易日守卫（休市日无信号，迭代无意义且会污染状态）
+sys.path.insert(0, os.path.join(ROOT, 'core'))
+from trading_calendar import is_trading_day as _is_trading_day  # noqa: E402
 PY = sys.executable
 HOOK = 'https://open.feishu.cn/open-apis/bot/v2/hook/a35d7f52-9ed2-47df-a929-f11aaf89025d'
 HOT_PARAMS = {'atr_min_pct'}          # 可自动热更的 per-symbol 参数（白名单）
@@ -54,6 +57,11 @@ def main():
     ap.add_argument('--date', required=True)
     a = ap.parse_args()
     date = a.date
+
+    # [2026-09-25] 非交易日不自迭代（休市日无信号，迭代只会污染状态）
+    if not _is_trading_day(date):
+        print(f'[daily_iterate] {date} 非交易日，跳过')
+        return
 
     # 1) 寻优
     opt_out = os.path.join(ROOT, 'output', f'factor_opt_{date}.json')

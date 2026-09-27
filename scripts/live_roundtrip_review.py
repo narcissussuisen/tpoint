@@ -480,6 +480,19 @@ def main():
         orphans_all.extend([{'sym': sym, **o} for o in orphans])
         per_sym[sym] = {'n_push': len(pushes), 'n_trips': len(trips), 'data_src': src,
                          'day_atr_pct': day_atr}
+        # [任务1.5 has_base 哨兵] 显式声明无底仓却发出 S（反T）推送 → base_mismatch
+        # （S 推送按底仓模型不会成交，统计口径须标注，连续出现说明标的不适合做T）
+        try:
+            _mc = json.load(open(os.path.join(ROOT, 'data', 'monitor_config.json'), encoding='utf-8'))
+            _hb = _mc.get(sym, {}).get('has_base')
+        except Exception:
+            _hb = None
+        if _hb is False:
+            n_s_push = sum(1 for r in pushes if r.get('type') == 'S')
+            if n_s_push > 0 or len(pushes) > 0:
+                per_sym[sym]['base_mismatch'] = True
+                per_sym[sym]['base_mismatch_detail'] = (
+                    f'has_base=false 但当日推送 {len(pushes)} 条（S {n_s_push} 条按底仓模型不成交）')
         vol[sym] = analyze_capture(sym, closes, times, pushes, trips)
         vol[sym]['name'] = wl[sym]
         vol[sym]['data_src'] = src
@@ -510,6 +523,8 @@ def main():
         # v9.4.0 新增
         'avg_quality_score': avg_qs,
         'regime': regime, 'pool_atr_pct': pool_atr,
+        # [任务1.5] has_base 哨兵：任一标的出现底仓不匹配即为 True
+        'base_mismatch_syms': [s for s, v in per_sym.items() if v.get('base_mismatch')],
     }
 
     # 近5交易日基线（实盘推送 round-trip 口径；历史数据 F盘兜底）
@@ -559,6 +574,16 @@ def main():
     path = os.path.join(OUT, f'live_review_{date}.json')
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
+    # [T4] effect ledger：每日效果条目（变更→效果归因账本，2026-09-27 补建）
+    try:
+        import effect_ledger
+        effect_ledger.append_daily(date, {
+            'pushed': summary['n_pushes'], 'paired': summary['n_trips'],
+            'net_ret': summary['net_sum_pct'], 'net_wr': summary['valid_rate_pct'],
+            'regime': summary.get('regime'),
+        }, source='live_roundtrip_review')
+    except Exception as _e:
+        print(f'[effect_ledger] WARN daily 条目失败: {_e!r}')
     print(f'[ok] {path}')
     regime_cn = {'high_vol': '高波动', 'normal': '常态', 'low_vol': '低波动'}.get(regime, regime)
     print(f"  推送 {summary['n_pushes']} → 配对 {summary['n_trips']}（有效 {n_valid}，净盈亏合计 {summary['net_sum_pct']}%）"
