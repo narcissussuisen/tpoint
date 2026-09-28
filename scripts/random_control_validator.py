@@ -296,11 +296,13 @@ def bar_metrics(sigs_by_day, pre_by_day):
     return float(np.mean(tep_flags)), float(np.mean(cap_flags)), n
 
 
-def roundtrip_metrics(sigs_by_day, prices_by_day, cfg, cost, has_base):
-    """round-trip 口径：simulate_position_sm → (net_wr, mean_net, n_trips)。"""
+def roundtrip_metrics(sigs_by_day, prices_by_day, cfg, cost, has_base, exec_delay=0):
+    """round-trip 口径：simulate_position_sm → (net_wr, mean_net, n_trips)。
+    exec_delay=1 时真/伪臂必须同 delay（配对公平性；人审卡 P-20260928-samebar 方案 A）。"""
     sm = simulate_position_sm(sigs_by_day, prices_by_day,
                               config_long=cfg, config_short=cfg,
-                              cost=cost, has_base=has_base)
+                              cost=cost, has_base=has_base,
+                              exec_delay_bars=exec_delay)
     trips = sm['trips']
     if not trips:
         return None, None, 0
@@ -327,7 +329,7 @@ def has_base_of(sym):
 # 单标的验证主流程
 # ----------------------------------------------------------------------------- #
 def validate_symbol(sym, days_req, m, m_rt, seed, self_test=False, verbose=True,
-                    min_hist_diff=None, cfg_overrides=None):
+                    min_hist_diff=None, cfg_overrides=None, exec_delay=0):
     path = find_data_path(sym)
     if path is None:
         return {'sym': sym, 'error': f'no_data({DATA_DIRS})'}
@@ -420,7 +422,7 @@ def validate_symbol(sym, days_req, m, m_rt, seed, self_test=False, verbose=True,
 
     real_tep, real_cap, n_bar = bar_metrics(subject_sigs_by_day, pre_by_day)
     real_netwr, real_meannet, n_trips = roundtrip_metrics(
-        subject_sigs_by_day, prices_by_day, cfg, cost, hb)
+        subject_sigs_by_day, prices_by_day, cfg, cost, hb, exec_delay=exec_delay)
     n_signals = sum(len(s) for _, s in subject_sigs_by_day)
 
     # —— 蒙特卡洛零假设分布 ——
@@ -454,7 +456,8 @@ def validate_symbol(sym, days_req, m, m_rt, seed, self_test=False, verbose=True,
         rand_tep[b] = t if t is not None else np.nan
         rand_cap[b] = cp if cp is not None else np.nan
         if b < m_rt:
-            wr, mn, _ = roundtrip_metrics(pseudo_by_day, prices_by_day, cfg, cost, hb)
+            wr, mn, _ = roundtrip_metrics(pseudo_by_day, prices_by_day, cfg, cost, hb,
+                                          exec_delay=exec_delay)
             rand_netwr[b] = wr if wr is not None else np.nan
             rand_meannet[b] = mn if mn is not None else np.nan
         if verbose and (b + 1) % 100 == 0:
@@ -501,6 +504,10 @@ def validate_symbol(sym, days_req, m, m_rt, seed, self_test=False, verbose=True,
                         COST=COST, SIGNAL_GAP=SIGNAL_GAP,
                         P_PASS=P_PASS, Z_PASS=Z_PASS, N_MIN_SIGNALS=N_MIN_SIGNALS),
             exit_cfg=cfg, cost=cost, has_base=hb,
+            exec_delay_bars=exec_delay,
+            exec_delay_note=('round-trip 指标按 exec_delay_bars 成交（1=次根 bar open，'
+                             '对齐实盘；0=samebar 历史口径，偏乐观）。TEP/Capture 为'
+                             '信号诊断指标，恒以信号 bar close 为基准（不随 delay 变）。'),
             engine='general_signal.detect_signals_general (GT-1.0/v5, 与 v2 同输入构造)',
             units='net_wr/tep/capture=比例(0-1); mean_net=百分点/笔(与 simulate_position_sm '
                   'ret_pct 同单位); p/z 为单侧(越大越好)',
@@ -593,6 +600,11 @@ def main():
                     help='MACD 背离强度门槛 A/B（任务1.1；None=生产默认 0.0）')
     ap.add_argument('--set', dest='cfg_set', action='append', default=[],
                     help='GT 参数覆盖（可重复）：--set w_vol_div=0.4 --set buy_threshold=0.5')
+    ap.add_argument('--exec-delay', dest='exec_delay', type=int, default=0,
+                    choices=(0, 1),
+                    help='成交延迟 bar 数：1=次根 bar open 成交（对齐实盘，人审卡 '
+                         'P-20260928-samebar 方案 A）；0=samebar 历史口径（默认）。'
+                         '真/伪臂同 delay（配对公平）。')
     ap.add_argument('--tag', default='',
                     help='产物文件名附加标签（A/B 对照用，如 mhd015）')
     a = ap.parse_args()
@@ -628,7 +640,7 @@ def main():
     for sym in syms:
         r = validate_symbol(sym, a.days, a.m, a.m_rt, a.seed,
                             self_test=a.self_test, min_hist_diff=a.min_hist_diff,
-                            cfg_overrides=cfg_overrides)
+                            cfg_overrides=cfg_overrides, exec_delay=a.exec_delay)
         if a.min_hist_diff is not None:
             r.setdefault('meta', {})['min_hist_diff'] = a.min_hist_diff
         if cfg_overrides:

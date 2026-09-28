@@ -84,6 +84,12 @@ class GeneralConfig(CompositeConfig):
     # output/random_control_300010SZ_20260927{,_regime-on}.json）：ON vs OFF——
     # 信号 114 vs 163（-30%），net_wr 75.0% vs 56.7%，mean_net +0.007pp vs -0.326pp/笔，
     # 两臂均 PASS vs 随机入场 ⇒ 被抑制子集为净负贡献（marginal ≈ -0.45pp/笔），门控有效。
+    # [2026-09-28 exec_delay=1 重锚]（人审卡 P-20260928-samebar 方案 A 裁决后，
+    # output/random_control_300010SZ_20260928_delay1-{base,regime-on}.json）：
+    # OFF：163 信号/31 trips，net_wr 58.06%，mean_net -0.242pp（z_wr 2.69）PASS；
+    # ON：114 信号/8 trips，net_wr 75.00%，mean_net **-0.017pp**（z_wr 2.49）PASS——
+    # 09-27 的 +0.007pp/笔系 samebar 偏乐观贡献，延迟口径下转微负 ⇒ ON 臂正期望
+    # 证据不再成立，G2 样本增厚复检（n_trips 8→≥30）必要性升级。
     # 生产保持 true（monitor_config._global.general_algorithm）；⚠️ n_trips=8 薄样本，列 AI 闭环复检项。
     # 代码默认 False 仅为「新建 config 不放行未验证行为」的安全位，生产以 config 为准。
     regime_gate: bool = False

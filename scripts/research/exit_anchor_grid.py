@@ -203,7 +203,7 @@ def detect_recs(sym, days_req):
     return recs, name, None
 
 
-def eval_symbol(sym, days_req, m, seed, hb_default=True, verbose=True):
+def eval_symbol(sym, days_req, m, seed, hb_default=True, verbose=True, exec_delay=0):
     """单标的：真实信号 + 一套伪样本（m 套），全部臂 paired 评估。
     返回 dict(arm -> {real: trip_stats, rand_netwr: [...], rand_meannet: [...],
                       real_rets: [...], rand_rets: [[...], ...]})。"""
@@ -254,15 +254,15 @@ def eval_symbol(sym, days_req, m, seed, hb_default=True, verbose=True):
         cfg = _mk_cfg(kw)
         sm = simulate_position_sm(sigs_real_by_day, prices_by_day,
                                   config_long=cfg, config_short=cfg,
-                                  cost=cost, has_base=hb)
+                                  cost=cost, has_base=hb, exec_delay_bars=exec_delay)
         real_rets = [float(t['ret_pct']) for t in sm['trips']]
         rand_netwr = np.full(m, np.nan)
         rand_meannet = np.full(m, np.nan)
         rand_rets = []
         for b in range(m):
             smb = simulate_position_sm(pseudo_sets[b], prices_by_day,
-                                       config_long=cfg, config_short=cfg,
-                                       cost=cost, has_base=hb)
+                                      config_long=cfg, config_short=cfg,
+                                      cost=cost, has_base=hb, exec_delay_bars=exec_delay)
             rb = [float(t['ret_pct']) for t in smb['trips']]
             rand_rets.append(rb)
             if rb:
@@ -290,6 +290,9 @@ def _run():
     ap.add_argument('--m', type=int, default=50, help='伪样本套数（全部臂复用）')
     ap.add_argument('--seed', type=int, default=42)
     ap.add_argument('--feishu', action='store_true', help='起跑/心跳/完赛飞书推送')
+    ap.add_argument('--exec-delay', dest='exec_delay', type=int, default=1,
+                    choices=(0, 1),
+                    help='成交延迟：1=次根 bar open（对齐实盘，默认）；0=samebar 历史口径（偏乐观）')
     ap.add_argument('--out', default='', help='产物路径（默认 output/exit_anchor_grid_<date>.json）')
     a = ap.parse_args()
 
@@ -315,7 +318,7 @@ def _run():
     pooled_rand = {arm: [[] for _ in range(a.m)] for arm in ARMS}
     for si, sym in enumerate(syms):
         print(f'== [{si + 1}/{len(syms)}] {sym} ==', flush=True)
-        r = eval_symbol(sym, a.days, a.m, a.seed)
+        r = eval_symbol(sym, a.days, a.m, a.seed, exec_delay=a.exec_delay)
         if 'error' in r:
             print(f'  !! {sym}: {r["error"]}', flush=True)
             per_sym.append(r)
@@ -391,14 +394,15 @@ def _run():
     doc = dict(
         meta=dict(generated_at=datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                   syms=syms, days=a.days, m=a.m, seed=a.seed,
+                  exec_delay=a.exec_delay,
                   arms={k: _mk_cfg(v) for k, v in ARMS.items()},
                   baseline=BASELINE,
                   gate=dict(z=Z_PASS, p=P_PASS, delta_wr_pp=DELTA_WR_PASS,
                             n_min_trips=N_MIN_TRIPS,
                             extra='盈亏比与≥+1%达成率双改善（vs A0）'),
-                  watermark='samebar 口径（信号 bar 即成交），系统性偏乐观；'
-                            '跨臂相对比较有效，绝对值须带折扣读'
-                            '（人审卡 P-20260928-samebar 待裁决）',
+                  watermark=('exec_delay_bars=%d 成交口径（1=次根 bar open 对齐实盘 / '
+                             '0=samebar 偏乐观）；真/伪臂同 delay，跨臂相对比较有效'
+                             % a.exec_delay),
                   units='net_wr/pct_ge_1=比例(0-1); mean_net/max_loss/mean_win/'
                         'mean_loss=百分点/笔; delta_wr_pp=百分点'),
         pooled=pooled, per_sym=per_sym)

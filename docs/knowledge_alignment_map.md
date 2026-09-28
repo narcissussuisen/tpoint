@@ -36,7 +36,7 @@
 2. 「工程拍定」不是合法长期状态——进入本表 §二清单，由随机对照逐条审判，判决只有三种：**保留（有证据）/ 修改（有更优值）/ 退役**。
 3. 知识条款与系统实证冲突时（如 K3 量放大 vs 量缩），以**随机对照下的生产口径实证**为准，并在本表记录冲突与裁决理由——知识是 prior，数据是 posterior。
 4. 一票否决：任何候选必须显著优于随机入场基线（p<0.05 且 z≥1.0 且 n≥30），否则不得合入。
-5. **裁决权分工（2026-09-28 用户授权）**：composite 权重与 _global 全局 GT 参数 = **AI 自审**（门槛 z≥1.0 且 Δ≥+2.0pp 且 n≥30，24h 频控 + 5 日降效自动回滚兜底）；per-symbol GT 五参+has_base = AI 自审（Δ≥+1.0pp）；core/ 代码、watchlist 增删、ml_enable、vol_regime_gate promote、VERSION bump = **人审**。移交的是裁决权，不是证据标准。
+5. **裁决权分工（2026-09-28 用户授权；RSI 边界修订 2026-09-28 晚）**：composite 权重与 _global 全局 GT 参数 = **AI 自审**（门槛 z≥1.0 且 Δ≥+2.0pp 且 n≥30，24h 频控 + 5 日降效自动回滚兜底）；per-symbol GT 五参+has_base = AI 自审（Δ≥+1.0pp）；core/ 代码层 = **RSI 代码轨**（四道闸 + spec_hash 不变 + 黑名单外 + 60 天 validity_queue 到期复核退步自动 revert ⇒ AI 可自动 commit+tag——「完全由 AI 驱动」的边界上移，非推翻；docs/rsi_loop_agenda.md §三）；spec 层（判据语义/验收阈值/watchlist/monitor 推送链/ml_enable/VERSION）= **永不自动，人审提案卡**。移交的是裁决权，不是证据标准。
 
 ## ML filter 重建判读（2026-09-28，B1-B3 证据链）
 

@@ -34,6 +34,10 @@ logs/
 # 例外：G1 出场网格报告+证据（2026-09-28，验收链关键产物）
 !output/exit_anchor_grid_20260928.md
 !output/exit_anchor_grid_20260928.json
+# 例外：exec_delay=1 修复口径重锚证据（2026-09-28 samebar 方案A）
+!output/exit_anchor_grid_20260928_delay1.json
+!output/random_control_300010SZ_20260928_delay1-base.json
+!output/random_control_300010SZ_20260928_delay1-regime-on.json
 
 # loop_engine 运行日志（累计增长、纯运行时产物；曾误入库 → 2026-09-10 停止跟踪）
 scripts/loop_engine/loop_engine.log

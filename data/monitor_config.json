@@ -24,7 +24,8 @@
       "regime_lookback": 40,
       "regime_downtrend_suppress": true,
       "regime_downtrend_thresh": 0.5
-    }
+    },
+    "_note_20260928_execdelay": "2026-09-28 人审卡 P-20260928-samebar 裁决方案A：core/simulate_position_sm 增加 exec_delay_bars（1=信号次根bar open成交，对齐实盘）。此前全部回测/验收注释中的数字（含 _note_20260821_p13 的 47.8→56.2% 等）均为 samebar 口径，系统性偏乐观；300010 delay=1 重锚：OFF 58.06%/-0.242pp、regime ON 75.0%/-0.017pp（09-27 ON 臂 +0.007pp 未撑过口径修复）。池级 delay=1 基线见 output/exit_anchor_grid_20260928_delay1.json。生产 monitor 实盘链零改动（trim_frontier 天然=delay1）。"
   },
   "300010.SZ": {
     "comment": "ST豆神；深交所创业板T+1；⚠️ 虽为ST但日涨跌幅限制仍为20%(创业板注册制口径，非主板ST的5%)——2026-05-06因2025年度内控审计否定意见被实施其他风险警示，代码不变仍300010；[2026-09-09] 用户改持仓移入(移除水发燃气)；实盘用纯池级默认(trail 0.4/0.6 + 无ATR + 无MPR)。注：涨跌停阈值无需在此配置，monitor._limit_up_threshold/exit_manager.limit_thr 按代码前缀自动判 300→20%。⚠️ 高波动：8/24起11个交易日股价翻倍、日振幅常>10%，默认 trail 0.4/0.6 是否适配待观察。",

@@ -114,10 +114,10 @@ set RC=%ERRORLEVEL%
 "%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" record closed_loop %RC% --expected "%ROOT%\data\closed_loop_state.json" >> "%ROOT%\logs\daily_review.log" 2>&1
 if %RC% GEQ 1 echo [%DATE% %TIME%] [WARN] closed_loop non-zero rc=%RC% >> "%ROOT%\logs\daily_review.log"
 echo [%DATE% %TIME%] === done (closed loop) === >> "%ROOT%\logs\daily_review.log"
-REM --- 2026-08-11 Request4 补全：step11 报告驱动自动调参（每日闭环「实际出手」环节）---
-REM 把 factor_opt 寻优报告转化为对 monitor_config.json 的真实改写；护栏 total_ret优先+wr不降+拒绝 wr 虚胖；
-REM 仅改写监控内标的（不自动新增非监控项以免 live monitor 缺字段崩溃）；改动记 data/auto_tune_state.json 可回滚；
-REM 推 a35d7f52。与 daily_iterate(仅白名单 atr_min_pct) 互补：本步落 trail 等锁定参数的自动寻优。
+REM --- 2026-09-28 RSI 治理修订：step11 auto_tune 改 propose-only ---
+REM 不再直写 monitor_config.json（唯一通道=daily_agent apply/effect_ledger，rsi_loop_agenda §三）；
+REM 达标改动写 data/ai_proposals/auto_tune_<date>.json 提案（trail/atr 不在自动白名单⇒人审）；
+REM 护栏不变：total_ret优先+wr不降+拒绝 wr 虚胖+仅监控内标的+OOS 样本外复核；推 a35d7f52。
 "%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" running auto_tune >> "%ROOT%\logs\daily_review.log" 2>&1
 "%PY_EXE%" "%ROOT%\scripts\auto_tune.py" --date %D% >> "%ROOT%\logs\daily_review.log" 2>&1
 set RC=%ERRORLEVEL%

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-auto_tune.py — 报告驱动的自动调参寻优（每日自迭代闭环的「实际出手」环节，2026-08-11 补全）
+auto_tune.py — 报告驱动的自动调参寻优（2026-08-11 补全；2026-09-28 RSI 治理改 propose-only）
 
 定位：把每日报告（factor_opt_*.json 寻优报告 + live_review/reconcile 实盘报告）转化为
-对 monitor_config.json 的**真实自动改写**，弥补 daily_iterate 仅白名单 atr_min_pct、
-daily_closed_loop 只算不出手的缺口。使「每日报告 → 自动修改自身配置」闭环真正闭合，
-无需人工逐条评审催促。
+**达标改动提案**。⚠️ 2026-09-28 起 **propose-only**：不再直写 monitor_config.json
+（配置变更唯一通道 = daily_agent.apply 三重闸门 / effect_ledger——docs/rsi_loop_agenda.md §三；
+trail/atr_min_pct 不在 AI 自动合入白名单 ⇒ 提案交人审/闸门裁决）。
 
 护栏（沿用 2026-08-05 deploy_optimal 纪律：total_ret 优先 + wr 不降）：
   1) 仅采纳样本充足网格单元：n >= MIN_TRIPS；
@@ -15,10 +15,11 @@ daily_closed_loop 只算不出手的缺口。使「每日报告 → 自动修改
      （如 161129 0.5/0.5 wr+7.4pp 但 ret -2.13→-3.32，将被拒）。
   5) 防抖：同一标的若近 ROLLBACK_DAYS 内已被本脚本改过且未回滚，需更强改善才再改（避免日级抖动）。
 
-落盘：直接改写 data/monitor_config.json（次日开盘热重载生效）；每次改动记入
-data/auto_tune_state.json（含 old/new + 基线指标），供 weekly_review.py 自修正回滚。
+落盘：data/ai_proposals/auto_tune_<date>.json（提案）+ data/auto_tune_state.json
+（action=proposed，含 old/new + 基线指标），供人审/RSI 闸门裁决与审计。
 
 CLI：python scripts/auto_tune.py --date 2026-08-11 [--dry-run]
+（--dry-run 语义弱化为兼容保留：propose-only 模式下两者等价，均不触碰 monitor_config。）
 
 [T1.5 2026-09-27] 本脚本不做模拟：网格指标来自 factor_opt_*.json、OOS 复核来自
 oos_validate.validate_one，两者的评估口径均已切 simulate_position_sm 单一仓位状态机
@@ -251,11 +252,24 @@ def main():
                 "strict_wr": bool(rb),
             })
 
-    # 落盘
-    if changes and not a.dry_run:
-        for c in changes:
-            set_param(cfg, c["sym"], c["param"], c["chosen_val"])
-        json.dump(cfg, open(CFG, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    # ---- 落盘（2026-09-28 RSI 治理：propose-only，不再直写 monitor_config） ----
+    # ⛔ 历史行为（直写 monitor_config.json）已移除：与「配置变更唯一通道 =
+    # daily_agent.apply（三重闸门）/ effect_ledger」冲突（docs/rsi_loop_agenda.md §三）。
+    # 达标改动现在只写提案：data/ai_proposals/auto_tune_<date>.json，
+    # 由 RSI 日循环/人审按闸门裁决（trail/atr 均不在 AUTO_MERGE_PARAMS 白名单 ⇒ 人审）。
+    proposal_fp = os.path.join(ROOT, "data", "ai_proposals", f"auto_tune_{date}.json")
+    if changes:
+        os.makedirs(os.path.dirname(proposal_fp), exist_ok=True)
+        prop = {
+            "date": date, "source": "auto_tune(propose-only)",
+            "position_model": position_model,
+            "note": "auto_tune 2026-09-28 起 propose-only：以下达标改动不再自动改写 "
+                    "monitor_config（唯一通道=daily_agent apply/effect_ledger）；"
+                    "trail/atr_min_pct 不在 AI 自动合入白名单 ⇒ 人审裁决。",
+            "changes": changes, "rejected": rejected,
+        }
+        with open(proposal_fp, "w", encoding="utf-8") as f:
+            json.dump(prop, f, ensure_ascii=False, indent=2)
         for c in changes:
             state.setdefault("history", []).append({
                 "date": date, "sym": c["sym"], "param": c["param"],
@@ -263,16 +277,16 @@ def main():
                 "d_wr": c["d_wr"], "n": c["n"],
                 "baseline_wr": c["baseline_wr"], "baseline_ret": c["baseline_ret"],
                 "position_model": position_model,
-                "action": "applied", "oos": c.get("oos"), "strict_wr": c.get("strict_wr"),
+                "action": "proposed", "oos": c.get("oos"), "strict_wr": c.get("strict_wr"),
             })
-        json.dump(state, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+        with open(STATE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
 
     # 推送摘要
-    lines = [f"🤖 [tpoint 自动调参 auto_tune {date}]"
-             f"{'(DRY-RUN 未落盘)' if a.dry_run else ''}"
+    lines = [f"🤖 [tpoint 自动调参 auto_tune {date}]（propose-only，不直写 monitor_config）"
              f"｜护栏:total_ret优先+wr不降(≤{WR_TOL}pp)+样本外OOS+反翻烧饼"]
     if changes:
-        lines.append(f"■ 自动改写 monitor_config.json（{len(changes)} 项，次日开盘生效，可回滚）：")
+        lines.append(f"■ 达标改动 {len(changes)} 项 → 提案 {proposal_fp}（人审/闸门裁决，trail/atr 不在自动白名单）：")
         for c in changes:
             o = c.get("oos") or {}
             lines.append(f"· {c['sym']} {c['param']}: {c['old']}→{c['new']} "

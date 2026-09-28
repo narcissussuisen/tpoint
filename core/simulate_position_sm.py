@@ -48,25 +48,43 @@ def _short_trip(pos, exit_idx, exit_price, reason, buy_cost, sell_cost, entry_da
 
 
 def simulate_position_sm(sigs_by_day, prices_by_day, config_long=None, config_short=None,
-                         cost=None, has_base=True):
+                         cost=None, has_base=True, exec_delay_bars=0):
     """单一仓位状态机跨日模拟。
 
     参数：
       sigs_by_day   : list of (date, sigs)，sigs=[{'type':'B'/'S','idx','price','reason'},...]
                       按日期升序；同日内按 idx 顺序处理。
       prices_by_day : list of (date, prices_dict)，与 sigs_by_day 对齐；
-                      prices_dict 契约同 simulate_day（c/h/lo/atr/n/trend/pc/sym/date）。
+                      prices_dict 契约同 simulate_day（c/h/lo/atr/n/trend/pc/sym/date，
+                      exec_delay_bars>0 时另需 'o'）。
       config_long   : 正T 出场配置（默认 make_config()；生产传 EXIT_CFG 类）
       config_short  : 反T 出场配置（默认同 config_long；生产传 EXIT_CFG_SHORT 类）
       cost          : (buy_cost, sell_cost) 成本率元组，调用方传 cost_for_symbol(sym)
       has_base      : 是否持有底仓（反T 的物理前提）。无底仓时 S 不建空仓（禁裸卖空）。
                       跨日底仓状态由调用方通过逐日传入控制（ledger 模式）。
+      exec_delay_bars : 成交延迟 bar 数（人审卡 P-20260928-samebar 方案 A，2026-09-28 裁决）。
+                      0 = samebar（信号 bar close 成交，历史口径，默认，向后兼容）；
+                      1 = 信号 bar 收盘确认、**次根 bar open 成交**——对齐实盘物理时序
+                      （monitor trim_frontier 只吃已收盘 bar + 盘后推送，实盘最早成交
+                      在次根 bar）。语义细则：
+                        - 入场/信号驱动出场（S 平多、B回补）延到次根 bar open；
+                          末根 bar（idx=n-1）的信号 drop（日内无次 bar，等价实盘
+                          尾盘信号推送后已无法成交）。
+                        - STOP/FIXSTOP/TRAIL/TIME 保持盘中触发价（实盘即时盯盘可执行）。
+                          注意：延迟模式下 STOP/FIXSTOP 在成交 bar 内可先于「次根 open 的
+                          信号出场」触发——与「做错要认」纪律一致的保守偏置。
+                        - 成交 bar 判涨跌停锁板：一字涨停禁买入入场、一字跌停禁卖出
+                          入场，锁板信号放弃（不顺延）。
+                        - prices 缺 'o' 数组且 delay>0 ⇒ ValueError（fail-loud）。
 
     返回 dict：
       trips   : 全部 round-trip（side='B' 正T / 'S' 反T）
       n_long/n_short : 正T/反T trip 数
       summary : {'long_net','short_net','n_long','n_short'}
     """
+    delay = int(exec_delay_bars)
+    if delay not in (0, 1):
+        raise ValueError(f'exec_delay_bars 仅支持 0/1，收到 {exec_delay_bars!r}')
     cfg_l = config_long or make_config()
     cfg_s = config_short or cfg_l
     buy_cost, sell_cost = cost if cost else (0.0, 0.0)
@@ -81,6 +99,11 @@ def simulate_position_sm(sigs_by_day, prices_by_day, config_long=None, config_sh
         # 调用方传 list 时 list<=float 不支持）
         h = np.asarray(prices.get('h')) if prices.get('h') is not None else None
         lo = np.asarray(prices.get('lo')) if prices.get('lo') is not None else None
+        o = None
+        if delay:
+            if prices.get('o') is None:
+                raise ValueError("exec_delay_bars=1 需要 prices 提供 'o' 数组（次根 bar open 成交）")
+            o = np.asarray(prices['o'], dtype=float)
         atr = prices['atr']; trend = prices.get('trend')
         day_date = prices.get('date')
         # 涨跌停锁定（镜像 simulate_day/simulate_bidirectional 的成交可行性）
@@ -149,11 +172,15 @@ def simulate_position_sm(sigs_by_day, prices_by_day, config_long=None, config_sh
                                 trips.append(_short_trip(pos, i, pos['stop_price'], 'STOP', buy_cost, sell_cost, entry_date=day_date))
                                 pos = None; continue
                     # 2) 反向信号自然平仓（正T: S / 反T: B回补）
-                    if is_long and ecfg['s_signal_exit'] and i in s_idx:
-                        trips.append(_mk_trip(pos, i, s_idx[i]['price'], 'S', buy_cost, sell_cost, entry_date=day_date))
+                    #    exec_delay_bars=1：信号在 i-delay 收盘确认，i 开盘成交（o[i]）。
+                    _sig_i = i - delay
+                    if is_long and ecfg['s_signal_exit'] and _sig_i in s_idx:
+                        _exit_px = float(o[i]) if delay else s_idx[_sig_i]['price']
+                        trips.append(_mk_trip(pos, i, _exit_px, 'S', buy_cost, sell_cost, entry_date=day_date))
                         pos = None; continue
-                    if (not is_long) and ecfg['s_signal_exit'] and i in b_idx:
-                        trips.append(_short_trip(pos, i, b_idx[i]['price'], 'B回补', buy_cost, sell_cost, entry_date=day_date))
+                    if (not is_long) and ecfg['s_signal_exit'] and _sig_i in b_idx:
+                        _exit_px = float(o[i]) if delay else b_idx[_sig_i]['price']
+                        trips.append(_short_trip(pos, i, _exit_px, 'B回补', buy_cost, sell_cost, entry_date=day_date))
                         pos = None; continue
                     # 3) TRAIL
                     if ecfg['use_trailing']:
@@ -180,22 +207,25 @@ def simulate_position_sm(sigs_by_day, prices_by_day, config_long=None, config_sh
                         pos = None; continue
 
             # ---- 空仓：入场判定（一笔信号一个动作） ----
+            # exec_delay_bars=1：信号在 i-delay 收盘确认、i 开盘成交；末根 bar 信号
+            # 因无次 bar 自然 drop（range 上界即 n-1）；成交 bar 一字锁板则放弃。
             if pos is None:
-                if i in b_idx:
-                    b = b_idx[i]
-                    pos = {'side': 'long', 'entry_idx': i, 'entry_price': b['price'],
-                           'entry_reason': b.get('reason', ''),
-                           'stop_price': (b['price'] - cfg_l['stop_atr_mult'] * atr[i]
+                _sig_i = i - delay
+                if _sig_i in b_idx and not (delay and locked_up is not None and bool(locked_up[i])):
+                    fill_px = float(o[i]) if delay else b_idx[_sig_i]['price']
+                    pos = {'side': 'long', 'entry_idx': i, 'entry_price': fill_px,
+                           'entry_reason': b_idx[_sig_i].get('reason', ''),
+                           'stop_price': (fill_px - cfg_l['stop_atr_mult'] * atr[i]
                                           if cfg_l['use_stop'] else -1e9),
-                           'max_fav': b['price'], 'min_fav': b['price']}
-                elif i in s_idx and has_base:
+                           'max_fav': fill_px, 'min_fav': fill_px}
+                elif _sig_i in s_idx and has_base and not (delay and locked_down is not None and bool(locked_down[i])):
                     # 反T 建仓 = 卖底仓（物理前提：has_base）。无底仓禁裸卖空。
-                    s = s_idx[i]
-                    pos = {'side': 'short', 'entry_idx': i, 'entry_price': s['price'],
-                           'entry_reason': s.get('reason', ''),
-                           'stop_price': (s['price'] + cfg_s['stop_atr_mult'] * atr[i]
+                    fill_px = float(o[i]) if delay else s_idx[_sig_i]['price']
+                    pos = {'side': 'short', 'entry_idx': i, 'entry_price': fill_px,
+                           'entry_reason': s_idx[_sig_i].get('reason', ''),
+                           'stop_price': (fill_px + cfg_s['stop_atr_mult'] * atr[i]
                                           if cfg_s['use_stop'] else 1e9),
-                           'max_fav': s['price'], 'min_fav': s['price']}
+                           'max_fav': fill_px, 'min_fav': fill_px}
                 continue
 
         # ---- EOD 强平 ----

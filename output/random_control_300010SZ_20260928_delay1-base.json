@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "sym": "300010.SZ",
+    "name": "ST豆神",
+    "is_fund": false,
+    "data_path": "F:/keyfactor_data/1m\\300010.SZ_1m.csv",
+    "generated_at": "2026-09-28 15:01:29",
+    "seed": 42,
+    "m": 200,
+    "m_rt": 50,
+    "rt_subset_note": "round-trip 指标仅在前 m_rt 个伪样本子集上计算（性能口径）；TEP/Capture 为全 M 样本",
+    "days_requested": 60,
+    "params": {
+      "C1": 1.5,
+      "EPS_ABS": 0.005,
+      "ATR_N": 20,
+      "W_PREC": 30,
+      "COST": 0.0005,
+      "SIGNAL_GAP": 6,
+      "P_PASS": 0.05,
+      "Z_PASS": 1.0,
+      "N_MIN_SIGNALS": 30
+    },
+    "exit_cfg": {
+      "use_stop": false,
+      "stop_atr_mult": 1.5,
+      "stop_mode": "atr",
+      "use_time": false,
+      "time_stop_bars": 90,
+      "use_trailing": true,
+      "trail_activate_pct": 0.4,
+      "trail_pct": 0.6,
+      "s_signal_exit": true,
+      "use_fixed_stop": false,
+      "fixed_stop_pct": 1.5
+    },
+    "cost": [
+      0.03,
+      0.08641
+    ],
+    "has_base": false,
+    "exec_delay_bars": 1,
+    "exec_delay_note": "round-trip 指标按 exec_delay_bars 成交（1=次根 bar open，对齐实盘；0=samebar 历史口径，偏乐观）。TEP/Capture 为信号诊断指标，恒以信号 bar close 为基准（不随 delay 变）。",
+    "engine": "general_signal.detect_signals_general (GT-1.0/v5, 与 v2 同输入构造)",
+    "units": "net_wr/tep/capture=比例(0-1); mean_net=百分点/笔(与 simulate_position_sm ret_pct 同单位); p/z 为单侧(越大越好)",
+    "self_test": false
+  },
+  "verdict": "PASS",
+  "n_signals": 163,
+  "n_days": 11,
+  "n_days_with_signals": 11,
+  "n_trips": 31,
+  "real": {
+    "net_wr": 0.5806451612903226,
+    "mean_net": -0.2418064516129032,
+    "tep": 0.9079754601226994,
+    "capture": 0.8098159509202454
+  },
+  "random_dist": {
+    "net_wr": {
+      "p5": 0.21956521739130433,
+      "p50": 0.34782608695652173,
+      "p95": 0.4916666666666666,
+      "mean": 0.351610934692056,
+      "std": 0.08526631470349891,
+      "n": 50
+    },
+    "mean_net": {
+      "p5": -1.5743924210526314,
+      "p50": -1.1061851851851852,
+      "p95": -0.6117006250000001,
+      "mean": -1.094653792007537,
+      "std": 0.2734651051896125,
+      "n": 50
+    },
+    "tep": {
+      "p5": 0.8266917293233083,
+      "p50": 0.8571428571428571,
+      "p95": 0.9022556390977443,
+      "mean": 0.8599248120300751,
+      "std": 0.023851796501749158,
+      "n": 200
+    },
+    "capture": {
+      "p5": 0.6616541353383458,
+      "p50": 0.6992481203007519,
+      "p95": 0.7443609022556391,
+      "mean": 0.7022556390977444,
+      "std": 0.024563999339520696,
+      "n": 200
+    }
+  },
+  "p": {
+    "net_wr": 0.0,
+    "mean_net": 0.0,
+    "tep": 0.03,
+    "capture": 0.0
+  },
+  "z": {
+    "net_wr": 2.6861044410644404,
+    "mean_net": 3.1186697103577257,
+    "tep": 2.0145504800487672,
+    "capture": 4.378778485368572
+  },
+  "sampling": {
+    "insufficient_domain_events": 400,
+    "relaxed_gap_events": 1000
+  },
+  "days": [
+    {
+      "date": "2026-09-09",
+      "n_B": 4,
+      "n_S": 12,
+      "domain_size": 209,
+      "pc": 4.77,
+      "quotas": {
+        "B0": 1,
+        "B1": 3,
+        "S1": 9,
+        "S2": 3
+      }
+    },
+    {
+      "date": "2026-09-11",
+      "n_B": 2,
+      "n_S": 12,
+      "domain_size": 209,
+      "pc": 4.99,
+      "quotas": {
+        "B2": 2,
+        "S0": 3,
+        "S1": 9
+      }
+    },
+    {
+      "date": "2026-09-14",
+      "n_B": 12,
+      "n_S": 0,
+      "domain_size": 209,
+      "pc": 5.4,
+      "quotas": {
+        "B0": 3,
+        "B1": 9
+      }
+    },
+    {
+      "date": "2026-09-15",
+      "n_B": 2,
+      "n_S": 12,
+      "domain_size": 209,
+      "pc": 4.49,
+      "quotas": {
+        "B1": 2,
+        "S0": 4,
+        "S1": 8
+      }
+    },
+    {
+      "date": "2026-09-16",
+      "n_B": 7,
+      "n_S": 11,
+      "domain_size": 209,
+      "pc": 4.73,
+      "quotas": {
+        "B0": 3,
+        "B1": 4,
+        "S1": 9,
+        "S2": 2
+      }
+    },
+    {
+      "date": "2026-09-17",
+      "n_B": 1,
+      "n_S": 12,
+      "domain_size": 209,
+      "pc": 4.59,
+      "quotas": {
+        "B1": 1,
+        "S0": 7,
+        "S1": 5
+      }
+    },
+    {
+      "date": "2026-09-18",
+      "n_B": 10,
+      "n_S": 6,
+      "domain_size": 209,
+      "pc": 4.94,
+      "quotas": {
+        "B0": 1,
+        "B1": 7,
+        "B2": 2,
+        "S1": 4,
+        "S2": 2
+      }
+    },
+    {
+      "date": "2026-09-21",
+      "n_B": 0,
+      "n_S": 12,
+      "domain_size": 209,
+      "pc": 5.09,
+      "quotas": {
+        "S0": 3,
+        "S1": 9
+      }
+    },
+    {
+      "date": "2026-09-22",
+      "n_B": 9,
+      "n_S": 5,
+      "domain_size": 209,
+      "pc": 5.48,
+      "quotas": {
+        "B0": 2,
+        "B1": 4,
+        "B2": 3,
+        "S0": 5
+      }
+    },
+    {
+      "date": "2026-09-23",
+      "n_B": 6,
+      "n_S": 8,
+      "domain_size": 209,
+      "pc": 5.32,
+      "quotas": {
+        "B0": 4,
+        "B2": 2,
+        "S1": 8
+      }
+    },
+    {
+      "date": "2026-09-24",
+      "n_B": 11,
+      "n_S": 9,
+      "domain_size": 209,
+      "pc": 5.27,
+      "quotas": {
+        "B0": 2,
+        "B1": 8,
+        "B2": 1,
+        "S1": 7,
+        "S2": 2
+      }
+    }
+  ]
+}

@@ -118,6 +118,122 @@ def main():
     check("S6 反T 无回补 → EOD 强平 1 trip", len(t6) == 1 and t6[0]['exit_reason'] == 'EOD',
           f"trips={len(t6)}")
 
+    # ================================================================= #
+    # exec_delay_bars=1（人审卡 P-20260928-samebar 方案 A，2026-09-28 裁决）
+    # 语义：信号 bar 收盘确认、次根 bar open 成交；末根 bar 信号 drop；
+    #       成交 bar 一字锁板放弃；STOP/FIXSTOP/TRAIL/TIME 保持盘中触发价。
+    # ================================================================= #
+    print("\n-- exec_delay_bars=1 臂 --")
+
+    # ---- D1：正T 延迟成交（B@60 → fill o[61]；S@90 → fill o[91]） ----
+    pd1 = mk_prices()
+    pd1['o'] = [9.6] * 240
+    pd1['o'][61] = 9.65   # B 成交价（次根 open）
+    pd1['o'][91] = 9.90   # S 出场成交价（次根 open）
+    sigsd1 = [{'type': 'B', 'idx': 60, 'price': 9.62, 'reason': 't'},
+              {'type': 'S', 'idx': 90, 'price': 9.83, 'reason': 't'}]
+    od1 = simulate_position_sm([('2026-09-03', sigsd1)], [('2026-09-03', pd1)],
+                               config_long=cfg, config_short=cfg,
+                               cost=(buy_c, sell_c), has_base=True, exec_delay_bars=1)
+    td1 = od1['trips']
+    gd1 = round((9.90 - 9.65) / 9.65 * 100, 3)
+    nd1 = round(gd1 - total_cost, 3)
+    check("D1 正T 1 trip", len(td1) == 1 and td1[0]['side'] == 'B', f"trips={len(td1)}")
+    check("D1 入场=次根 open 9.65（非信号价 9.62）",
+          td1 and abs(td1[0]['entry_price'] - 9.65) < 1e-9,
+          f"entry={td1[0]['entry_price'] if td1 else None}")
+    check("D1 出场=次根 open 9.90", td1 and abs(td1[0]['exit_price'] - 9.90) < 1e-9,
+          f"exit={td1[0]['exit_price'] if td1 else None}")
+    check("D1 entry_idx=61（TIME 锚定成交 bar）",
+          td1 and td1[0].get('entry_idx') == 61,
+          f"entry_idx={td1[0].get('entry_idx') if td1 else None}")
+    check("D1 净=毛-成本", td1 and abs(td1[0]['ret_pct'] - nd1) < 0.01,
+          f"net={td1[0]['ret_pct'] if td1 else None} expect={nd1}")
+
+    # ---- D2：末根 bar 信号 drop（idx=n-1 无次 bar） ----
+    pd2 = mk_prices()
+    pd2['o'] = [9.6] * 240
+    sigsd2 = [{'type': 'B', 'idx': 239, 'price': 9.62}]
+    od2 = simulate_position_sm([('2026-09-03', sigsd2)], [('2026-09-03', pd2)],
+                               config_long=cfg, config_short=cfg,
+                               cost=(buy_c, sell_c), has_base=True, exec_delay_bars=1)
+    check("D2 末根 bar 信号 drop（0 trips）", len(od2['trips']) == 0,
+          f"trips={len(od2['trips'])}")
+
+    # ---- D3：缺 'o' 数组 + delay=1 ⇒ ValueError（fail-loud） ----
+    try:
+        simulate_position_sm([('2026-09-03', sigsd1)], [('2026-09-03', mk_prices())],
+                              config_long=cfg, config_short=cfg,
+                              cost=(buy_c, sell_c), has_base=True, exec_delay_bars=1)
+        check("D3 缺 'o' 抛 ValueError", False, "未抛异常")
+    except ValueError:
+        check("D3 缺 'o' 抛 ValueError", True)
+    except Exception as e:
+        check("D3 缺 'o' 抛 ValueError", False, f"抛了 {type(e).__name__}")
+
+    # ---- D4：exec_delay_bars=2 ⇒ ValueError（仅支持 0/1） ----
+    try:
+        simulate_position_sm([('2026-09-03', sigsd1)], [('2026-09-03', pd1)],
+                              config_long=cfg, config_short=cfg,
+                              cost=(buy_c, sell_c), has_base=True, exec_delay_bars=2)
+        check("D4 delay=2 抛 ValueError", False, "未抛异常")
+    except ValueError:
+        check("D4 delay=2 抛 ValueError", True)
+    except Exception as e:
+        check("D4 delay=2 抛 ValueError", False, f"抛了 {type(e).__name__}")
+
+    # ---- D5：成交 bar 一字涨停禁买入（信号放弃） ----
+    pd5 = mk_prices()
+    pd5['o'] = [9.6] * 240
+    # 次根 bar 61 一字涨停：lo>=10.98（pc=10, 10% 限制）
+    pd5['lo'][61] = 10.99; pd5['h'][61] = 11.0; pd5['o'][61] = 11.0
+    sigsd5 = [{'type': 'B', 'idx': 60, 'price': 9.62}]
+    od5 = simulate_position_sm([('2026-09-03', sigsd5)], [('2026-09-03', pd5)],
+                                config_long=cfg, config_short=cfg,
+                                cost=(buy_c, sell_c), has_base=True, exec_delay_bars=1)
+    check("D5 成交 bar 一字涨停 → 入场放弃（0 trips）", len(od5['trips']) == 0,
+          f"trips={len(od5['trips'])}")
+
+    # ---- D6：反T 延迟成交（S@60 → fill o[61]；B@90 回补 fill o[91]） ----
+    pd6 = mk_prices()
+    pd6['o'] = [9.6] * 240
+    pd6['o'][61] = 9.62   # S 建仓成交价（次根 open）
+    pd6['o'][91] = 9.41   # B 回补成交价（次根 open）
+    sigsd6 = [{'type': 'S', 'idx': 60, 'price': 9.65, 'reason': 't'},
+              {'type': 'B', 'idx': 90, 'price': 9.45, 'reason': 't'}]
+    od6 = simulate_position_sm([('2026-09-03', sigsd6)], [('2026-09-03', pd6)],
+                               config_long=cfg, config_short=cfg,
+                               cost=(buy_c, sell_c), has_base=True, exec_delay_bars=1)
+    td6 = od6['trips']
+    gd6 = round((9.62 - 9.41) / 9.62 * 100, 3)
+    nd6 = round(gd6 - total_cost, 3)
+    check("D6 反T 1 trip reason=B回补",
+          len(td6) == 1 and td6[0]['side'] == 'S' and td6[0]['exit_reason'] == 'B回补',
+          f"trips={len(td6)}")
+    check("D6 建仓=次根 open 9.62（非信号价 9.65）",
+          td6 and abs(td6[0]['entry_price'] - 9.62) < 1e-9,
+          f"entry={td6[0]['entry_price'] if td6 else None}")
+    check("D6 净=毛-成本", td6 and abs(td6[0]['ret_pct'] - nd6) < 0.01,
+          f"net={td6[0]['ret_pct'] if td6 else None} expect={nd6}")
+
+    # ---- D7：delay=0 显式传参与默认行为一致（回归锚） ----
+    pd7 = mk_prices()
+    pd7['c'][90] = 9.83
+    sigsd7 = [{'type': 'B', 'idx': 60, 'price': 9.62, 'reason': 'test'},
+              {'type': 'S', 'idx': 90, 'price': 9.83, 'reason': 'test'}]
+    od7a = simulate_position_sm([('2026-09-03', sigsd7)], [('2026-09-03', pd7)],
+                                config_long=cfg, config_short=cfg,
+                                cost=(buy_c, sell_c), has_base=True)
+    od7b = simulate_position_sm([('2026-09-03', sigsd7)], [('2026-09-03', pd7)],
+                                config_long=cfg, config_short=cfg,
+                                cost=(buy_c, sell_c), has_base=True, exec_delay_bars=0)
+    same = (len(od7a['trips']) == len(od7b['trips']) == 1
+            and od7a['trips'][0]['ret_pct'] == od7b['trips'][0]['ret_pct']
+            and od7a['trips'][0]['entry_price'] == od7b['trips'][0]['entry_price'])
+    check("D7 delay=0 显式=默认（samebar 回归锚）", same,
+          f"a={od7a['trips'][0]['ret_pct'] if od7a['trips'] else None} "
+          f"b={od7b['trips'][0]['ret_pct'] if od7b['trips'] else None}")
+
     print(f"\n===== {len(PASS)} PASS / {len(FAIL)} FAIL =====")
     return 1 if FAIL else 0
 
