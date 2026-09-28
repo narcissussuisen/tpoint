@@ -64,22 +64,24 @@ venv/Scripts/python.exe scripts/ai_loop/daily_agent.py review-merges
 
 ## 第4步 合入 gate（机械强制）
 
-**AI 可自动合入**（三重闸门全过才放行，任一不过 apply 直接拒绝）：
+**AI 可自动合入**（闸门全过才放行，任一不过 apply 直接拒绝）——双轨（2026-09-28 用户授权权重移交）：
 
 ```bash
 venv/Scripts/python.exe scripts/ai_loop/daily_agent.py apply \
-  --sym <SYM> --param general_algorithm.<param> --value <v> \
+  --sym <SYM|_global> --param general_algorithm.<param> --value <v> \
   --random-z <z> --delta-pp <pp> --proposal-id <id> --note "<证据摘要>"
 ```
 
-- 白名单：buy_threshold / sell_threshold / signal_gap / min_hist_diff / vol_ratio_b_max / has_base（per-symbol）；
-- 证据：random_z ≥1.0 且 delta_pp ≥+1.0（且 AI 已核实 n≥30）；
-- 频控：24h 最多 1 次，一次只改一个参数（脚本强制）。
+- **per-symbol 轨**：buy_threshold / sell_threshold / signal_gap / min_hist_diff / vol_ratio_b_max / has_base；
+  证据 random_z ≥1.0 且 delta_pp ≥+1.0（且 AI 已核实 n≥30）。
+- **_global 轨（权重/全局 GT 档）**：w_vwap / w_vol_div / w_macd_div / w_rsi + GT 五参全局档；
+  证据**更严**：random_z ≥1.0 且 delta_pp ≥**+2.0** 且 n_signals≥30（影响全标的）；键名须为 GeneralConfig 真实字段（脚本防臆造键）。
+- 频控（两轨共享）：24h 最多 1 次，一次只改一个参数（脚本强制）；降效 >3pp 自动回滚兜底（review-merges）。
 
 **人审**（写入 data/ai_proposals/<date>.json，并在 finalize 的 human_review 列出）：
-_global 全局块、composite 权重、core/ 代码、watchlist 增删、ml_enable、vol_regime_gate promote、
-signal_gap 口径变更、VERSION bump。提案卡必须含：
-proposal_id / hypothesis / knowledge_clause / change / validation_plan / rollback / evidence_paths。
+core/ 代码、watchlist 增删、ml_enable、vol_regime_gate promote、VERSION bump。
+（_global 权重与全局 GT 档已移交 AI 自审——2026-09-28 用户授权；移交的是裁决权，不是证据标准。）
+提案卡必须含：proposal_id / hypothesis / knowledge_clause / change / validation_plan / rollback / evidence_paths。
 
 ## 第5步 落盘 + 推送（机械）
 

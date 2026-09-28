@@ -52,6 +52,13 @@ SKIP = 77  # 与 ds_benchmark 的 SKIPPED 语义一致（静默跳过，非错�
 # AI 可自动合入的 per-symbol 白名单（GT 五参 + has_base）；其余一律人审
 AUTO_MERGE_PARAMS = {'buy_threshold', 'sell_threshold', 'signal_gap',
                      'min_hist_diff', 'vol_ratio_b_max', 'has_base'}
+# [2026-09-28 用户授权] AI 可自动合入的 _global 全局轨白名单：
+# composite 权重四参（原人审项，裁决权移交 AI——移交的是裁决权，不是证据标准）+ GT 五参全局档。
+# 全局轨影响全标的 ⇒ 证据门槛更严（GLOBAL_MIN_DELTA_PP）。
+GLOBAL_MERGE_PARAMS = {'w_vwap', 'w_vol_div', 'w_macd_div', 'w_rsi',
+                       'buy_threshold', 'sell_threshold', 'signal_gap',
+                       'min_hist_diff', 'vol_ratio_b_max'}
+GLOBAL_MIN_DELTA_PP = 2.0   # _global 轨寻优增益门槛（per-symbol 轨为 1.0）
 ROLLBACK_WINDOW_DAYS = 5      # 合入后复核窗口（交易日）
 ROLLBACK_DROP_PP = 3.0        # 池级 net_wr 降效阈值（pp）
 ROLLBACK_MIN_AFTER_DAYS = 2   # 至少 2 个变更后交易日才判降效
@@ -401,14 +408,30 @@ def cmd_review_merges(_a):
 def cmd_apply(a):
     import effect_ledger
     param_leaf = str(a.param).split('.')[-1]
-    if param_leaf not in AUTO_MERGE_PARAMS:
-        print(f'[apply] 拒绝：{param_leaf} 不在 AI 自动合入白名单 {sorted(AUTO_MERGE_PARAMS)} → 走人审提案')
-        sys.exit(2)
+    is_global = (a.sym == '_global')
+    # 轨道分流（[2026-09-28] _global 轨=用户授权的权重/全局 GT 档，门槛更严）
+    if is_global:
+        if param_leaf not in GLOBAL_MERGE_PARAMS:
+            print(f'[apply] 拒绝：{param_leaf} 不在 _global 自动合入白名单 {sorted(GLOBAL_MERGE_PARAMS)} → 走人审提案')
+            sys.exit(2)
+        min_delta = GLOBAL_MIN_DELTA_PP
+    else:
+        if param_leaf not in AUTO_MERGE_PARAMS:
+            print(f'[apply] 拒绝：{param_leaf} 不在 AI 自动合入白名单 {sorted(AUTO_MERGE_PARAMS)} → 走人审提案')
+            sys.exit(2)
+        min_delta = 1.0
+    # 防臆造键（两轨同查）：必须挂到 GeneralConfig 真实字段（has_base 除外——它是 per-symbol 顶层键）
+    if param_leaf != 'has_base':
+        from general_signal import GENERAL_DEFAULT as _GD
+        if not hasattr(_GD, param_leaf):
+            print(f'[apply] 拒绝：{param_leaf} 不是 GeneralConfig 真实字段（臆造键防线）')
+            sys.exit(2)
     if a.random_z is None or a.random_z < 1.0:
         print(f'[apply] 拒绝：随机对照 z={a.random_z} < 1.0（一票否决，fail-closed）')
         sys.exit(2)
-    if a.delta_pp is None or a.delta_pp < 1.0:
-        print(f'[apply] 拒绝：寻优增益 {a.delta_pp}pp < +1.0pp')
+    if a.delta_pp is None or a.delta_pp < min_delta:
+        print(f'[apply] 拒绝：寻优增益 {a.delta_pp}pp < +{min_delta}pp'
+              + ('（_global 轨严门槛）' if is_global else ''))
         sys.exit(2)
     # 频控：24h 内已有 ai_loop 合入则拒绝
     cutoff = (datetime.datetime.now() - datetime.timedelta(hours=MERGE_RATE_LIMIT_H)).strftime('%Y-%m-%d %H:%M:%S')

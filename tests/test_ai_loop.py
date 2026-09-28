@@ -281,6 +281,34 @@ def _run(fn):
         print(f'  FAIL {fn.__name__} 异常 {type(e).__name__}: {e}')
 
 
+def t12_apply_global_track():
+    """[2026-09-28 A3] _global 轨：权重移交 AI（双轨闸门 + 臆造键防线 + 严门槛）。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        calls = []
+        applied = _patch_env(tmp, [], calls)
+        da.cmd_apply(Args(sym='_global', param='general_algorithm.w_vwap',
+                          value='1.4', random_z=2.5, delta_pp=2.5,
+                          proposal_id='W1', note='t12'))
+        check('T12 _global 权重合规合入', len(applied) == 1
+              and applied[0]['sym'] == '_global' and applied[0]['value'] == 1.4,
+              f'applied={applied}')
+    with tempfile.TemporaryDirectory() as tmp:
+        _patch_env(tmp, [], [])
+        _expect_exit('T12 _global 臆造键拒', lambda: da.cmd_apply(Args(
+            sym='_global', param='general_algorithm.bogus_key', value='1',
+            random_z=3.0, delta_pp=5.0, proposal_id=None, note='')), 2)
+    with tempfile.TemporaryDirectory() as tmp:
+        _patch_env(tmp, [], [])
+        _expect_exit('T12 _global 非白名单真实字段拒', lambda: da.cmd_apply(Args(
+            sym='_global', param='general_algorithm.regime_lookback', value='60',
+            random_z=3.0, delta_pp=5.0, proposal_id=None, note='')), 2)
+    with tempfile.TemporaryDirectory() as tmp:
+        _patch_env(tmp, [], [])
+        _expect_exit('T12 _global +1.5pp 不足严门槛拒', lambda: da.cmd_apply(Args(
+            sym='_global', param='general_algorithm.w_vwap', value='1.4',
+            random_z=2.5, delta_pp=1.5, proposal_id=None, note='')), 2)
+
+
 def main():
     print('=== test_ai_loop：AI 闭环机械层回归 ===')
     _run(t1_rollback_triggers)
@@ -294,6 +322,7 @@ def main():
     _run(t9_guard_idempotent)
     _run(t10_backlog_transitions)
     _run(t11_vol_shadow_history)
+    _run(t12_apply_global_track)
     print(f'\n=== 结果: {PASS} PASS / {FAIL} FAIL ===')
     sys.exit(1 if FAIL else 0)
 
