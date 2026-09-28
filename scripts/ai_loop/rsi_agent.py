@@ -140,7 +140,7 @@ def cmd_selfcheck(date, snapshot_tests=True):
         return 2
     # git 工作树状态（脏树记录但不阻断 selfcheck——apply-code 时才硬拒）
     le = _le_core()
-    dirty = le.git('status', '--short', capture=True) or ''
+    _rc, dirty, _err = le.git('status', '--short')
     note = f'dirty_tree_lines={len([l for l in dirty.splitlines() if l.strip()])}'
     # 测试基线快照（当日首次）
     if snapshot_tests and not os.path.exists(os.path.join(RSI_DIR, 'test_baseline.json')):
@@ -156,12 +156,13 @@ def cmd_selfcheck(date, snapshot_tests=True):
 # 步1 measure
 # --------------------------------------------------------------------------- #
 def cmd_measure(date, light=True):
-    if step_status(date, 'measure'):
+    st = step_status(date, 'measure')
+    if st and st.get('rc') == 0:
         print('measure 今日已完成（幂等）')
         return 0
     # light：digest（daily_agent collect 幂等）；heavy（bench）由 curator 会话显式跑
     r = subprocess.run([PY, os.path.join(ROOT, 'scripts', 'ai_loop', 'daily_agent.py'),
-                        'collect', '--date', date], capture_output=True, text=True, timeout=1800)
+                        'collect'], capture_output=True, text=True, timeout=1800)
     ok = r.returncode == 0
     mark_step(date, 'measure', r.returncode, 'light' if light else 'full')
     print(f'measure collect rc={r.returncode}')
@@ -219,7 +220,8 @@ def cmd_apply_code(patch_fp, random_z):
         return 3
     # 工作树干净（fail-closed）
     le = _le_core()
-    dirty = (le.git('status', '--short', capture=True) or '').strip()
+    _rc, dirty, _err = le.git('status', '--short')
+    dirty = dirty.strip()
     if dirty:
         print(f'⛔ 工作树脏（apply-code 前必须干净）：\n{dirty}')
         return 3
@@ -238,7 +240,7 @@ def cmd_apply_code(patch_fp, random_z):
     le.git('commit', '-m', msg)
     tag = f'rsi/{date}-{pid}'
     le.git('tag', tag)
-    log = le.git('log', '--oneline', '-1', capture=True) or ''
+    _rc, log, _err = le.git('log', '--oneline', '-1')
     if pid[:16] not in msg and tag.split('-', 1)[1][:8] not in log:
         pass  # tag 已打，git log 校验以 commit 落盘为准
     if not log.strip():
