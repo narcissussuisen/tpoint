@@ -15,8 +15,19 @@ data/*
 !data/watchlist.json
 
 # 回测/产物/日志（68M / 21M，绝不入库）
-output/
+# 注意：必须用 output/* 而非 output/ —— 后者排除整个目录导致下方例外失效（git 规则：
+# 父目录被排除时子路径无法 re-include；与上方 data/* 注释同源教训，2026-09-28 实踩）。
+output/*
 logs/
+
+# 例外：ML 注册表/模型/训练证据（小体积关键产物，2026-09-28 起入库）
+# 教训：2026-08-05 v10 灾难恢复丢失全部 ML 产物（ml_features.py 从未入库 +
+# output/ 整体被忽略 ⇒ 模型/注册表/数据集纯磁盘存活，重建即蒸发）。
+# 数据集本体在 F: 盘（可用已入库的 ml_build_dataset.py 2.3 分钟重建），不入库。
+!output/ml_versions.json
+!output/ml_train_results_v2.json
+!output/ml_models/
+!output/ml_models/*.json
 
 # loop_engine 运行日志（累计增长、纯运行时产物；曾误入库 → 2026-09-10 停止跟踪）
 scripts/loop_engine/loop_engine.log
