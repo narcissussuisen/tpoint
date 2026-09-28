@@ -1,0 +1,47 @@
+{
+ "sym": "300010.SZ",
+ "days_req": 60,
+ "caliber": "与 random_control_validator 09-27 判决同口径：GENERAL_DEFAULT+gap6 baseline / +regime_gate=true regime 臂；trail 0.4/0.6 + s_signal_exit + cost_for_symbol；entry=信号 bar close；⚠️ samebar 口径偏乐观",
+ "arms": [
+  {
+   "arm": "baseline(OFF臂=09-27基线)",
+   "has_base": false,
+   "n_days": 11,
+   "n_signals": 163,
+   "n_trips": 30,
+   "net_wr": 0.5667,
+   "mean_net_pp": -0.3261,
+   "pl_ratio": 0.424,
+   "pct_trips_net_ge_1pct": 0.1333,
+   "pct_trips_net_ge_0_5pct": 0.3667,
+   "median_loss_pp": -0.346,
+   "mean_loss_pp": -1.6898,
+   "max_loss_pp": -14.755,
+   "mean_win_pp": 0.7168,
+   "median_win_pp": 0.674,
+   "days_negative": 4,
+   "days_total": 10,
+   "name": "ST豆神"
+  },
+  {
+   "arm": "regime-on",
+   "has_base": false,
+   "n_days": 11,
+   "n_signals": 114,
+   "n_trips": 8,
+   "net_wr": 0.75,
+   "mean_net_pp": 0.0065,
+   "pl_ratio": 0.337,
+   "pct_trips_net_ge_1pct": 0.125,
+   "pct_trips_net_ge_0_5pct": 0.5,
+   "median_loss_pp": -2.111,
+   "mean_loss_pp": -2.111,
+   "max_loss_pp": -3.213,
+   "mean_win_pp": 0.7123,
+   "median_win_pp": 0.697,
+   "days_negative": 2,
+   "days_total": 7,
+   "name": "ST豆神"
+  }
+ ]
+}

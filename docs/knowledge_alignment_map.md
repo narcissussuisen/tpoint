@@ -48,3 +48,4 @@
 | B 侧 ML filter | **裁决=不接**：round-trip OOS Δ-0.27pp（kept 34%），cv 0.5381 近抛硬币；接入反而伤 | output/ml_train_results_v2.json |
 | S 侧 ML filter | **候选=S-only shadow**：round-trip OOS Δ+2.02pp（kept 65%），cv≈OOS 一致； backlog P2-20260928-mlfilter-s-only-shadow（影子 10 交易日 → AI 每日复核 → 人审） | 同上 |
 | B 侧改进路径 | 扩池重建（tune_pool_40→1m_clean 192 只级）补 B 样本（现 train 仅 3005 行）后重训重审 | backlog 同上 |
+6. **选手数字只作方法线锚点，不作账户级对标（2026-09-28 裁定）**：选手实测胜率 87.5%/90.0% 是 T+1~T+3 摆动口径、12.1 倍含全部贡献不可归因、分钟做T 仅 5 笔/5 月——三者均不可平移为 tpoint 阈值。tpoint 验收 = docs/player_benchmark.md 的 T0（环境）/T1（合格）/T2（选手方法线：净胜率≥60%、盈亏比≥1.2、单笔净差≥+1% 达成率≥40%、成本倒挂消除）。引用选手数字一律自带分母（27/30 或 42/48）。

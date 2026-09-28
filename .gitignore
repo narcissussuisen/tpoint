@@ -28,6 +28,9 @@ logs/
 !output/ml_train_results_v2.json
 !output/ml_models/
 !output/ml_models/*.json
+# 例外：选手基准评估证据（2026-09-28 信任审计+选手线对表，小体积关键产物）
+!output/player_level_assessment_20260928.md
+!output/player_level_tripstats_300010SZ.json
 
 # loop_engine 运行日志（累计增长、纯运行时产物；曾误入库 → 2026-09-10 停止跟踪）
 scripts/loop_engine/loop_engine.log
