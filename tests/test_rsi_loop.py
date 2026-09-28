@@ -142,17 +142,17 @@ def main():
         st3 = rsi_agent.step_status('2026-09-28', 'apply-code')
         check("R15 未执行步 status=None", st3 is None)
 
-        # 队列语义：apply-code 频控（合成队列）
+        # 队列语义：apply-code 频控（合成队列；日期必须动态取今天——硬编码日期跨午夜即假败，2026-09-29 实证）
+        import datetime as _dt
+        _today = _dt.date.today().strftime('%Y-%m-%d')
         qfp = os.path.join(tmp, 'validity_queue.json')
         with open(qfp, 'w') as f:
             json.dump([{'proposal_id': 'X', 'status': 'active',
-                        'applied_at': '2026-09-28 10:00:00'}], f)
+                        'applied_at': f'{_today} 10:00:00'}], f)
         rsi_agent.QUEUE_FP = qfp
-        import datetime as _dt
         n_today = sum(1 for q in json.load(open(qfp))
                       if q.get('status') == 'active'
-                      and q.get('applied_at', '').startswith(
-                          _dt.date.today().strftime('%Y-%m-%d')))
+                      and q.get('applied_at', '').startswith(_today))
         check("R16 每日代码合入频控判定", n_today == 1 and n_today >= rsi_agent.DAILY_CODE_MERGE_MAX)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
