@@ -37,3 +37,14 @@
 3. 知识条款与系统实证冲突时（如 K3 量放大 vs 量缩），以**随机对照下的生产口径实证**为准，并在本表记录冲突与裁决理由——知识是 prior，数据是 posterior。
 4. 一票否决：任何候选必须显著优于随机入场基线（p<0.05 且 z≥1.0 且 n≥30），否则不得合入。
 5. **裁决权分工（2026-09-28 用户授权）**：composite 权重与 _global 全局 GT 参数 = **AI 自审**（门槛 z≥1.0 且 Δ≥+2.0pp 且 n≥30，24h 频控 + 5 日降效自动回滚兜底）；per-symbol GT 五参+has_base = AI 自审（Δ≥+1.0pp）；core/ 代码、watchlist 增删、ml_enable、vol_regime_gate promote、VERSION bump = **人审**。移交的是裁决权，不是证据标准。
+
+## ML filter 重建判读（2026-09-28，B1-B3 证据链）
+
+| 项 | 结论 | 证据 |
+|---|---|---|
+| ml_features 重建 | ✅ 落地（commit 32c6a20）：39 列名单逐字对齐 ml_versions.json；实证/推断口径 docstring 分级标注；leak_guard 因果栅栏通过 | tests/test_ml_features.py 31 PASS |
+| 数据集口径 | ✅ 修复 mismatch 报告根因①：训练样本=生产候选信号集（GT 引擎+生产 config），不再是旧版无过滤 miji 裸信号 | commit 54c4fc8；ml_dataset_v2 manifest（40 标的 27111 信号 152 天） |
+| 旧模型 AUC 0.707/0.806 | **不可复现属预期**：旧 edge 部分来自「生产永远不会接的样本」，生产候选集上 ML 边际信息天然更薄 | 首训 B 0.5753 / S 0.5566 |
+| B 侧 ML filter | **裁决=不接**：round-trip OOS Δ-0.27pp（kept 34%），cv 0.5381 近抛硬币；接入反而伤 | output/ml_train_results_v2.json |
+| S 侧 ML filter | **候选=S-only shadow**：round-trip OOS Δ+2.02pp（kept 65%），cv≈OOS 一致； backlog P2-20260928-mlfilter-s-only-shadow（影子 10 交易日 → AI 每日复核 → 人审） | 同上 |
+| B 侧改进路径 | 扩池重建（tune_pool_40→1m_clean 192 只级）补 B 样本（现 train 仅 3005 行）后重训重审 | backlog 同上 |
