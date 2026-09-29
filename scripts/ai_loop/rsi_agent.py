@@ -46,6 +46,7 @@ import spec_freeze  # noqa: E402
 RSI_DIR = os.path.join(ROOT, 'data', 'rsi')
 QUEUE_FP = os.path.join(RSI_DIR, 'validity_queue.json')
 LOG_FP = os.path.join(RSI_DIR, 'iteration_log.jsonl')
+TREND_FP = os.path.join(RSI_DIR, 'metric_trend.jsonl')
 PY = os.path.join(ROOT, 'venv', 'Scripts', 'python.exe')
 SKIP = 77
 QUEUE_DAYS = 60           # 代码层改动观察期（天）
@@ -155,6 +156,93 @@ def cmd_selfcheck(date, snapshot_tests=True):
 # --------------------------------------------------------------------------- #
 # 步1 measure
 # --------------------------------------------------------------------------- #
+def build_trend_row(date):
+    """组装一行趋势记录（Q1「GT-1.0 是否持续变好」的测量基板，2026-09-29 人审批准）。
+
+    数据源：bench_baseline.json（curator 维护的池级冻结基线）+ 当日 live_review
+    + 生产 monitor_config 的 regime_gate 状态。全部只读，缺失字段置 None。
+    """
+    row = {'date': date, 'at': _now(), 'pool': None, 'live': None,
+           'regime_gate': None, 't1_gap': None}
+    base = _load(os.path.join(RSI_DIR, 'bench_baseline.json'))
+    if base and isinstance(base.get('pooled'), dict):
+        p = base['pooled']
+        rc = base.get('random_control') or {}
+        net_wr_pct = round((p.get('net_wr') or 0) * 100.0, 3)
+        mean_net = p.get('mean_net')
+        row['pool'] = {
+            'baseline_tag': base.get('tag'),
+            'baseline_generated_at': base.get('generated_at'),
+            'n_trips': p.get('n_trips'),
+            'net_wr_pct': net_wr_pct,
+            'mean_net_pp': mean_net,
+            'pl_ratio': p.get('pl_ratio'),
+            'z_netwr': rc.get('z_netwr'),
+        }
+        row['t1_gap'] = {
+            'net_wr_gap_pp': round(55.0 - net_wr_pct, 3),
+            'mean_net_positive': bool(mean_net is not None and mean_net > 0),
+        }
+    live = _load(os.path.join(ROOT, 'output', f'live_review_{date}.json'))
+    if live and isinstance(live.get('summary'), dict):
+        s = live['summary']
+        row['live'] = {'n_trips': s.get('n_trips'),
+                       'valid_rate_pct': s.get('valid_rate_pct'),
+                       'net_sum_pct': s.get('net_sum_pct'),
+                       'avg_net_pct': s.get('avg_net_pct')}
+    mcfg = _load(os.path.join(ROOT, 'data', 'monitor_config.json'))
+    try:
+        row['regime_gate'] = bool(
+            mcfg['_global']['general_algorithm'].get('regime_gate'))
+    except Exception:
+        pass
+    return row
+
+
+def append_metric_trend(date):
+    """追加一行到 metric_trend.jsonl；同日已存在则跳过（幂等，防重复行）。
+
+    例外（live 补全升级）：measure 于 D 日 15:47 跑，live_review_D.json 约 15:49
+    才生成——已存在行 live=None 且当前能读到 live 数据时，原位更新该行（仍保持
+    每日期唯一一行）。
+    """
+    rows, idx = [], None
+    if os.path.exists(TREND_FP):
+        with open(TREND_FP, encoding='utf-8') as f:
+            for i, ln in enumerate(f):
+                ln = ln.strip()
+                if not ln:
+                    continue
+                try:
+                    d = json.loads(ln)
+                except Exception:
+                    continue
+                rows.append(d)
+                if d.get('date') == date:
+                    idx = len(rows) - 1
+    row = build_trend_row(date)
+    if idx is not None:
+        old = rows[idx]
+        if old.get('live') is None and row.get('live') is not None:
+            row['at'] = old.get('at', row['at'])
+            row['live_backfilled_at'] = _now()
+            rows[idx] = row
+            tmp = TREND_FP + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                for d in rows:
+                    f.write(json.dumps(d, ensure_ascii=False) + '\n')
+            os.replace(tmp, TREND_FP)
+            print(f'metric_trend {date} 行 live 补全升级')
+            return True
+        print(f'metric_trend 已有 {date} 行，幂等跳过')
+        return False
+    os.makedirs(os.path.dirname(TREND_FP), exist_ok=True)
+    with open(TREND_FP, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(row, ensure_ascii=False) + '\n')
+    print(f'metric_trend 追加 {date} 行')
+    return True
+
+
 def cmd_measure(date, light=True):
     st = step_status(date, 'measure')
     if st and st.get('rc') == 0:
@@ -164,6 +252,12 @@ def cmd_measure(date, light=True):
     r = subprocess.run([PY, os.path.join(ROOT, 'scripts', 'ai_loop', 'daily_agent.py'),
                         'collect'], capture_output=True, text=True, timeout=1800)
     ok = r.returncode == 0
+    if ok:
+        try:
+            append_metric_trend(date)
+        except Exception as e:
+            # 趋势落盘失败不阻断 measure 主流程（观察面，非信号面）
+            print(f'⚠ metric_trend 追加失败（不阻断）: {e}')
     mark_step(date, 'measure', r.returncode, 'light' if light else 'full')
     print(f'measure collect rc={r.returncode}')
     return r.returncode if not ok else 0

@@ -154,6 +154,49 @@ def main():
                       if q.get('status') == 'active'
                       and q.get('applied_at', '').startswith(_today))
         check("R16 每日代码合入频控判定", n_today == 1 and n_today >= rsi_agent.DAILY_CODE_MERGE_MAX)
+
+        # metric_trend 趋势基板（Q1 测量，2026-09-29）：合成 bench_baseline → 行字段齐 + 幂等
+        with open(os.path.join(tmp, 'bench_baseline.json'), 'w') as f:
+            json.dump({'tag': 't', 'generated_at': 'x',
+                       'pooled': {'n_trips': 100, 'net_wr': 0.52, 'mean_net': -0.1,
+                                  'pl_ratio': 0.6},
+                       'random_control': {'z_netwr': 10.0}}, f)
+        rsi_agent.TREND_FP = os.path.join(tmp, 'metric_trend.jsonl')
+        ok1 = rsi_agent.append_metric_trend('2099-01-05')
+        rows = [json.loads(l) for l in open(rsi_agent.TREND_FP, encoding='utf-8') if l.strip()]
+        r0 = rows[0]
+        check("R17 metric_trend 行字段齐",
+              ok1 and len(rows) == 1 and r0['pool']['net_wr_pct'] == 52.0
+              and r0['pool']['mean_net_pp'] == -0.1
+              and r0['t1_gap']['net_wr_gap_pp'] == 3.0
+              and r0['t1_gap']['mean_net_positive'] is False
+              and r0['regime_gate'] is not None)
+        ok2 = rsi_agent.append_metric_trend('2099-01-05')
+        rows2 = [l for l in open(rsi_agent.TREND_FP, encoding='utf-8') if l.strip()]
+        check("R18 metric_trend 同日幂等不重复", (not ok2) and len(rows2) == 1)
+
+        # live 补全升级：已有行 live=None，出现 live_review 后原位更新（不增行）
+        live_dir = os.path.join(tmp, 'output')
+        os.makedirs(live_dir, exist_ok=True)
+        with open(os.path.join(live_dir, 'live_review_2099-01-05.json'), 'w') as f:
+            json.dump({'summary': {'n_trips': 3, 'valid_rate_pct': 66.7,
+                                   'net_sum_pct': 0.5, 'avg_net_pct': 0.17}}, f)
+        _orig_root = rsi_agent.ROOT
+        rsi_agent.ROOT = tmp  # build_trend_row 读 ROOT/output 与 ROOT/data
+        os.makedirs(os.path.join(tmp, 'data'), exist_ok=True)
+        with open(os.path.join(tmp, 'data', 'monitor_config.json'), 'w') as f:
+            json.dump({'_global': {'general_algorithm': {'regime_gate': True}}}, f)
+        ok3 = rsi_agent.append_metric_trend('2099-01-05')
+        rows3 = [json.loads(l) for l in open(rsi_agent.TREND_FP, encoding='utf-8') if l.strip()]
+        check("R19 live 补全升级原位更新",
+              ok3 and len(rows3) == 1 and rows3[0]['live']['n_trips'] == 3
+              and rows3[0]['regime_gate'] is True
+              and 'live_backfilled_at' in rows3[0])
+        # 升级后再次调用 → 幂等跳过
+        ok4 = rsi_agent.append_metric_trend('2099-01-05')
+        rows4 = [l for l in open(rsi_agent.TREND_FP, encoding='utf-8') if l.strip()]
+        check("R20 升级后幂等", (not ok4) and len(rows4) == 1)
+        rsi_agent.ROOT = _orig_root
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
