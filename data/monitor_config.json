@@ -20,7 +20,8 @@
       "b_downtrend_reversal": true,
       "s_uptrend_guard": false,
       "vol_ratio_b_max": null,
-      "regime_gate": true,
+      "regime_gate": false,
+      "_note_20260929_regime_gate_off": "2026-09-29 10:01 人审裁决关闭：池级 paired 复检（40池x60日xexec_delay=1，data/rsi/round2_pool_recheck_20260929.json）ON 臂 n=5467 net_wr 50.521% vs OFF n=7499 52.127%（Δ-1.606pp），mean_net -0.1302 vs -0.1241（恶化）⇒ 池级证据不支持 ON；09-27 单标的 +18.3pp 为薄样本假象（n=8）。regime_gate 不在参数白名单，本变更走人审直批。backlog P1-20260929-regime-gate-pool-level-null closed。",
       "regime_lookback": 40,
       "regime_downtrend_suppress": true,
       "regime_downtrend_thresh": 0.5
