@@ -8,7 +8,8 @@
 
 ## 一、七步循环（AI 会话操作程序）
 
-**日循环（轻，周一~五 15:45，automation 6a856b94）**：
+**日循环（轻，周一~五 15:45，automation 6a856b94；含 feedback_loop 回灌——原 15:45 独立会话
+「tpoint 反馈闭环驱动」已于 2026-09-29 合并入本会话）**：
 0. **guard/selfcheck**：`rsi_agent.py selfcheck`（交易日+幂等+环境探针+当日测试快照）。rc=77 静默结束。
 1. **measure (light)**：`rsi_agent.py measure` → digest；读 `data/rsi/bench_baseline.json`（curator 维护）与当日 live_review/reconcile，产出「今日 vs T0/T1/T2 差距快照」。
 2. **diagnose**：对照 K1-K7 与 backlog（≤3 个假设），**只准引用 K 条款 / backlog ID / 实证报告路径，禁止发明判据**；n<30 只写「观察」。
@@ -68,11 +69,22 @@
 ## 六、时序（交易日）
 
 ```
-15:30 run_daily_review.bat 12步流水线（auto_tune 已 propose-only 化）
-15:35 automation 复盘+对账兜底（保留）
-15:45 automation feedback_loop 回灌（保留）
-15:45 automation 6a856b94 → RSI 日循环（轻）
+15:30 run_daily_review.bat 12步流水线 + step13 pipeline_postcheck 语义后检
+      （后检：五 JSON date / review HTML 六节 / B5 entry_price 对齐 / 日志 marker / 数据质量哨兵；
+        失败 rc=1/2 并推 a35d7f52 + b4eba7a9）
+      —— 取代原 15:35「复盘+对账兜底」AI 会话（automation-1785721171231 已于 2026-09-29 停用）
+15:45 automation 6a856b94 → RSI 日循环（轻）＝ 反馈闭环回灌 + 主循环（单会话串行）：
+      feedback_loop（preflight + 再验证 + backlog 回灌）→ selfcheck → measure → diagnose
+      → propose → finalize → observe → backlog triage
+      —— 原 15:45 独立会话「tpoint 反馈闭环驱动」已合并入本会话（2026-09-29）
 16:30 automation tpoint-rsi-curator（周一/三/五，重：四道闸+apply-code+observe）
 17:00+ 全池重锚重活（longtask 三件套）
 21:30 schtasks rsi_watchdog（机械自健康，零 AI 会话成本）
 ```
+
+**2026-09-29 时序精简（人审批准）**：原每日 4 场 AI 会话（15:35 兜底 9.4 万 token + 15:45 反馈闭环
+21.2 万 + 15:45 日循环 8.1 万，另加周一三五 16:30 curator 7.1 万）压缩为 2 场。依据：15:35 会话的
+语义校验已可脚本化（`scripts/pipeline_postcheck.py`）、其校验项 `regime_gate=true` 已因 2026-09-29
+人审关闭而失效、且该会话自 2026-09-01 起连续 19 个交易日未写执行记忆；15:45 两条会话职责重叠
+（均维护 `data/feedback_backlog.jsonl`，且 feedback_loop 的再验证正是 RSI measure 的上游取数）。
+合并后顺序铁律：**feedback_loop 必须早于 measure**（前者重跑 `live_roundtrip_review`，后者读其产物）。

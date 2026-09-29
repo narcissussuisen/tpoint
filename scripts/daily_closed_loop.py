@@ -213,7 +213,9 @@ def main():
             days = FO.sym_days(sym)
             for d, data, g in days:
                 data['sym'] = sym
-            sig_cur = FO.day_signals(sym, wl[sym], days, eff_atr)
+            # [2026-09-29 修复] 原为 eff_atr（全仓库未定义，NameError 被下方 except 吞成
+            # 日报正文一行「组合回测失败」⇒ 该环节在有改动提议时从未跑成）。当前侧取 FO.CUR_ATR。
+            sig_cur = FO.day_signals(sym, wl[sym], days, FO.CUR_ATR)
             sig_new = FO.day_signals(sym, wl[sym], days, atr_best)
             cur_full = FO.metrics_of(FO.eval_config(sig_cur, *FO.CUR_TRAIL))
             new_full = FO.metrics_of(FO.eval_config(sig_new, *trail_best))

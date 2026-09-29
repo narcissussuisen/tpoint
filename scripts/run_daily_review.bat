@@ -116,7 +116,7 @@ if %RC% GEQ 1 echo [%DATE% %TIME%] [WARN] closed_loop non-zero rc=%RC% >> "%ROOT
 echo [%DATE% %TIME%] === done (closed loop) === >> "%ROOT%\logs\daily_review.log"
 REM --- 2026-09-28 RSI 治理修订：step11 auto_tune 改 propose-only ---
 REM 不再直写 monitor_config.json（唯一通道=daily_agent apply/effect_ledger，rsi_loop_agenda §三）；
-REM 达标改动写 data/ai_proposals/auto_tune_<date>.json 提案（trail/atr 不在自动白名单⇒人审）；
+REM 达标改动写 data/ai_proposals/auto_tune_YYYY-MM-DD.json 提案（trail/atr 不在自动白名单⇒人审）；
 REM 护栏不变：total_ret优先+wr不降+拒绝 wr 虚胖+仅监控内标的+OOS 样本外复核；推 a35d7f52。
 "%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" running auto_tune >> "%ROOT%\logs\daily_review.log" 2>&1
 "%PY_EXE%" "%ROOT%\scripts\auto_tune.py" --date %D% >> "%ROOT%\logs\daily_review.log" 2>&1
@@ -142,3 +142,22 @@ if %RC% GEQ 2 (
   exit /b %RC%
 )
 echo [%DATE% %TIME%] === pipeline summary done - all steps recorded === >> "%ROOT%\logs\daily_review.log"
+REM --- [2026-09-29] semantic postcheck (step13): replaces the 15:35 AI fallback session ---
+REM   Checks: 5 JSON date / review HTML 6 sections / B5 entry_price alignment / log markers / data-quality sentinel.
+REM   rc=0 pass (no push, to avoid duplicating REPORT_PUSH/GLOBAL_PUSH); rc=1 semantic fail, alert pushed to
+REM   a35d7f52 + b4eba7a9; rc=2 prerequisite artifacts missing, alert pushed; rc=77 non-trading day (defensive,
+REM   the bat already gates earlier). Mechanical failures are covered by the summarize --push-fail step above;
+REM   this step only adds the semantic layer on the green path and does not alter any existing step.
+REM   NOTE: REM lines in this block stay ASCII on purpose. cmd parses a .bat under the codepage active at
+REM   read time; without chcp 65001 a non-ASCII REM line can swallow the CRLF and the remainder gets run
+REM   as a command (2026-09-29 sandbox repro; same family as the 2026-09-10 junk-file and 2026-09-03
+REM   silent-abort incidents). This file does set chcp 65001 further up, but keeping this block ASCII keeps
+REM   it correct no matter where that line ends up.
+"%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" running postcheck >> "%ROOT%\logs\daily_review.log" 2>&1
+"%PY_EXE%" "%ROOT%\scripts\pipeline_postcheck.py" --date %D% >> "%ROOT%\logs\daily_review.log" 2>&1
+set RC=%ERRORLEVEL%
+"%PY_EXE%" "%ROOT%\scripts\pipeline_status.py" record postcheck %RC% >> "%ROOT%\logs\daily_review.log" 2>&1
+if %RC% GEQ 1 echo [%DATE% %TIME%] [FAIL] pipeline_postcheck rc=%RC% - see log >> "%ROOT%\logs\daily_review.log"
+echo [%DATE% %TIME%] === done (postcheck) === >> "%ROOT%\logs\daily_review.log"
+REM   Non-zero exit: let Task Scheduler LastResult reflect the semantic failure (no other consumer of that value).
+if %RC% GEQ 1 exit /b %RC%

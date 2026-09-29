@@ -14,6 +14,13 @@
      需要表达箭头时用 `→`（U+2192，非 cmd 元字符）。
   ③ **引用的脚本必须存在**：`%ROOT%\\scripts\\X.py|bat` 形式的引用逐个验证，
      防止脚本改名/删除后 bat 静默失败（计划任务只显示 LastResult 非 0，根因难查）。
+已知未决项（2026-09-29，未落为自动规则）：
+  cmd 按**读盘时**的活动代码页解析 bat 字节。沙盒实测（`%TEMP%/pcbat/minetest.bat`）：同样 6 行中文
+  REM，**不带** `chcp 65001` 时其中 2 行吞掉 CRLF、后半段被当成命令执行（stderr 报
+  not recognized as a command），带 chcp 则全部正常。既有 6 个 bat 或含 `chcp 65001`、或全 ASCII，
+  线上未观察到影响 ⇒ 未升级为铁律。原因：以「行级 chcp 位置」为判据会在本仓库恒红
+  （`run_daily_review.bat` 首个中文 REM 在 L2，chcp 在 L21，但生产运行正常），
+  而真实的吞行条件依赖具体字节序列，尚未摸清 ⇒ 留作后续机制研究，勿据此改代码。
 
 运行：venv/Scripts/python.exe scripts/test_bat_hygiene.py
 """
